@@ -4,6 +4,11 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 from pydantic import Field, BaseModel
 
 
+__all__ = [
+    'settings'
+]
+
+
 class EnvironmentTypes(StrEnum):
     DEVELOPMENT = "development"
     PRODUCTION = "production"

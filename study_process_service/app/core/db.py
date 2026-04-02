@@ -11,6 +11,12 @@ from sqlalchemy.orm import declarative_base
 from .config import settings
 
 
+__all__ = [
+    'Base',
+    'get_async_session'
+]
+
+
 async_engine: AsyncEngine = create_async_engine(
     settings.POSTGRES.DSN,
     pool_size=5,
