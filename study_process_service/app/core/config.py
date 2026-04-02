@@ -17,9 +17,16 @@ class PostgresSettings(BaseModel):
     DB: str
 
     @property
-    def DSN(self) -> str:
+    def async_DSN(self) -> str:
         return (
             f"postgresql+asyncpg://{self.USER}:{self.PASSWORD}"
+            f"@{self.HOST}:{self.PORT}/{self.DB}"
+        )
+
+    @property
+    def DSN(self) -> str:
+        return (
+            f"postgresql://{self.USER}:{self.PASSWORD}"
             f"@{self.HOST}:{self.PORT}/{self.DB}"
         )
 
