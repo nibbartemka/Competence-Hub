@@ -6,34 +6,38 @@ from sqlalchemy.ext.asyncio import (
     AsyncEngine,
     async_sessionmaker
 )
-from sqlalchemy.orm import declarative_base
+from sqlalchemy.orm import DeclarativeBase
 
 from .config import settings
 
 
 __all__ = [
     'Base',
-    'get_async_session'
+    'get_async_session',
+    'init_db',
+    'drop_db',
 ]
 
 
+class Base(DeclarativeBase):
+    pass
+
+
 async_engine: AsyncEngine = create_async_engine(
-    settings.POSTGRES.DSN,
+    settings.POSTGRES.async_DSN,
     pool_size=5,
     max_overflow=10,
+    echo=False,
 )
 
 
-AsyncSessionLocal: async_sessionmaker = async_sessionmaker(
-    async_engine,
+AsyncSessionLocal = async_sessionmaker(
+    bind=async_engine,
     class_=AsyncSession,
     expire_on_commit=False,
+    autoflush=False,
     autocommit=False,
-    autoflush=False
 )
-
-
-Base = declarative_base()
 
 
 async def get_async_session() -> AsyncGenerator[AsyncSession, None]:
