@@ -6,7 +6,7 @@ from sqlalchemy.ext.asyncio import (
     AsyncEngine,
     async_sessionmaker
 )
-from sqlalchemy.orm import DeclarativeBase
+from sqlalchemy.orm import declarative_base
 
 from .config import settings
 
@@ -14,13 +14,12 @@ from .config import settings
 __all__ = [
     'Base',
     'get_async_session',
-    'init_db',
-    'drop_db',
+    # 'init_db',
+    # 'drop_db',
 ]
 
 
-class Base(DeclarativeBase):
-    pass
+Base = declarative_base()
 
 
 async_engine: AsyncEngine = create_async_engine(
