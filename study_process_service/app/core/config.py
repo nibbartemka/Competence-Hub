@@ -5,7 +5,7 @@ from pydantic import Field, BaseModel
 
 
 __all__ = [
-    'settings'
+    'settings',
 ]
 
 
