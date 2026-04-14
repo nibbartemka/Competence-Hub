@@ -1,4 +1,11 @@
-from .disciplines import Discipline, Topic
+from .disciplines import Discipline
+from .knowledge_graph import (
+    Topic,
+    TopicDependency,
+    KnowledgeElement,
+    TopicKnowledgeElement,
+    KnowledgeElementRelation,
+)
 from .groups import Group, Subgroup
 from .students import Student
 from .teachers import Teacher, TeacherSubgroup
@@ -9,16 +16,14 @@ from .bindings import (
     TeacherDiscipline,
     TeacherGroup,
 )
-from .trajectories import (
-    DisciplineTrajectory,
-    DisciplineTrajectoryTopic,
-    TrajectoryTopicElement,
-    TrajectoryTopicElementRelation
-)
 
 __all__ = [
     "Discipline",
     "Topic",
+    "TopicDependency",
+    "KnowledgeElement",
+    "TopicKnowledgeElement",
+    "KnowledgeElementRelation",
     "Group",
     "Subgroup",
     "Student",
@@ -29,8 +34,4 @@ __all__ = [
     "StudentDisciplineRating",
     "TeacherDiscipline",
     "TeacherGroup",
-    "DisciplineTrajectory",
-    "DisciplineTrajectoryTopic",
-    "TrajectoryTopicElement",
-    "TrajectoryTopicElementRelation",
 ]

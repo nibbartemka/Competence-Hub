@@ -40,13 +40,6 @@ class Group(Base):
         lazy="selectin",
     )
 
-    trajectory_links: Mapped[list["GroupDisciplineTrajectory"]] = relationship(
-        "GroupDisciplineTrajectory",
-        back_populates="group",
-        cascade="all, delete-orphan",
-        lazy="selectin",
-    )
-
 
 class Subgroup(Base):
     __tablename__ = "subgroups"

@@ -7,7 +7,7 @@ class CompetenceType(StrEnum):
     MASTER = "master"
 
 
-class TopicElementRelationType(StrEnum):
+class KnowledgeElementRelationType(StrEnum):
     REQUIRES = "requires"
     BUILDS_ON = "builds_on"
     CONTAINS = "contains"
@@ -18,6 +18,12 @@ class TopicElementRelationType(StrEnum):
     SIMILAR = "similar"
     CONTRASTS_WITH = "contrasts_with"
     USED_WITH = "used_with"
+    IMPLEMENTS = "implements"
+    AUTOMATES = "automates"
+
+
+# Backward-compatible alias for older code that still uses the previous name.
+TopicElementRelationType = KnowledgeElementRelationType
 
 
 class TaskType(StrEnum):
