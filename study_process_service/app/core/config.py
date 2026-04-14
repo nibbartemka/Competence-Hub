@@ -36,15 +36,28 @@ class PostgresSettings(BaseModel):
         )
 
 
+class SQLiteSettings(BaseModel):
+    PATH: str = "app.db"
+
+    @property
+    def async_DSN(self) -> str:
+        return f"sqlite+aiosqlite:///{self.PATH}"
+
+    @property
+    def DSN(self) -> str:
+        return f"sqlite:///{self.PATH}"
+
+
 class AppSettings(BaseModel):
     HOST: str = "0.0.0.0"
     PORT: int = 8000
 
 
 class Settings(BaseSettings):
-    APP: AppSettings
+    APP: AppSettings = AppSettings()
+    SQLITE: SQLiteSettings = SQLiteSettings()
 
-    POSTGRES: PostgresSettings
+    # POSTGRES: PostgresSettings
 
     ENVIRONMENT: EnvironmentTypes = Field(
         default=EnvironmentTypes.DEVELOPMENT,

@@ -1,10 +1,23 @@
 from enum import StrEnum
 
 
-class CompetencyType(StrEnum):
+class CompetenceType(StrEnum):
     KNOW = "know"
     CAN = "can"
     MASTER = "master"
+
+
+class TopicElementRelationType(StrEnum):
+    REQUIRES = "requires"
+    BUILDS_ON = "builds_on"
+    CONTAINS = "contains"
+    PART_OF = "part_of"
+    PROPERTY_OF = "property_of"
+    REFINES = "refines"
+    GENERALIZES = "generalizes"
+    SIMILAR = "similar"
+    CONTRASTS_WITH = "contrasts_with"
+    USED_WITH = "used_with"
 
 
 class TaskType(StrEnum):

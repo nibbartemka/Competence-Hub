@@ -14,8 +14,8 @@ from .config import settings
 __all__ = [
     'Base',
     'get_async_session',
-    # 'init_db',
-    # 'drop_db',
+    'init_db',
+    'drop_db',
 ]
 
 
@@ -23,7 +23,7 @@ Base = declarative_base()
 
 
 async_engine: AsyncEngine = create_async_engine(
-    settings.POSTGRES.async_DSN,
+    settings.SQLITE.async_DSN,
     pool_size=5,
     max_overflow=10,
     echo=False,
