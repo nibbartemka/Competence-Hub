@@ -6,6 +6,7 @@ from sqlalchemy import select
 from app.api.crud import commit_or_409, delete_and_commit, not_found
 from app.api.deps import DbSession
 from app.models import KnowledgeElement, Topic, TopicKnowledgeElement
+from app.models.enums import TopicKnowledgeElementRole
 from app.schemas import TopicKnowledgeElementCreate, TopicKnowledgeElementRead
 
 
@@ -17,13 +18,22 @@ async def list_topic_knowledge_elements(
     session: DbSession,
     topic_id: UUID | None = None,
     element_id: UUID | None = None,
+    role: TopicKnowledgeElementRole | None = None,
 ) -> list[TopicKnowledgeElement]:
     query = select(TopicKnowledgeElement)
     if topic_id is not None:
         query = query.where(TopicKnowledgeElement.topic_id == topic_id)
     if element_id is not None:
         query = query.where(TopicKnowledgeElement.element_id == element_id)
-    result = await session.execute(query.order_by(TopicKnowledgeElement.id))
+    if role is not None:
+        query = query.where(TopicKnowledgeElement.role == role)
+    result = await session.execute(
+        query.order_by(
+            TopicKnowledgeElement.topic_id,
+            TopicKnowledgeElement.role,
+            TopicKnowledgeElement.id,
+        )
+    )
     return list(result.scalars().all())
 
 
@@ -43,6 +53,7 @@ async def create_topic_knowledge_element(
     topic_element = TopicKnowledgeElement(
         topic_id=payload.topic_id,
         element_id=payload.element_id,
+        role=payload.role,
         note=payload.note,
     )
     session.add(topic_element)

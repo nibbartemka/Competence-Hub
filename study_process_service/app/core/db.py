@@ -64,6 +64,13 @@ def _sync_sqlite_schema(connection) -> None:
     # Keep local SQLite schema compatible with the current SQLAlchemy models.
     if not _sqlite_has_column(connection, "topics", "description"):
         connection.execute(text("ALTER TABLE topics ADD COLUMN description TEXT"))
+    if not _sqlite_has_column(connection, "topic_knowledge_elements", "role"):
+        connection.execute(
+            text(
+                "ALTER TABLE topic_knowledge_elements "
+                "ADD COLUMN role TEXT NOT NULL DEFAULT 'formed'"
+            )
+        )
 
 
 async def get_async_session() -> AsyncGenerator[AsyncSession, None]:

@@ -4,7 +4,11 @@ from sqlalchemy import CheckConstraint, Enum, ForeignKey, String, Text, UniqueCo
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core import Base
-from .enums import CompetenceType, KnowledgeElementRelationType
+from .enums import (
+    CompetenceType,
+    KnowledgeElementRelationType,
+    TopicKnowledgeElementRole,
+)
 
 
 class Topic(Base):
@@ -144,6 +148,15 @@ class TopicKnowledgeElement(Base):
 
     id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
     note: Mapped[str | None] = mapped_column(Text, nullable=True)
+    role: Mapped[TopicKnowledgeElementRole] = mapped_column(
+        Enum(
+            TopicKnowledgeElementRole,
+            name="topic_knowledge_element_role_enum",
+            values_callable=lambda enum_cls: [item.value for item in enum_cls],
+        ),
+        nullable=False,
+        default=TopicKnowledgeElementRole.FORMED,
+    )
 
     topic_id: Mapped[UUID] = mapped_column(
         ForeignKey("topics.id", ondelete="CASCADE"),

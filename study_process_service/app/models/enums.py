@@ -7,6 +7,11 @@ class CompetenceType(StrEnum):
     MASTER = "master"
 
 
+class TopicKnowledgeElementRole(StrEnum):
+    REQUIRED = "required"
+    FORMED = "formed"
+
+
 class KnowledgeElementRelationType(StrEnum):
     REQUIRES = "requires"
     BUILDS_ON = "builds_on"
