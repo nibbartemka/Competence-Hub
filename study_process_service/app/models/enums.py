@@ -1,6 +1,17 @@
 from enum import StrEnum
 
 
+class UserRole(StrEnum):
+    EXPERT = "expert"
+    TEACHER = "teacher"
+    STUDENT = "student"
+
+
+class AssessmentFormat(StrEnum):
+    QUESTION_ANSWER = "question_answer"
+    TEST = "test"
+
+
 class CompetencyType(StrEnum):
     KNOW = "know"
     CAN = "can"

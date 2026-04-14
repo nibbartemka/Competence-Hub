@@ -1,0 +1,731 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Competence Hub</title>
+    <link rel="stylesheet" href="/static/styles.css?v=20260413-profile-auth">
+    <style>
+        .topbar {
+            align-items: center;
+            gap: 20px;
+        }
+
+        .topbar-brand {
+            flex: 1 1 auto;
+            min-width: 0;
+            display: flex;
+            align-items: center;
+            gap: 24px;
+        }
+
+        .topbar-wordmark {
+            margin: 0;
+            white-space: nowrap;
+        }
+
+        .topbar-ornament {
+            position: relative;
+            flex: 1 1 auto;
+            min-width: 180px;
+            height: 56px;
+            border-radius: 999px;
+            overflow: hidden;
+            background:
+                radial-gradient(ellipse 120px 58px at 10% 50%, rgba(83, 127, 231, 0.18), transparent 68%),
+                radial-gradient(ellipse 150px 70px at 34% 28%, rgba(122, 154, 234, 0.14), transparent 70%),
+                radial-gradient(ellipse 120px 62px at 62% 68%, rgba(92, 170, 145, 0.12), transparent 68%),
+                radial-gradient(ellipse 160px 72px at 88% 42%, rgba(120, 214, 192, 0.15), transparent 72%),
+                linear-gradient(90deg, rgba(237, 242, 255, 0.9), rgba(245, 249, 255, 0.98) 45%, rgba(239, 250, 246, 0.96));
+            box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.85);
+        }
+
+        .topbar-ornament::before,
+        .topbar-ornament::after {
+            content: "";
+            position: absolute;
+            inset: auto;
+            border-radius: 999px;
+        }
+
+        .topbar-ornament::before {
+            width: 34%;
+            height: 130%;
+            top: -18%;
+            left: 26%;
+            background: linear-gradient(180deg, rgba(255, 255, 255, 0.34), rgba(255, 255, 255, 0));
+            transform: rotate(-14deg);
+            filter: blur(2px);
+        }
+
+        .topbar-ornament::after {
+            width: 22%;
+            height: 72%;
+            right: 14%;
+            top: 14%;
+            background: radial-gradient(circle, rgba(255, 255, 255, 0.58), rgba(255, 255, 255, 0));
+            filter: blur(6px);
+            opacity: 0.8;
+        }
+
+        .start-shell,
+        .register-shell {
+            max-width: 1180px;
+            margin: 0 auto;
+            padding: 20px;
+            border: 1px solid #c4cfdd;
+            border-radius: 30px;
+            background: rgba(255, 255, 255, 0.92);
+            box-shadow: 0 22px 54px rgba(72, 91, 125, 0.1);
+            animation: fade-up 0.45s ease both;
+        }
+
+        .start-grid {
+            display: grid;
+            grid-template-columns: minmax(0, 1.18fr) minmax(340px, 0.82fr);
+            gap: 20px;
+            align-items: start;
+        }
+
+        .start-auth-column {
+            display: grid;
+            gap: 14px;
+        }
+
+        .start-info-card,
+        .start-login-card,
+        .start-accounts-card,
+        .register-card {
+            border: 1px solid #c4cfdd;
+            border-radius: 24px;
+            background: linear-gradient(180deg, #ffffff, #f8fbff);
+            box-shadow: 0 12px 30px rgba(76, 98, 136, 0.08);
+            transition: transform 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease;
+        }
+
+        .start-card-inner,
+        .register-card {
+            padding: 24px;
+        }
+
+        .start-info-card:hover,
+        .start-login-card:hover,
+        .start-accounts-card:hover,
+        .register-card:hover {
+            transform: translateY(-2px);
+            border-color: #9eb4dd;
+            box-shadow: 0 20px 38px rgba(76, 98, 136, 0.12);
+        }
+
+        .start-info-card h2,
+        .register-card-head h2 {
+            margin: 0 0 14px;
+            line-height: 1.15;
+        }
+
+        .start-info-card h2 {
+            font-size: clamp(1.95rem, 3vw, 2.65rem);
+            max-width: 720px;
+        }
+
+        .start-text {
+            margin: 0 0 18px;
+            color: #5f6f82;
+            font-size: 1.03rem;
+            line-height: 1.72;
+        }
+
+        .start-feature-list,
+        .start-account-list,
+        .start-auth-column,
+        .start-form,
+        .register-form-grid {
+            display: grid;
+        }
+
+        .start-feature-list,
+        .start-account-list {
+            gap: 12px;
+        }
+
+        .start-form,
+        .register-form-grid {
+            gap: 14px;
+            margin-top: 14px;
+        }
+
+        .start-feature-card,
+        .start-account-item {
+            padding: 16px 18px;
+            border: 1px solid #d7e1ee;
+            border-radius: 18px;
+            background: #ffffff;
+        }
+
+        .start-feature-card strong,
+        .start-account-item strong {
+            display: block;
+            margin-bottom: 6px;
+        }
+
+        .start-feature-card p {
+            margin: 0;
+            color: #5f6f82;
+            line-height: 1.55;
+        }
+
+        .start-login-card h3 {
+            margin: 0 0 8px;
+            font-size: 1.4rem;
+        }
+
+        .start-field {
+            display: grid;
+            gap: 8px;
+        }
+
+        .start-field span {
+            font-weight: 700;
+            color: #233142;
+        }
+
+        .start-field input,
+        .start-field select {
+            width: 100%;
+            min-height: 56px;
+            padding: 0 16px;
+            border: 1px solid #c3d1e3;
+            border-radius: 16px;
+            background: #ffffff;
+            color: #233142;
+            transition: border-color 0.2s ease, box-shadow 0.2s ease, transform 0.2s ease;
+        }
+
+        .start-field input::placeholder {
+            color: #95a4b9;
+        }
+
+        .start-field input:focus,
+        .start-field select:focus {
+            outline: none;
+            border-color: #5a86eb;
+            box-shadow: 0 0 0 4px rgba(90, 134, 235, 0.16);
+            transform: translateY(-1px);
+        }
+
+        .start-action-row,
+        .register-action-row {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 12px;
+            margin-top: 14px;
+        }
+
+        .start-action {
+            min-height: 54px;
+            border-radius: 16px;
+            font-weight: 700;
+        }
+
+        .register-shell {
+            max-width: 760px;
+        }
+
+        .register-card-head {
+            margin-bottom: 10px;
+        }
+
+        .register-card-head h2 {
+            font-size: clamp(1.8rem, 2.8vw, 2.2rem);
+        }
+
+        @media (max-width: 720px) {
+            .topbar-brand {
+                gap: 14px;
+            }
+
+            .topbar-ornament {
+                min-width: 110px;
+            }
+
+            .start-grid {
+                grid-template-columns: 1fr;
+            }
+        }
+
+        @media (max-width: 640px) {
+            .topbar-brand {
+                width: 100%;
+            }
+
+            .topbar-ornament {
+                display: none;
+            }
+
+            .start-shell,
+            .register-shell {
+                padding: 12px;
+            }
+
+            .start-card-inner,
+            .register-card {
+                padding: 18px;
+            }
+
+            .start-action-row,
+            .register-action-row {
+                grid-template-columns: 1fr;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="app-shell">
+        <header class="topbar">
+            <div class="topbar-brand">
+                <h1 class="topbar-wordmark">Competence Hub</h1>
+                <div class="topbar-ornament" aria-hidden="true"></div>
+            </div>
+            <div id="session-panel" class="session-panel hidden">
+                <div class="session-chip">
+                    <span id="session-name">Пользователь</span>
+                    <small id="session-role">роль</small>
+                </div>
+                <button id="profile-button" class="ghost-button" type="button">Профиль</button>
+                <button id="logout-button" class="ghost-button" type="button">Выйти</button>
+            </div>
+        </header>
+
+        <main>
+            <section id="login-view" class="view auth-view">
+                <div class="start-shell">
+                    <div class="start-grid">
+                        <section class="start-info-card">
+                            <div class="start-card-inner">
+                                <p class="section-kicker">Описание проекта</p>
+                                <h2>Competence Hub объединяет экспертов, преподавателей и студентов в одной учебной системе</h2>
+                                <p class="start-text">
+                                    Это система, в которой эксперты насыщают дисциплины и темы материалами, заданиями
+                                    и структурой ЗУВ, а преподаватели на этой основе собирают собственный вариант
+                                    учебного предмета.
+                                </p>
+                                <p class="start-text">
+                                    Студенты проходят траекторию обучения, которую создаёт преподаватель, опираясь
+                                    на знания и задания, подготовленные экспертами.
+                                </p>
+                                <div class="start-feature-list">
+                                    <article class="start-feature-card">
+                                        <strong>Эксперт</strong>
+                                        <p>Насыщает дисциплины и темы материалами, заданиями и элементами ЗУВ.</p>
+                                    </article>
+                                    <article class="start-feature-card">
+                                        <strong>Преподаватель</strong>
+                                        <p>Изменяет наполненность дисциплины под свой вариант учебного предмета и выбирает нужные темы.</p>
+                                    </article>
+                                    <article class="start-feature-card">
+                                        <strong>Студент</strong>
+                                        <p>Проходит траекторию обучения, созданную преподавателем на основе наполнения от экспертов.</p>
+                                    </article>
+                                </div>
+                            </div>
+                        </section>
+
+                        <aside class="start-auth-column">
+                            <section class="start-login-card">
+                                <div class="start-card-inner">
+                                    <p class="section-kicker">Авторизация</p>
+                                    <h3>Вход в систему</h3>
+                                    <p class="muted-text">Введите логин и пароль, чтобы открыть рабочее пространство.</p>
+
+                                    <form id="login-form" class="start-form">
+                                        <label class="start-field">
+                                            <span>Логин</span>
+                                            <input name="username" placeholder="Например, expert" required>
+                                        </label>
+                                        <label class="start-field">
+                                            <span>Пароль</span>
+                                            <input name="password" type="password" placeholder="Введите пароль" required>
+                                        </label>
+                                    </form>
+
+                                    <div class="start-action-row">
+                                        <button id="show-login-tab" class="primary-button start-action" type="submit" form="login-form">Войти</button>
+                                        <button id="show-register-tab" class="ghost-button start-action" type="button">Создать аккаунт</button>
+                                    </div>
+                                </div>
+                            </section>
+
+                            <section class="start-accounts-card">
+                                <div class="start-card-inner">
+                                    <div class="credentials-head">
+                                        <p class="section-kicker">Тестовые пользователи</p>
+                                        <span class="credentials-hint">Для быстрого входа</span>
+                                    </div>
+                                    <div class="start-account-list">
+                                        <article class="start-account-item">
+                                            <strong>Эксперт</strong>
+                                            <span><code>expert</code> / <code>expert123</code></span>
+                                        </article>
+                                        <article class="start-account-item">
+                                            <strong>Преподаватель</strong>
+                                            <span><code>teacher</code> / <code>teacher123</code></span>
+                                        </article>
+                                        <article class="start-account-item">
+                                            <strong>Студент</strong>
+                                            <span><code>student</code> / <code>student123</code></span>
+                                        </article>
+                                    </div>
+                                </div>
+                            </section>
+                        </aside>
+                    </div>
+                </div>
+            </section>
+
+            <section id="register-view" class="view auth-view hidden">
+                <div class="register-shell">
+                    <section class="register-card">
+                        <div class="register-card-head">
+                            <p class="section-kicker">Создание аккаунта</p>
+                            <h2>Новый пользователь системы</h2>
+                            <p class="muted-text">
+                                Укажи ФИО, дату рождения и роль пользователя. После сохранения система вернёт тебя
+                                на экран входа и покажет созданные логин и пароль.
+                            </p>
+                        </div>
+
+                        <form id="register-form" class="register-form-grid">
+                            <label class="start-field">
+                                <span>ФИО</span>
+                                <input name="full_name" placeholder="Например, Иван Петров" required>
+                            </label>
+                            <label class="start-field">
+                                <span>Дата рождения</span>
+                                <input name="birth_date" type="date" required>
+                            </label>
+                            <label class="start-field">
+                                <span>Роль пользователя</span>
+                                <select name="role" required>
+                                    <option value="expert">Эксперт</option>
+                                    <option value="teacher">Преподаватель</option>
+                                    <option value="student">Студент</option>
+                                </select>
+                            </label>
+                            <label class="start-field">
+                                <span>Логин</span>
+                                <input name="username" placeholder="Например, ivan.petrov" minlength="3" required>
+                                <div id="register-username-status" class="field-hint hidden"></div>
+                            </label>
+                            <label class="start-field">
+                                <span>Пароль</span>
+                                <input name="password" type="password" placeholder="Не короче 6 символов" minlength="6" required>
+                            </label>
+                            <div class="register-action-row">
+                                <button id="register-back-button" class="ghost-button start-action" type="button">Назад</button>
+                                <button class="primary-button start-action" type="submit">Создать аккаунт</button>
+                            </div>
+                        </form>
+                    </section>
+                </div>
+            </section>
+
+            <section id="app-view" class="view hidden">
+                <section id="profile-view" class="role-view hidden">
+                    <div class="screen-card">
+                        <div class="screen-head">
+                            <div>
+                                <button id="profile-back-button" class="text-button" type="button">← Назад к рабочему пространству</button>
+                                <p class="section-kicker">Профиль пользователя</p>
+                                <h2>Мои данные</h2>
+                                <p class="muted-text">Здесь можно изменить личные данные, логин и пароль.</p>
+                            </div>
+                            <div class="status-badge" id="profile-role-badge">Роль</div>
+                        </div>
+
+                        <div class="panel">
+                            <form id="profile-form" class="stack-form profile-form">
+                                <label>
+                                    <span>ФИО</span>
+                                    <input name="full_name" placeholder="Введите ФИО" required>
+                                </label>
+                                <label>
+                                    <span>Дата рождения</span>
+                                    <input name="birth_date" type="date" required>
+                                </label>
+                                <label>
+                                    <span>Логин</span>
+                                    <input name="username" placeholder="Введите логин" minlength="3" required>
+                                    <div id="profile-username-status" class="field-hint hidden"></div>
+                                </label>
+                                <label>
+                                    <span>Пароль</span>
+                                    <input name="password" type="password" placeholder="Оставьте пустым, если менять не нужно" minlength="6">
+                                </label>
+                                <div class="action-row">
+                                    <button id="profile-save-button" class="primary-button" type="submit">Сохранить изменения</button>
+                                </div>
+                            </form>
+                        </div>
+                    </div>
+                </section>
+
+                <section id="expert-view" class="role-view hidden">
+                    <div id="expert-screen-disciplines" class="screen-card">
+                        <div class="screen-head">
+                            <div>
+                                <p class="section-kicker">Эксперт</p>
+                                <h2>Дисциплины</h2>
+                                <p class="muted-text">Главный экран эксперта. Выбери дисциплину для насыщения или создай новую.</p>
+                            </div>
+                            <div class="action-row">
+                                <button id="expert-refresh-disciplines" class="ghost-button" type="button">Обновить</button>
+                                <button id="expert-open-discipline-create" class="primary-button" type="button">Новая дисциплина</button>
+                            </div>
+                        </div>
+
+                        <div id="expert-discipline-create-panel" class="panel create-panel hidden">
+                            <div class="panel-headline">
+                                <h3>Создание дисциплины</h3>
+                                <button id="expert-close-discipline-create" class="ghost-button" type="button">Закрыть</button>
+                            </div>
+                            <form id="expert-discipline-form" class="stack-form">
+                                <label>
+                                    <span>Название</span>
+                                    <input name="name" placeholder="Например, Алгоритмы и структуры данных" required>
+                                </label>
+                                <label>
+                                    <span>Описание</span>
+                                    <textarea name="description" rows="4" placeholder="Кратко опиши дисциплину"></textarea>
+                                </label>
+                                <button class="primary-button" type="submit">Сохранить дисциплину</button>
+                            </form>
+                        </div>
+
+                        <div class="panel">
+                            <div class="list-card-head">
+                                <h3>Список дисциплин</h3>
+                                <span id="expert-discipline-count" class="count-chip">0</span>
+                            </div>
+                            <div id="expert-disciplines-empty" class="empty-state">Пока дисциплин нет.</div>
+                            <div id="expert-disciplines-list" class="item-list"></div>
+                        </div>
+                    </div>
+
+                    <div id="expert-screen-discipline" class="screen-card hidden">
+                        <div class="screen-head">
+                            <div>
+                                <button id="expert-back-to-disciplines" class="text-button" type="button">← К дисциплинам</button>
+                                <p class="section-kicker">Эксперт</p>
+                                <h2 id="expert-discipline-title">Дисциплина</h2>
+                                <p id="expert-discipline-description" class="muted-text"></p>
+                            </div>
+                            <div class="action-row">
+                                <button id="expert-open-theme-create" class="primary-button" type="button">Новая тема</button>
+                            </div>
+                        </div>
+
+                        <div id="expert-theme-create-panel" class="panel create-panel hidden">
+                            <div class="panel-headline">
+                                <h3>Создание темы</h3>
+                                <button id="expert-close-theme-create" class="ghost-button" type="button">Закрыть</button>
+                            </div>
+                            <form id="expert-theme-form" class="stack-form">
+                                <label>
+                                    <span>Название темы</span>
+                                    <input name="title" placeholder="Например, Графы: поиск в ширину" required>
+                                </label>
+                                <label>
+                                    <span>О чём тема</span>
+                                    <textarea name="description" rows="4" placeholder="Коротко опиши тему"></textarea>
+                                </label>
+                                <div class="form-row">
+                                    <label>
+                                        <span>Порядковый номер</span>
+                                        <input name="order_index" type="number" min="1" value="1" required>
+                                    </label>
+                                    <label class="checkbox-row">
+                                        <input name="is_required" type="checkbox" checked>
+                                        <span>Обязательная тема</span>
+                                    </label>
+                                </div>
+                                <button class="primary-button" type="submit">Сохранить тему</button>
+                            </form>
+                        </div>
+
+                        <div class="panel">
+                            <div class="list-card-head">
+                                <h3>Темы дисциплины</h3>
+                                <span id="expert-theme-count" class="count-chip">0</span>
+                            </div>
+                            <div id="expert-themes-empty" class="empty-state">У этой дисциплины пока нет тем.</div>
+                            <div id="expert-themes-list" class="item-list"></div>
+                        </div>
+                    </div>
+
+                    <div id="expert-screen-theme" class="screen-card hidden">
+                        <div class="screen-head">
+                            <div>
+                                <button id="expert-back-to-discipline" class="text-button" type="button">← К темам дисциплины</button>
+                                <p class="section-kicker">Эксперт</p>
+                                <h2 id="expert-theme-title">Тема</h2>
+                                <p id="expert-theme-description" class="muted-text"></p>
+                            </div>
+                            <div class="action-row wrap">
+                                <div id="expert-theme-required" class="status-badge">Обязательная тема</div>
+                                <button id="expert-open-element-create" class="primary-button" type="button">Новый элемент ЗУВ</button>
+                            </div>
+                        </div>
+
+                        <div id="expert-element-create-panel" class="panel create-panel hidden">
+                            <div class="panel-headline">
+                                <h3>Создание элемента ЗУВ</h3>
+                                <button id="expert-close-element-create" class="ghost-button" type="button">Закрыть</button>
+                            </div>
+                            <form id="expert-element-form" class="stack-form">
+                                <label>
+                                    <span>Тип элемента</span>
+                                    <select name="competency_type" id="expert-element-type">
+                                        <option value="know">Знать</option>
+                                        <option value="can">Уметь</option>
+                                        <option value="master">Владеть</option>
+                                    </select>
+                                </label>
+                                <label>
+                                    <span>Название элемента</span>
+                                    <input name="title" placeholder="Например, Понятие вершины графа" required>
+                                </label>
+                                <label>
+                                    <span>Описание</span>
+                                    <textarea name="description" rows="4" placeholder="Что именно должен освоить студент"></textarea>
+                                </label>
+                                <div class="form-row">
+                                    <label class="checkbox-row compact">
+                                        <input name="is_required" type="checkbox" checked>
+                                        <span>Обязательный элемент</span>
+                                    </label>
+                                    <label id="expert-assessment-format-wrap">
+                                        <span>Формат проверки для "Знать"</span>
+                                        <select name="assessment_format" id="expert-assessment-format">
+                                            <option value="question_answer">Вопрос-ответ</option>
+                                            <option value="test">Тест</option>
+                                        </select>
+                                    </label>
+                                </div>
+                                <label id="expert-parent-wrap">
+                                    <span id="expert-parent-label">Связь с другим элементом</span>
+                                    <select name="parent_element_id" id="expert-parent-select">
+                                        <option value="">Без связи</option>
+                                    </select>
+                                </label>
+                                <button class="primary-button" type="submit">Сохранить элемент</button>
+                            </form>
+                        </div>
+
+                    <div class="tree-layout">
+                            <section class="panel">
+                                <div class="list-card-head">
+                                    <h3>Структура ЗУВ</h3>
+                                    <span id="expert-element-count" class="count-chip">0</span>
+                                </div>
+                                <p class="muted-text tree-hint">
+                                    Сверху отображаются элементы "Знать", ниже связанные с ними "Уметь", а затем "Владеть".
+                                </p>
+                                <div class="tree-legend">
+                                    <span class="legend-chip know">Знать</span>
+                                    <span class="legend-chip can">Уметь</span>
+                                    <span class="legend-chip master">Владеть</span>
+                                </div>
+                                <div id="expert-elements-empty" class="empty-state">У этой темы пока нет элементов ЗУВ.</div>
+                                <div id="expert-tree-root" class="tree-root"></div>
+                            </section>
+
+                            <section class="panel side-panel hidden-secondary">
+                                <div class="list-card-head">
+                                    <h3>Плоский список элементов</h3>
+                                </div>
+                                <div id="expert-elements-list" class="item-list compact-list"></div>
+                            </section>
+                        </div>
+                    </div>
+                </section>
+
+                <section id="teacher-view" class="role-view hidden">
+                    <div id="teacher-screen-disciplines" class="screen-card">
+                        <div class="screen-head">
+                            <div>
+                                <p class="section-kicker">Преподаватель</p>
+                                <h2>Выбор дисциплины</h2>
+                                <p class="muted-text">Открой дисциплину и выбери темы, которые хочешь включить в свой вариант.</p>
+                            </div>
+                            <button id="teacher-refresh-disciplines" class="ghost-button" type="button">Обновить</button>
+                        </div>
+
+                        <div class="panel">
+                            <div class="list-card-head">
+                                <h3>Доступные дисциплины</h3>
+                                <span id="teacher-discipline-count" class="count-chip">0</span>
+                            </div>
+                            <div id="teacher-disciplines-empty" class="empty-state">Эксперт ещё не создал дисциплины.</div>
+                            <div id="teacher-disciplines-list" class="item-list"></div>
+                        </div>
+                    </div>
+
+                    <div id="teacher-screen-selection" class="screen-card hidden">
+                        <div class="screen-head">
+                            <div>
+                                <button id="teacher-back-to-disciplines" class="text-button" type="button">← К списку дисциплин</button>
+                                <p class="section-kicker">Преподаватель</p>
+                                <h2 id="teacher-discipline-title">Дисциплина</h2>
+                                <p id="teacher-discipline-description" class="muted-text"></p>
+                            </div>
+                            <div id="teacher-selection-count" class="status-badge">Выбрано 0 тем</div>
+                        </div>
+
+                        <div class="teacher-layout">
+                            <section class="panel">
+                                <div class="list-card-head">
+                                    <h3>Темы дисциплины</h3>
+                                    <span id="teacher-theme-count" class="count-chip">0</span>
+                                </div>
+                                <div id="teacher-themes-empty" class="empty-state">У этой дисциплины нет тем для выбора.</div>
+                                <div id="teacher-themes-list" class="item-list"></div>
+                            </section>
+
+                            <section class="panel side-panel">
+                                <h3>Свой вариант дисциплины</h3>
+                                <p class="muted-text">
+                                    Отметь галочками интересующие темы. После сохранения система запомнит твой набор.
+                                </p>
+                                <button id="teacher-save-selection" class="primary-button" type="button">Сохранить выбранные темы</button>
+                            </section>
+                        </div>
+                    </div>
+                </section>
+
+                <section id="student-view" class="role-view hidden">
+                    <div class="screen-card">
+                        <div class="screen-head">
+                            <div>
+                                <p class="section-kicker">Студент</p>
+                                <h2>Заготовка под будущий кабинет</h2>
+                                <p class="muted-text">
+                                    Роль студента уже заведена в системе и участвует в авторизации.
+                                    Следующим этапом сюда можно будет добавить траекторию обучения и прохождение контроля.
+                                </p>
+                            </div>
+                        </div>
+                        <div class="panel placeholder-panel">
+                            <strong>Пока реализована только основа роли студента.</strong>
+                            <p>Логика прохождения контроля и просмотра прогресса будет добавлена позже.</p>
+                        </div>
+                    </div>
+                </section>
+            </section>
+        </main>
+
+        <div id="flash" class="flash hidden"></div>
+    </div>
+
+    <script src="/static/app.js?v=20260413-profile-auth" defer></script>
+</body>
+</html>

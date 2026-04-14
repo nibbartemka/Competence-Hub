@@ -1,54 +1,42 @@
-from typing import AsyncGenerator
+from typing import Generator
 
-from sqlalchemy.ext.asyncio import (
-    create_async_engine,
-    AsyncSession,
-    AsyncEngine,
-    async_sessionmaker
-)
-from sqlalchemy.orm import declarative_base
+from sqlalchemy import create_engine
+from sqlalchemy.orm import Session, declarative_base, sessionmaker
 
 from .config import settings
 
 
 __all__ = [
     'Base',
-    'get_async_session',
-    # 'init_db',
-    # 'drop_db',
+    'SessionLocal',
+    'engine',
+    'get_db',
 ]
 
 
 Base = declarative_base()
 
 
-async_engine: AsyncEngine = create_async_engine(
-    settings.POSTGRES.async_DSN,
-    pool_size=5,
-    max_overflow=10,
+engine = create_engine(
+    settings.DATABASE_URL,
     echo=False,
+    connect_args={"check_same_thread": False}
+    if settings.DATABASE_URL.startswith("sqlite")
+    else {},
 )
 
 
-AsyncSessionLocal = async_sessionmaker(
-    bind=async_engine,
-    class_=AsyncSession,
+SessionLocal = sessionmaker(
+    bind=engine,
+    class_=Session,
     expire_on_commit=False,
     autoflush=False,
-    autocommit=False,
 )
 
 
-async def get_async_session() -> AsyncGenerator[AsyncSession, None]:
-    async with AsyncSessionLocal() as session:
+def get_db() -> Generator[Session, None, None]:
+    session = SessionLocal()
+    try:
         yield session
-
-
-async def init_db() -> None:
-    async with async_engine.begin() as connection:
-        await connection.run_sync(Base.metadata.create_all)
-
-
-async def drop_db() -> None:
-    async with async_engine.begin() as connection:
-        await connection.run_sync(Base.metadata.drop_all)
+    finally:
+        session.close()

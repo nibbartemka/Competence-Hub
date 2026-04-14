@@ -1,7 +1,7 @@
 from enum import StrEnum
 
+from pydantic import BaseModel, Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
-from pydantic import Field, BaseModel
 
 
 __all__ = [
@@ -15,11 +15,11 @@ class EnvironmentTypes(StrEnum):
 
 
 class PostgresSettings(BaseModel):
-    HOST: str
+    HOST: str = "localhost"
     PORT: int = 5432
-    USER: str
-    PASSWORD: str
-    DB: str
+    USER: str = "postgres"
+    PASSWORD: str = "postgres"
+    DB: str = "competence_hub"
 
     @property
     def async_DSN(self) -> str:
@@ -42,9 +42,9 @@ class AppSettings(BaseModel):
 
 
 class Settings(BaseSettings):
-    APP: AppSettings
-
-    POSTGRES: PostgresSettings
+    APP: AppSettings = AppSettings()
+    POSTGRES: PostgresSettings = PostgresSettings()
+    DATABASE_URL: str = "sqlite:///./competence_hub.db"
 
     ENVIRONMENT: EnvironmentTypes = Field(
         default=EnvironmentTypes.DEVELOPMENT,

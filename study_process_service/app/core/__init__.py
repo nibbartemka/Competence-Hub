@@ -1,11 +1,17 @@
 from .config import settings
+from .bootstrap import initialize_database
 from .db import (
-    get_async_session,
-    Base
+    Base,
+    SessionLocal,
+    engine,
+    get_db,
 )
 
 __all__ = [
     'settings',
-    'get_async_session',
-    'Base'
+    'initialize_database',
+    'Base',
+    'SessionLocal',
+    'engine',
+    'get_db',
 ]
