@@ -150,8 +150,8 @@ function buildTopicDetailCard(
     stats: [
       { label: "Входящие дуги", value: String(metrics.incomingCount) },
       { label: "Исходящие дуги", value: String(metrics.outgoingCount) },
-      { label: "Элементы Req(T)", value: String(metrics.requiredCount) },
-      { label: "Элементы New(T)", value: String(metrics.formedCount) },
+      { label: "Необходимые элементы", value: String(metrics.requiredCount) },
+      { label: "Новые элементы", value: String(metrics.formedCount) },
     ],
     footnote:
       "Клик по карточке темы на графе переводит на второй уровень и показывает ее внутреннюю структуру элементов.",
@@ -370,8 +370,8 @@ function buildTopicFocusDetail(topic: Topic, topicLinks: TopicKnowledgeElement[]
       topic.description ??
       "Эта тема связана с требуемыми и формируемыми элементами компетенций.",
     chips: [
-      { label: `Req(T) = ${requiredCount}`, tone: "required" },
-      { label: `New(T) = ${formedCount}`, tone: "formed" },
+      { label: `Необходимых элементов - ${requiredCount}`, tone: "required" },
+      { label: `Новых элементов - ${formedCount}`, tone: "formed" },
     ],
     stats: [
       { label: "Требуемых элементов", value: String(requiredCount) },
