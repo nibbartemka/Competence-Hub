@@ -8,6 +8,7 @@ from .enums import (
     CompetenceType,
     KnowledgeElementRelationType,
     TopicKnowledgeElementRole,
+    TopicDependencyRelationType,
 )
 
 
@@ -72,6 +73,10 @@ class TopicDependency(Base):
 
     id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
+    relation_type: Mapped[TopicDependencyRelationType] = mapped_column(
+        Enum(TopicDependencyRelationType, name="relation_type_enum"),
+        nullable=False,
+    )
 
     prerequisite_topic_id: Mapped[UUID] = mapped_column(
         ForeignKey("topics.id", ondelete="CASCADE"),

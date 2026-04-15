@@ -27,6 +27,11 @@ class KnowledgeElementRelationType(StrEnum):
     AUTOMATES = "automates"
 
 
+class TopicDependencyRelationType(StrEnum):
+    REQUIRES = "requires"
+    POSSIBLE_FLOW = "possible_flow"
+
+
 # Backward-compatible alias for older code that still uses the previous name.
 TopicElementRelationType = KnowledgeElementRelationType
 
