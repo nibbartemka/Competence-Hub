@@ -45,6 +45,7 @@ async def create_topic_dependency(
     dependency = TopicDependency(
         prerequisite_topic_id=payload.prerequisite_topic_id,
         dependent_topic_id=payload.dependent_topic_id,
+        relation_type=payload.relation_type,
         description=payload.description,
     )
     session.add(dependency)

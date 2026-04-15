@@ -1,11 +1,12 @@
 from uuid import UUID
 
-from fastapi import APIRouter, status
+from fastapi import APIRouter, HTTPException, status
 from sqlalchemy import or_, select
 
 from app.api.crud import commit_or_409, delete_and_commit, not_found
 from app.api.deps import DbSession
 from app.models import KnowledgeElement, KnowledgeElementRelation
+from app.models.enums import CompetenceType
 from app.schemas import KnowledgeElementRelationCreate, KnowledgeElementRelationRead
 
 
@@ -48,6 +49,18 @@ async def create_knowledge_element_relation(
     target_element = await session.get(KnowledgeElement, payload.target_element_id)
     if target_element is None:
         raise not_found("Knowledge element", payload.target_element_id)
+
+    if source_element.competence_type != CompetenceType.KNOW:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Element relations are currently supported only for competence type 'know'.",
+        )
+
+    if target_element.competence_type != CompetenceType.KNOW:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Element relations are currently supported only for competence type 'know'.",
+        )
 
     relation = KnowledgeElementRelation(
         source_element_id=payload.source_element_id,

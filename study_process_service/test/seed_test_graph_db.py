@@ -15,20 +15,22 @@ if str(ROOT_DIR) not in sys.path:
 from app.core import Base
 from app.models import (
     Discipline,
+    KnowledgeElement,
+    KnowledgeElementRelation,
     Topic,
     TopicDependency,
-    KnowledgeElement,
     TopicKnowledgeElement,
 )
 from app.models.enums import (
     CompetenceType,
-    TopicKnowledgeElementRole,
+    KnowledgeElementRelationType,
     TopicDependencyRelationType,
+    TopicKnowledgeElementRole,
 )
 
 
-DB_PATH = Path("../app.db")
-DATABASE_URL = f"sqlite:///{DB_PATH}"
+DB_PATH = ROOT_DIR / "app.db"
+DATABASE_URL = f"sqlite:///{DB_PATH.as_posix()}"
 
 
 def recreate_database() -> None:
@@ -38,31 +40,27 @@ def recreate_database() -> None:
     engine = create_engine(DATABASE_URL, echo=False, future=True)
     Base.metadata.create_all(engine)
 
-    SessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False, future=True)
+    session_local = sessionmaker(bind=engine, autoflush=False, autocommit=False, future=True)
 
-    with SessionLocal() as session:
+    with session_local() as session:
         seed_data(session)
         session.commit()
 
-    print(f"База создана: {DB_PATH.resolve()}")
+    print(f"Database recreated: {DB_PATH.resolve()}")
 
 
 def seed_data(session: Session) -> None:
-    # 1. Дисциплина
-    discipline = Discipline(name="Графы")
+    discipline = Discipline(name="Graphs")
     session.add(discipline)
     session.flush()
 
-    # 2. Элементы знаний
-    # Для простоты все элементы делаем competence_type=KNOW.
-    # При желании потом можно часть перевести в CAN / MASTER.
-    element_names = ["Э1", "Э2", "Э3", "Э4", "Э5", "Э6", "Э7"]
+    element_names = ["E1", "E2", "E3", "E4", "E5", "E6", "E7"]
     elements: dict[str, KnowledgeElement] = {}
 
     for name in element_names:
         element = KnowledgeElement(
             name=name,
-            description=f"Тестовый элемент знаний {name}",
+            description=f"Seed knowledge element {name}",
             competence_type=CompetenceType.KNOW,
         )
         session.add(element)
@@ -70,37 +68,36 @@ def seed_data(session: Session) -> None:
 
     session.flush()
 
-    # 3. Темы и их Req/New множества
     topics_spec = [
         {
-            "name": "Т1",
-            "description": "Стартовая тема. Формирует Э1 и Э2.",
+            "name": "T1",
+            "description": "Entry topic. Produces E1 and E2.",
             "required": [],
-            "formed": ["Э1", "Э2"],
+            "formed": ["E1", "E2"],
         },
         {
-            "name": "Т2",
-            "description": "Требует Э1 и Э2. Формирует Э3 и Э4.",
-            "required": ["Э1", "Э2"],
-            "formed": ["Э3", "Э4"],
+            "name": "T2",
+            "description": "Requires E1 and E2. Produces E3 and E4.",
+            "required": ["E1", "E2"],
+            "formed": ["E3", "E4"],
         },
         {
-            "name": "Т3",
-            "description": "Требует Э1. Формирует Э5.",
-            "required": ["Э1"],
-            "formed": ["Э5"],
+            "name": "T3",
+            "description": "Requires E1. Produces E5.",
+            "required": ["E1"],
+            "formed": ["E5"],
         },
         {
-            "name": "Т4",
-            "description": "Требует Э1, Э2, Э3. Формирует Э6.",
-            "required": ["Э1", "Э2", "Э3"],
-            "formed": ["Э6"],
+            "name": "T4",
+            "description": "Requires E1, E2 and E3. Produces E6.",
+            "required": ["E1", "E2", "E3"],
+            "formed": ["E6"],
         },
         {
-            "name": "Т5",
-            "description": "Требует Э3 и Э5. Формирует Э7.",
-            "required": ["Э3", "Э5"],
-            "formed": ["Э7"],
+            "name": "T5",
+            "description": "Requires E3 and E5. Produces E7.",
+            "required": ["E3", "E5"],
+            "formed": ["E7"],
         },
     ]
 
@@ -117,9 +114,6 @@ def seed_data(session: Session) -> None:
 
     session.flush()
 
-    # 4. Привязка элементов к темам
-    # required -> role=REQUIRED
-    # formed   -> role=FORMED
     for spec in topics_spec:
         topic = topics[spec["name"]]
 
@@ -129,7 +123,7 @@ def seed_data(session: Session) -> None:
                     topic_id=topic.id,
                     element_id=elements[element_name].id,
                     role=TopicKnowledgeElementRole.REQUIRED,
-                    note=f"{element_name} необходим для начала изучения темы {topic.name}",
+                    note=f"{element_name} is required before starting topic {topic.name}",
                 )
             )
 
@@ -139,30 +133,105 @@ def seed_data(session: Session) -> None:
                     topic_id=topic.id,
                     element_id=elements[element_name].id,
                     role=TopicKnowledgeElementRole.FORMED,
-                    note=f"{element_name} формируется при изучении темы {topic.name}",
+                    note=f"{element_name} is formed while studying topic {topic.name}",
                 )
             )
 
     session.flush()
 
-    # 5. Автоматическое построение topic_dependencies
+    seed_knowledge_element_relations(session, elements)
     build_topic_dependencies(session)
-
-    # 6. Печать результата в консоль
     print_seed_summary(session)
+
+
+def seed_knowledge_element_relations(
+    session: Session,
+    elements: dict[str, KnowledgeElement],
+) -> None:
+    relations_spec = [
+        (
+            "E1",
+            "E2",
+            KnowledgeElementRelationType.BUILDS_ON,
+            "E2 builds on understanding of E1.",
+        ),
+        (
+            "E2",
+            "E3",
+            KnowledgeElementRelationType.REQUIRES,
+            "E3 requires prior understanding of E2.",
+        ),
+        (
+            "E3",
+            "E4",
+            KnowledgeElementRelationType.CONTAINS,
+            "E3 contains E4 as a component.",
+        ),
+        (
+            "E4",
+            "E3",
+            KnowledgeElementRelationType.PART_OF,
+            "E4 is part of E3.",
+        ),
+        (
+            "E5",
+            "E3",
+            KnowledgeElementRelationType.REFINES,
+            "E5 refines the broader idea represented by E3.",
+        ),
+        (
+            "E3",
+            "E6",
+            KnowledgeElementRelationType.GENERALIZES,
+            "E3 generalizes the more specific case represented by E6.",
+        ),
+        (
+            "E6",
+            "E7",
+            KnowledgeElementRelationType.SIMILAR,
+            "E6 and E7 are conceptually similar.",
+        ),
+        (
+            "E2",
+            "E5",
+            KnowledgeElementRelationType.CONTRASTS_WITH,
+            "E2 contrasts with E5 and should be distinguished.",
+        ),
+        (
+            "E1",
+            "E5",
+            KnowledgeElementRelationType.USED_WITH,
+            "E1 is often used together with E5.",
+        ),
+        (
+            "E7",
+            "E2",
+            KnowledgeElementRelationType.PROPERTY_OF,
+            "E7 can be treated as a property of E2.",
+        ),
+    ]
+
+    session.add_all(
+        [
+            KnowledgeElementRelation(
+                source_element_id=elements[source_name].id,
+                target_element_id=elements[target_name].id,
+                relation_type=relation_type,
+                description=description,
+            )
+            for source_name, target_name, relation_type, description in relations_spec
+        ]
+    )
+    session.flush()
 
 
 def build_topic_dependencies(session: Session) -> None:
     topics = session.scalars(select(Topic)).all()
 
-    # Собираем множества:
-    # topic_id -> set(required element names)
     required_map: dict[UUID, set[str]] = {}
     formed_map: dict[UUID, set[str]] = {}
-    topic_name_map: dict[UUID, str] = {}
 
     for topic in topics:
-        topic_name_map[topic.id] = topic.name
         required_map[topic.id] = set()
         formed_map[topic.id] = set()
 
@@ -181,30 +250,32 @@ def build_topic_dependencies(session: Session) -> None:
                 continue
 
             covered = formed_map[source.id] & required_map[target.id]
+            if not covered:
+                continue
 
-            if covered:
-                dep = TopicDependency(
+            dependencies_to_add.append(
+                TopicDependency(
                     prerequisite_topic_id=source.id,
                     dependent_topic_id=target.id,
                     relation_type=TopicDependencyRelationType.REQUIRES,
                     description=(
-                        f"{source.name} -> {target.name}: "
-                        f"покрывает требуемые элементы {', '.join(sorted(covered))}"
+                        f"{source.name} -> {target.name}: covers required elements "
+                        f"{', '.join(sorted(covered))}"
                     ),
                 )
-                dependencies_to_add.append(dep)
+            )
 
     session.add_all(dependencies_to_add)
     session.flush()
 
 
 def print_seed_summary(session: Session) -> None:
-    print("\n=== Темы и элементы ===")
+    print("\n=== Topics and elements ===")
     topics = session.scalars(select(Topic)).all()
 
     for topic in topics:
-        required = []
-        formed = []
+        required: list[str] = []
+        formed: list[str] = []
 
         for link in topic.element_links:
             if link.role == TopicKnowledgeElementRole.REQUIRED:
@@ -212,16 +283,24 @@ def print_seed_summary(session: Session) -> None:
             elif link.role == TopicKnowledgeElementRole.FORMED:
                 formed.append(link.element.name)
 
-        print(f"{topic.name}")
+        print(topic.name)
         print(f"  required: {sorted(required)}")
         print(f"  formed:   {sorted(formed)}")
 
-    print("\n=== Зависимости тем ===")
+    print("\n=== Topic dependencies ===")
     dependencies = session.scalars(select(TopicDependency)).all()
-    for dep in dependencies:
+    for dependency in dependencies:
         print(
-            f"{dep.prerequisite_topic.name} -> {dep.dependent_topic.name} "
-            f"[{dep.relation_type.value}] | {dep.description}"
+            f"{dependency.prerequisite_topic.name} -> {dependency.dependent_topic.name} "
+            f"[{dependency.relation_type.value}] | {dependency.description}"
+        )
+
+    print("\n=== Knowledge element relations ===")
+    relations = session.scalars(select(KnowledgeElementRelation)).all()
+    for relation in relations:
+        print(
+            f"{relation.source_element.name} -> {relation.target_element.name} "
+            f"[{relation.relation_type.value}] | {relation.description}"
         )
 
 
