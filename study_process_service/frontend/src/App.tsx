@@ -53,31 +53,31 @@ const GRAPH_OPTIONS: RGOptions = {
 
 const TOPIC_LEGEND_SECTIONS: OverlayLegendSection[] = [
   {
-    title: "Arrows",
+    title: "Стрелки",
     items: [
       {
         markerClass: "graph-legend-overlay__marker--topic-arrow",
-        label: "Topic dependency",
-        hint: "One topic helps prepare the next topic.",
+        label: "Зависимость от темы",
+        hint: "Показывает изучение каких тем требуется перед тем как приступить к изучению текущей",
       },
     ],
   },
   {
-    title: "Colors",
+    title: "Цвета",
     items: [
       {
         markerClass: "graph-legend-overlay__marker--topic-color",
-        label: "Blue",
+        label: "Синий",
         hint: "Topic nodes and topic graph connections.",
       },
       {
         markerClass: "graph-legend-overlay__marker--required-color",
-        label: "Dark",
+        label: "Темно-серый",
         hint: "Required elements before the topic starts.",
       },
       {
         markerClass: "graph-legend-overlay__marker--formed-color",
-        label: "Green",
+        label: "Зеленый",
         hint: "Elements learned after the topic.",
       },
     ],
@@ -86,7 +86,7 @@ const TOPIC_LEGEND_SECTIONS: OverlayLegendSection[] = [
 
 const ELEMENT_LEGEND_SECTIONS: OverlayLegendSection[] = [
   {
-    title: "Arrows",
+    title: "Стрелки",
     items: [
       {
         markerClass: "graph-legend-overlay__marker--required-arrow",
@@ -321,23 +321,11 @@ export default function App() {
     });
   }
 
+  /**
+   * Клик по ноде ТОЛЬКО выделяет её.
+   * Переход между уровнями — через кнопки в карточке или hint.
+   */
   function handleNodeClick(node: RGNode) {
-    const payload = node.data as { entity?: string; topicId?: string } | undefined;
-    if (!payload?.entity) {
-      setSelectedNodeId(node.id);
-      return;
-    }
-
-    if (payload.entity === "topic" && payload.topicId) {
-      applyView({ level: "elements", topicId: payload.topicId });
-      return false;
-    }
-
-    if (payload.entity === "topic-focus" && payload.topicId) {
-      applyView({ level: "topics" }, `topic:${payload.topicId}`);
-      return false;
-    }
-
     setSelectedNodeId(node.id);
     return false;
   }
@@ -370,6 +358,40 @@ export default function App() {
     scene?.detailsByNodeId[selectedNodeId || scene.defaultSelectedNodeId] ?? null;
   const overlayLegendSections =
     view.level === "topics" ? TOPIC_LEGEND_SECTIONS : ELEMENT_LEGEND_SECTIONS;
+
+  // 🆕 Хелперы для извлечения topicId из selectedNodeId
+  const getTopicIdFromSelectedNode = () => {
+    if (selectedNodeId.startsWith("topic:")) {
+      return selectedNodeId.slice(6);
+    }
+    if (selectedNodeId.startsWith("topic-focus:")) {
+      return selectedNodeId.slice(12);
+    }
+    return null;
+  };
+
+  // 🆕 Обработчики кнопок навигации
+  const handleNavigateToElements = () => {
+    const topicId = getTopicIdFromSelectedNode();
+    if (topicId) {
+      applyView({ level: "elements", topicId });
+    }
+  };
+
+  const handleNavigateToTopics = () => {
+    const topicId = getTopicIdFromSelectedNode();
+    if (topicId) {
+      applyView({ level: "topics" }, `topic:${topicId}`);
+    } else {
+      applyView({ level: "topics" });
+    }
+  };
+
+  // 🆕 Флаги для условного рендера кнопок
+  const isTopicNodeSelected = selectedNodeId.startsWith("topic:");
+  const isTopicFocusSelected = selectedNodeId.startsWith("topic-focus:");
+  const canNavigateToElements = view.level === "topics" && isTopicNodeSelected;
+  const canNavigateToTopics = view.level === "elements" && (isTopicFocusSelected || isTopicNodeSelected);
 
   return (
     <div className={`page-shell page-shell--${view.level}`}>
@@ -447,6 +469,26 @@ export default function App() {
           <section className="card" key={`${scene?.key ?? "empty"}-${selectedNodeId}`}>
             <div className="card__header">
               <span className="card__eyebrow">Выбранная вершина</span>
+              {/* 🆕 Кнопка перехода к элементам темы (показывается на уровне тем при выборе темы) */}
+              {canNavigateToElements && (
+                <button
+                  className="primary-button primary-button--small"
+                  onClick={handleNavigateToElements}
+                  type="button"
+                >
+                  Раскрыть тему →
+                </button>
+              )}
+              {/* 🆕 Кнопка возврата к темам (показывается на уровне элементов) */}
+              {canNavigateToTopics && (
+                <button
+                  className="ghost-button ghost-button--small"
+                  onClick={handleNavigateToTopics}
+                  type="button"
+                >
+                  ← Назад к темам
+                </button>
+              )}
             </div>
             {detail ? (
               <>
