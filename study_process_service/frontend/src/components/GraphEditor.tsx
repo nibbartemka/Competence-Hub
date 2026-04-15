@@ -158,13 +158,22 @@ export function GraphEditor({
   const [relationType, setRelationType] = useState<KnowledgeElementRelationType | "">("");
   const [relationDescription, setRelationDescription] = useState("");
 
-  const sortedTopics = topics.slice().sort((left, right) => left.name.localeCompare(right.name));
-  const sortedAllElements = allElements
-    .slice()
-    .sort((left, right) => left.name.localeCompare(right.name));
-  const relationElements = allElements.length ? sortedAllElements : disciplineElements
-    .slice()
-    .sort((left, right) => left.name.localeCompare(right.name));
+  // ✅ FIX #1: Мемоизируем сортированные массивы, чтобы они не меняли reference на каждом рендере
+  const sortedTopics = useMemo(() => 
+    topics.slice().sort((left, right) => left.name.localeCompare(right.name, "ru")), 
+    [topics]
+  );
+
+  const sortedAllElements = useMemo(() => 
+    allElements.slice().sort((left, right) => left.name.localeCompare(right.name, "ru")), 
+    [allElements]
+  );
+
+  const relationElements = useMemo(() => {
+    const elements = allElements.length ? allElements : disciplineElements;
+    return elements.slice().sort((left, right) => left.name.localeCompare(right.name, "ru"));
+  }, [allElements, disciplineElements]);
+
   const relationSourceElement = useMemo(
     () => relationElements.find((element) => element.id === relationSourceElementId),
     [relationElements, relationSourceElementId],
@@ -208,23 +217,30 @@ export function GraphEditor({
     return () => controller.abort();
   }, []);
 
+  // ✅ FIX #2: Добавляем проверки, чтобы не вызывать setState с тем же значением
   useEffect(() => {
     if (!sortedTopics.length) {
-      setTopicElementTopicId("");
-      setDependencySourceTopicId("");
-      setDependencyTargetTopicId("");
+      if (topicElementTopicId) setTopicElementTopicId("");
+      if (dependencySourceTopicId) setDependencySourceTopicId("");
+      if (dependencyTargetTopicId) setDependencyTargetTopicId("");
       return;
     }
 
-    if (!sortedTopics.some((topic) => topic.id === topicElementTopicId)) {
+    if (topicElementTopicId && !sortedTopics.some((topic) => topic.id === topicElementTopicId)) {
+      setTopicElementTopicId(sortedTopics[0].id);
+    } else if (!topicElementTopicId && sortedTopics[0]) {
       setTopicElementTopicId(sortedTopics[0].id);
     }
 
-    if (!sortedTopics.some((topic) => topic.id === dependencySourceTopicId)) {
+    if (dependencySourceTopicId && !sortedTopics.some((topic) => topic.id === dependencySourceTopicId)) {
+      setDependencySourceTopicId(sortedTopics[0].id);
+    } else if (!dependencySourceTopicId && sortedTopics[0]) {
       setDependencySourceTopicId(sortedTopics[0].id);
     }
 
-    if (!sortedTopics.some((topic) => topic.id === dependencyTargetTopicId)) {
+    if (dependencyTargetTopicId && !sortedTopics.some((topic) => topic.id === dependencyTargetTopicId)) {
+      setDependencyTargetTopicId(sortedTopics[0].id);
+    } else if (!dependencyTargetTopicId && sortedTopics[0]) {
       setDependencyTargetTopicId(sortedTopics[0].id);
     }
   }, [
@@ -236,35 +252,45 @@ export function GraphEditor({
 
   useEffect(() => {
     if (!sortedAllElements.length) {
-      setTopicElementElementId("");
-      setSelectedRequiredElementIds([]);
+      if (topicElementElementId) setTopicElementElementId("");
+      if (selectedRequiredElementIds.length) setSelectedRequiredElementIds([]);
       return;
     }
 
-    if (!sortedAllElements.some((element) => element.id === topicElementElementId)) {
+    if (topicElementElementId && !sortedAllElements.some((element) => element.id === topicElementElementId)) {
+      setTopicElementElementId(sortedAllElements[0].id);
+    } else if (!topicElementElementId && sortedAllElements[0]) {
       setTopicElementElementId(sortedAllElements[0].id);
     }
 
-    setSelectedRequiredElementIds((current) =>
-      current.filter((elementId) =>
+    setSelectedRequiredElementIds((current) => {
+      const filtered = current.filter((elementId) =>
         sortedAllElements.some((element) => element.id === elementId),
-      ),
-    );
+      );
+      // Обновляем только если массив изменился
+      return filtered.length !== current.length ? filtered : current;
+    });
   }, [sortedAllElements, topicElementElementId]);
 
   useEffect(() => {
     if (!relationElements.length) {
-      setRelationSourceElementId("");
-      setRelationTargetElementId("");
-      setRelationType("");
+      if (relationSourceElementId) setRelationSourceElementId("");
+      if (relationTargetElementId) setRelationTargetElementId("");
+      if (relationType) setRelationType("");
       return;
     }
 
-    if (!relationElements.some((element) => element.id === relationSourceElementId)) {
+    if (relationSourceElementId && !relationElements.some((element) => element.id === relationSourceElementId)) {
+      setRelationSourceElementId(relationElements[0].id);
+    } else if (!relationSourceElementId && relationElements[0]) {
       setRelationSourceElementId(relationElements[0].id);
     }
 
-    if (!relationElements.some((element) => element.id === relationTargetElementId)) {
+    if (relationTargetElementId && !relationElements.some((element) => element.id === relationTargetElementId)) {
+      setRelationTargetElementId(
+        nextDifferentValue(relationSourceElementId, relationElements),
+      );
+    } else if (!relationTargetElementId && relationElements.length > 1) {
       setRelationTargetElementId(
         nextDifferentValue(relationSourceElementId, relationElements),
       );
@@ -273,11 +299,13 @@ export function GraphEditor({
 
   useEffect(() => {
     if (!relationOptions.length) {
-      setRelationType("");
+      if (relationType) setRelationType("");
       return;
     }
 
-    if (!relationOptions.some((option) => option.value === relationType)) {
+    if (relationType && !relationOptions.some((option) => option.value === relationType)) {
+      setRelationType(relationOptions[0].value);
+    } else if (!relationType && relationOptions[0]) {
       setRelationType(relationOptions[0].value);
     }
   }, [relationOptions, relationType]);
