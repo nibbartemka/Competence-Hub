@@ -162,16 +162,16 @@ export function GraphEditor({
   const sortedAllElements = allElements
     .slice()
     .sort((left, right) => left.name.localeCompare(right.name));
-  const disciplineRelationElements = disciplineElements
+  const relationElements = allElements.length ? sortedAllElements : disciplineElements
     .slice()
     .sort((left, right) => left.name.localeCompare(right.name));
   const relationSourceElement = useMemo(
-    () => disciplineRelationElements.find((element) => element.id === relationSourceElementId),
-    [disciplineRelationElements, relationSourceElementId],
+    () => relationElements.find((element) => element.id === relationSourceElementId),
+    [relationElements, relationSourceElementId],
   );
   const relationTargetElement = useMemo(
-    () => disciplineRelationElements.find((element) => element.id === relationTargetElementId),
-    [disciplineRelationElements, relationTargetElementId],
+    () => relationElements.find((element) => element.id === relationTargetElementId),
+    [relationElements, relationTargetElementId],
   );
   const relationOptions = useMemo(
     () =>
@@ -253,23 +253,23 @@ export function GraphEditor({
   }, [sortedAllElements, topicElementElementId]);
 
   useEffect(() => {
-    if (!disciplineRelationElements.length) {
+    if (!relationElements.length) {
       setRelationSourceElementId("");
       setRelationTargetElementId("");
       setRelationType("");
       return;
     }
 
-    if (!disciplineRelationElements.some((element) => element.id === relationSourceElementId)) {
-      setRelationSourceElementId(disciplineRelationElements[0].id);
+    if (!relationElements.some((element) => element.id === relationSourceElementId)) {
+      setRelationSourceElementId(relationElements[0].id);
     }
 
-    if (!disciplineRelationElements.some((element) => element.id === relationTargetElementId)) {
+    if (!relationElements.some((element) => element.id === relationTargetElementId)) {
       setRelationTargetElementId(
-        nextDifferentValue(relationSourceElementId, disciplineRelationElements),
+        nextDifferentValue(relationSourceElementId, relationElements),
       );
     }
-  }, [disciplineRelationElements, relationSourceElementId, relationTargetElementId]);
+  }, [relationElements, relationSourceElementId, relationTargetElementId]);
 
   useEffect(() => {
     if (!relationOptions.length) {
@@ -846,9 +846,9 @@ export function GraphEditor({
                 <select
                   value={relationSourceElementId}
                   onChange={(event) => setRelationSourceElementId(event.target.value)}
-                  disabled={!disciplineRelationElements.length}
+                  disabled={!relationElements.length}
                 >
-                  {disciplineRelationElements.map((element) => (
+                  {relationElements.map((element) => (
                     <option key={element.id} value={element.id}>
                       {element.name} ({competenceLabel(element.competence_type)})
                     </option>
@@ -861,9 +861,9 @@ export function GraphEditor({
                 <select
                   value={relationTargetElementId}
                   onChange={(event) => setRelationTargetElementId(event.target.value)}
-                  disabled={!disciplineRelationElements.length}
+                  disabled={!relationElements.length}
                 >
-                  {disciplineRelationElements.map((element) => (
+                  {relationElements.map((element) => (
                     <option key={element.id} value={element.id}>
                       {element.name} ({competenceLabel(element.competence_type)})
                     </option>

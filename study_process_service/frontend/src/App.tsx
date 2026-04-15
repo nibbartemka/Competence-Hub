@@ -5,7 +5,11 @@ import RelationGraph, {
 } from "relation-graph-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 
-import { fetchDisciplines } from "./api";
+import {
+  fetchDisciplines,
+  fetchKnowledgeElements,
+  fetchTopicKnowledgeElements,
+} from "./api";
 import { GraphEditor } from "./components/GraphEditor";
 import { GraphNode } from "./components/GraphNode";
 import { buildElementScene, buildTopicScene } from "./graphScene";
@@ -13,6 +17,8 @@ import type {
   DetailCard,
   Discipline,
   DisciplineKnowledgeGraph,
+  KnowledgeElement,
+  TopicKnowledgeElement,
   ViewMode,
 } from "./types";
 
@@ -93,87 +99,42 @@ const TOPIC_LEGEND_SECTIONS: OverlayLegendSection[] = [
 
 const ELEMENT_LEGEND_SECTIONS: OverlayLegendSection[] = [
   {
-    title: "Arrows",
+    title: "Стрелки",
     items: [
       {
         markerClass: "graph-legend-overlay__marker--required-arrow",
-        label: "Required -> topic",
-        hint: "Dark arrow points into the topic.",
+        label: "Требуемый элемент -> тема",
+        hint: "Темная стрелка указывает на предпосылку для темы.",
       },
       {
         markerClass: "graph-legend-overlay__marker--formed-arrow",
-        label: "Topic -> learned",
-        hint: "Green arrow goes from topic to learned element.",
+        label: "Тема -> новый элемент",
+        hint: "Зеленая стрелка показывает сформированный результат.",
       },
       {
         markerClass: "graph-legend-overlay__marker--relation-arrow",
-        label: "Element relation",
-        hint: "Orange dashed arrow shows semantic relation between know-elements.",
+        label: "Связь между элементами",
+        hint: "Оранжевая пунктирная стрелка показывает семантическую связь.",
       },
     ],
   },
   {
-    title: "Colors",
+    title: "Цвета",
     items: [
       {
         markerClass: "graph-legend-overlay__marker--required-color",
-        label: "Dark",
-        hint: "Required elements.",
+        label: "Темный",
+        hint: "Требуемые элементы.",
       },
       {
         markerClass: "graph-legend-overlay__marker--formed-color",
-        label: "Green",
-        hint: "Elements that will be learned.",
+        label: "Зеленый",
+        hint: "Элементы, которые будут сформированы.",
       },
       {
         markerClass: "graph-legend-overlay__marker--relation-color",
-        label: "Orange",
-        hint: "Relation labels and semantic connections.",
-      },
-    ],
-  },
-  {
-    title: "Know relation types",
-    items: [
-      {
-        markerClass: "graph-legend-overlay__marker--relation-color",
-        label: "requires",
-        hint: "A depends on B.",
-      },
-      {
-        markerClass: "graph-legend-overlay__marker--relation-color",
-        label: "builds_on",
-        hint: "A is built on B.",
-      },
-      {
-        markerClass: "graph-legend-overlay__marker--relation-color",
-        label: "contains / part_of",
-        hint: "A contains B or A is part of B.",
-      },
-      {
-        markerClass: "graph-legend-overlay__marker--relation-color",
-        label: "property_of",
-        hint: "A is a property of B.",
-      },
-      {
-        markerClass: "graph-legend-overlay__marker--relation-color",
-        label: "refines / generalizes",
-        hint: "A is more specific or more general than B.",
-      },
-      {
-        markerClass: "graph-legend-overlay__marker--relation-color",
-        label: "similar",
-        hint: "Concepts are related, not hierarchical.",
-      },
-      {
-        markerClass: "graph-legend-overlay__marker--relation-color",
-        label: "contrasts_with",
-        hint: "Concepts should be distinguished.",
-      },
-      {
-        markerClass: "graph-legend-overlay__marker--relation-color",
-        label: "used_with",
-        hint: "Concepts are commonly used together.",
+        label: "Оранжевый",
+        hint: "Подписи и связи между элементами.",
       },
     ],
   },
@@ -243,20 +204,34 @@ export default function App() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [graphFetchDebug, setGraphFetchDebug] = useState("");
+  const [editorOpen, setEditorOpen] = useState(false);
+  const [allElements, setAllElements] = useState<KnowledgeElement[]>([]);
+  const [topicKnowledgeLinks, setTopicKnowledgeLinks] = useState<TopicKnowledgeElement[]>([]);
+  const [unlinkedLoading, setUnlinkedLoading] = useState(true);
+  const [unlinkedError, setUnlinkedError] = useState("");
 
   const activeDisciplineId = selectedDisciplineId || disciplines[0]?.id || "";
+
+  const unlinkedElements = useMemo(() => {
+    const linkedElementIds = new Set(topicKnowledgeLinks.map((link) => link.element_id));
+    return allElements.filter((element) => !linkedElementIds.has(element.id));
+  }, [allElements, topicKnowledgeLinks]);
 
   const scene = useMemo(() => {
     if (!graphData) {
       return null;
     }
+
     const baseScene = buildSceneFromView(graphData, view, selectedNodeId || undefined);
 
     return {
       ...baseScene,
       nodes: baseScene.nodes.map((node) => {
         const data = node.data as
-          | ({ entity?: string; topicId?: string; onHintClick?: () => void } & Record<string, unknown>)
+          | ({ entity?: string; topicId?: string; onHintClick?: () => void } & Record<
+              string,
+              unknown
+            >)
           | undefined;
 
         if (!data?.entity || !data.topicId) {
@@ -290,7 +265,7 @@ export default function App() {
         return node;
       }),
     };
-  }, [graphData, view, selectedNodeId]);
+  }, [graphData, selectedNodeId, view]);
 
   useEffect(() => {
     let cancelled = false;
@@ -313,10 +288,9 @@ export default function App() {
 
         setSelectedDisciplineId((current) => current || items[0].id);
       } catch (loadError) {
-        if (cancelled) {
-          return;
+        if (!cancelled) {
+          setError(extractErrorMessage(loadError));
         }
-        setError(extractErrorMessage(loadError));
       } finally {
         if (!cancelled) {
           setLoading(false);
@@ -325,6 +299,41 @@ export default function App() {
     }
 
     void loadDisciplines();
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function loadElementMetadata() {
+      try {
+        setUnlinkedLoading(true);
+        setUnlinkedError("");
+        const [elements, links] = await Promise.all([
+          fetchKnowledgeElements(),
+          fetchTopicKnowledgeElements(),
+        ]);
+        if (cancelled) {
+          return;
+        }
+
+        setAllElements(elements);
+        setTopicKnowledgeLinks(links);
+      } catch (loadError) {
+        if (!cancelled) {
+          setUnlinkedError(extractErrorMessage(loadError));
+        }
+      } finally {
+        if (!cancelled) {
+          setUnlinkedLoading(false);
+        }
+      }
+    }
+
+    void loadElementMetadata();
 
     return () => {
       cancelled = true;
@@ -358,6 +367,7 @@ export default function App() {
         if (cancelled) {
           return;
         }
+
         setError(extractErrorMessage(loadError));
         setGraphFetchDebug((current) => `${current} | error=${extractErrorMessage(loadError)}`);
         setGraphData(null);
@@ -460,17 +470,34 @@ export default function App() {
     }
 
     const { debug, graph: nextGraph } = await fetchKnowledgeGraphDirect(activeDisciplineId);
+
     const nextView =
       view.level === "elements" &&
       nextGraph.topics.some((topic) => topic.id === view.topicId)
         ? view
         : { level: "topics" as const };
     const nextScene = buildSceneFromView(nextGraph, nextView, selectedNodeId || undefined);
+
     setGraphFetchDebug(debug);
     setGraphData(nextGraph);
     setView(nextView);
     setSelectedNodeId(nextScene.defaultSelectedNodeId);
     setError("");
+
+    try {
+      setUnlinkedLoading(true);
+      const [elements, links] = await Promise.all([
+        fetchKnowledgeElements(),
+        fetchTopicKnowledgeElements(),
+      ]);
+      setAllElements(elements);
+      setTopicKnowledgeLinks(links);
+      setUnlinkedError("");
+    } catch (loadError) {
+      setUnlinkedError(extractErrorMessage(loadError));
+    } finally {
+      setUnlinkedLoading(false);
+    }
   }
 
   const selectedDiscipline = disciplines.find(
@@ -488,8 +515,8 @@ export default function App() {
           <p className="hero__eyebrow">Competence Hub</p>
           <h1>Визуализация графа знаний</h1>
           <p className="hero__subtitle">
-            Первый уровень показывает темы дисциплины, второй уровень раскрывает
-            знания, умения и владения конкретной темы.
+            Первый уровень показывает темы дисциплины, второй уровень раскрывает знания,
+            умения и владения конкретной темы.
           </p>
         </div>
 
@@ -522,7 +549,10 @@ export default function App() {
           <section className="card card--soft">
             <div className="card__header">
               <span className="card__eyebrow">Навигация</span>
-              {view.level === "elements" && (
+            </div>
+
+            <div className="inspector-actions">
+              {view.level === "elements" ? (
                 <button
                   className="ghost-button"
                   onClick={() => void applyView({ level: "topics" })}
@@ -530,7 +560,16 @@ export default function App() {
                 >
                   Назад к темам
                 </button>
-              )}
+              ) : null}
+
+              <button
+                className="primary-button inspector-actions__editor"
+                onClick={() => setEditorOpen(true)}
+                type="button"
+                disabled={!activeDisciplineId}
+              >
+                Редактор
+              </button>
             </div>
 
             <h2>{scene?.title ?? selectedDiscipline?.name ?? "Граф дисциплины"}</h2>
@@ -554,6 +593,28 @@ export default function App() {
             ) : null}
           </section>
 
+          <section className="card card--soft">
+            <div className="card__header">
+              <span className="card__eyebrow">Непривязанные элементы</span>
+            </div>
+
+            {unlinkedLoading ? (
+              <p className="card__text">Проверяю элементы...</p>
+            ) : unlinkedError ? (
+              <p className="card__text">{unlinkedError}</p>
+            ) : unlinkedElements.length ? (
+              <div className="orphan-list">
+                {unlinkedElements.map((element) => (
+                  <span className="orphan-list__chip" key={element.id}>
+                    {element.name}
+                  </span>
+                ))}
+              </div>
+            ) : (
+              <p className="card__text">Все элементы уже привязаны к темам.</p>
+            )}
+          </section>
+
           <section className="card" key={`${scene?.key ?? "empty"}-${selectedNodeId}`}>
             <div className="card__header">
               <span className="card__eyebrow">Выбранная вершина</span>
@@ -562,9 +623,7 @@ export default function App() {
               <>
                 <h3>{detail.title}</h3>
                 {detail.subtitle ? <p className="card__lead">{detail.subtitle}</p> : null}
-                {detail.description ? (
-                  <p className="card__text">{detail.description}</p>
-                ) : null}
+                {detail.description ? <p className="card__text">{detail.description}</p> : null}
 
                 <div className="chip-row">
                   {detail.chips.map((chip) => (
@@ -583,40 +642,17 @@ export default function App() {
                   ))}
                 </div>
 
-                {detail.footnote ? (
-                  <p className="card__footnote">{detail.footnote}</p>
-                ) : null}
+                {detail.footnote ? <p className="card__footnote">{detail.footnote}</p> : null}
               </>
             ) : (
               <p className="card__text">
-                Кликни по вершине графа, чтобы увидеть детали и перейти между
-                уровнями.
+                Кликни по вершине графа, чтобы увидеть детали и перейти между уровнями.
               </p>
             )}
-          </section>
-
-          <section className="card card--accent">
-            <div className="card__header">
-              <span className="card__eyebrow">Замечание</span>
-            </div>
-            <p className="card__text">
-              Для больших дисциплин стоит добавить отдельный backend-метод,
-              который будет считать уровни тем и метрики покрытия требований
-              заранее. Тогда UI останется быстрым даже на очень плотных графах.
-            </p>
           </section>
         </aside>
 
         <div className="workspace-main">
-          {activeDisciplineId ? (
-            <GraphEditor
-              disciplineId={activeDisciplineId}
-              topics={graphData?.topics ?? []}
-              disciplineElements={graphData?.knowledge_elements ?? []}
-              onDataChanged={refreshSelectedDisciplineGraph}
-            />
-          ) : null}
-
           <section className="graph-stage">
             <div className="graph-toolbar">
               <div>
@@ -625,8 +661,8 @@ export default function App() {
               </div>
               <p className="graph-toolbar__hint">
                 {view.level === "topics"
-                  ? "Клик по теме открывает ее внутренний граф элементов."
-                  : "Клик по центральной теме возвращает на уровень тем."}
+                  ? "Кнопка внутри карточки темы открывает ее внутренний граф элементов."
+                  : "Кнопка в центральной теме возвращает на уровень тем."}
               </p>
             </div>
 
@@ -691,6 +727,45 @@ export default function App() {
           </section>
         </div>
       </div>
+
+      {editorOpen && activeDisciplineId ? (
+        <div
+          className="modal-backdrop"
+          onClick={() => setEditorOpen(false)}
+          role="presentation"
+        >
+          <div
+            className="modal-panel"
+            onClick={(event) => event.stopPropagation()}
+            role="dialog"
+            aria-modal="true"
+            aria-label="Редактор графа"
+          >
+            <div className="modal-panel__header">
+              <div>
+                <p className="card__eyebrow">Редактор</p>
+                <h2>Редактор графа знаний</h2>
+              </div>
+              <button
+                className="ghost-button"
+                onClick={() => setEditorOpen(false)}
+                type="button"
+              >
+                Закрыть
+              </button>
+            </div>
+
+            <div className="modal-panel__body">
+              <GraphEditor
+                disciplineId={activeDisciplineId}
+                topics={graphData?.topics ?? []}
+                disciplineElements={allElements}
+                onDataChanged={refreshSelectedDisciplineGraph}
+              />
+            </div>
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }

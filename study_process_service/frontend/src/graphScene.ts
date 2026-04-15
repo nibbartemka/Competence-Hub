@@ -35,7 +35,7 @@ function relationLabel(type: string) {
     used_with: "Используется вместе",
     implements: "Реализует",
     automates: "Автоматизирует",
-    possible_flow: "Возможный переход",
+    possible_flow: "Возможен путь",
   };
   return labels[type] ?? type;
 }
@@ -75,15 +75,51 @@ function isBidirectionalRelation(type: string) {
   return type === "similar" || type === "contrasts_with" || type === "used_with";
 }
 
-function shortText(value: string | null | undefined, fallback: string) {
+function fullText(value: string | null | undefined, fallback: string) {
   if (!value) return fallback;
   return value;
 }
 
+function estimateCardHeight(
+  description: string | null | undefined,
+  fallback: string,
+  minHeight: number,
+  maxHeight: number,
+  charsPerLine: number,
+) {
+  const text = description?.trim() || fallback;
+  const approximateLines = Math.max(2, Math.ceil(text.length / charsPerLine));
+  return Math.min(maxHeight, minHeight + approximateLines * 18);
+}
+
 function estimateTopicNodeHeight(description: string | null | undefined) {
-  const text = description?.trim() || "Открой тему, чтобы увидеть требуемые и формируемые элементы.";
-  const approximateLines = Math.max(2, Math.ceil(text.length / 24));
-  return Math.min(220, 122 + approximateLines * 18);
+  return estimateCardHeight(
+    description,
+    "Открой тему, чтобы увидеть требуемые и формируемые элементы.",
+    154,
+    280,
+    24,
+  );
+}
+
+function estimateElementNodeHeight(description: string | null | undefined) {
+  return estimateCardHeight(
+    description,
+    "Описание элемента пока не добавлено.",
+    146,
+    220,
+    22,
+  );
+}
+
+function estimateFocusNodeHeight(description: string | null | undefined) {
+  return estimateCardHeight(
+    description,
+    "Клик по центральной теме вернет тебя к графу тем.",
+    188,
+    300,
+    26,
+  );
 }
 
 function topicDependencyVisual(type: string) {
@@ -197,26 +233,11 @@ function buildTopicDetailCard(
       { label: "Новые элементы", value: String(metrics.formedCount) },
     ],
     footnote:
-      "Клик по карточке темы на графе переводит на второй уровень и показывает ее внутреннюю структуру элементов.",
+      "Клик по карточке темы на графе выделяет ее, а внутренняя кнопка открывает уровень элементов.",
   };
 }
 
 function topicLegend(): LegendItem[] {
-  return [
-    {
-      label: "Тема",
-      hint: "Вершина первого уровня. Клик по ней раскрывает внутренний граф элементов.",
-      tone: "topic",
-    },
-    {
-      label: "Дуга зависимости",
-      hint: "Одна тема вносит вклад в предпосылки изучения другой темы.",
-      tone: "line",
-    },
-  ];
-}
-
-function topicLegendV2(): LegendItem[] {
   return [
     {
       label: "Тема",
@@ -269,7 +290,7 @@ function buildTopicNodeData(
     badge: "Тема",
     title: topic.name,
     subtitle: "Первый уровень графа",
-    description: shortText(
+    description: fullText(
       topic.description,
       "Открой тему, чтобы увидеть требуемые и формируемые элементы.",
     ),
@@ -307,11 +328,11 @@ export function buildTopicScene(
       left.name.localeCompare(right.name, "ru"),
     );
     const x = 180 + level * 270;
-    const totalHeight = Math.max((topics.length - 1) * 220, 0);
+    const totalHeight = Math.max((topics.length - 1) * 260, 0);
 
     topics.forEach((topic, index) => {
       const nodeHeight = estimateTopicNodeHeight(topic.description);
-      const y = 170 + index * 220 - totalHeight / 2 + 260;
+      const y = 170 + index * 260 - totalHeight / 2 + 260;
       const nodeId = `topic:${topic.id}`;
 
       nodes.push({
@@ -364,13 +385,13 @@ export function buildTopicScene(
     key: `topics:${graph.discipline.id}`,
     title: graph.discipline.name,
     subtitle:
-      "Граф тем показывает, какие темы подготавливают изучение следующих тем. Клик по вершине переводит на уровень элементов.",
+      "Граф тем показывает, какие темы подготавливают изучение следующих тем. Кнопка в карточке открывает второй уровень.",
     rootId: defaultSelectedNodeId,
     nodes,
     lines,
     defaultSelectedNodeId,
     detailsByNodeId,
-    legend: topicLegendV2(),
+    legend: topicLegend(),
   };
 }
 
@@ -386,7 +407,7 @@ function createElementNodeData(
     badge: competenceLabel(competenceType),
     title: name,
     subtitle: roleLabel(role),
-    description: shortText(description, "Описание элемента пока не добавлено."),
+    description: fullText(description, "Описание элемента пока не добавлено."),
     metrics: [roleLabel(role)],
     hint: "Показать детали",
   };
@@ -450,7 +471,7 @@ function buildTopicFocusDetail(topic: Topic, topicLinks: TopicKnowledgeElement[]
       { label: "Переход", value: "Клик вернет к темам" },
     ],
     footnote:
-      "Линии к теме читаются как предпосылки, линии от темы — как результат изучения.",
+      "Линии к теме читаются как предпосылки, линии от темы как результат изучения.",
   };
 }
 
@@ -490,9 +511,7 @@ export function buildElementScene(
   }
 
   const links = graph.topic_knowledge_elements.filter((item) => item.topic_id === topic.id);
-  const elementsById = new Map(
-    graph.knowledge_elements.map((element) => [element.id, element]),
-  );
+  const elementsById = new Map(graph.knowledge_elements.map((element) => [element.id, element]));
 
   const requiredLinks = links.filter((item) => item.role === "required");
   const formedLinks = links.filter((item) => item.role === "formed");
@@ -507,7 +526,7 @@ export function buildElementScene(
     x: 530,
     y: 360,
     width: 286,
-    height: 184,
+    height: estimateFocusNodeHeight(topic.description),
     nodeShape: 1,
     data: {
       entity: "topic-focus",
@@ -515,10 +534,7 @@ export function buildElementScene(
       badge: "Тема",
       title: topic.name,
       subtitle: "Второй уровень графа",
-      description: shortText(
-        topic.description,
-        "Клик по центральной теме вернет тебя к графу тем.",
-      ),
+      description: fullText(topic.description, "Клик по центральной теме вернет тебя к графу тем."),
       metrics: [`Req ${requiredLinks.length}`, `New ${formedLinks.length}`],
       hint: "Вернуться к темам",
       topicId: topic.id,
@@ -526,8 +542,8 @@ export function buildElementScene(
   });
   detailsByNodeId[focusNodeId] = buildTopicFocusDetail(topic, links);
 
-  const positionedRequired = positionColumn(requiredLinks, 150, 360, 170);
-  const positionedFormed = positionColumn(formedLinks, 930, 360, 170);
+  const positionedRequired = positionColumn(requiredLinks, 150, 360, 210);
+  const positionedFormed = positionColumn(formedLinks, 930, 360, 210);
 
   for (const item of [...positionedRequired, ...positionedFormed]) {
     const element = elementsById.get(item.link.element_id);
@@ -542,7 +558,7 @@ export function buildElementScene(
       x: item.x,
       y: item.y,
       width: 210,
-      height: 126,
+      height: estimateElementNodeHeight(element.description),
       nodeShape: 1,
       data: createElementNodeData(
         element.name,
@@ -620,9 +636,7 @@ export function buildElementScene(
   }
 
   const defaultSelectedNodeId =
-    preferredNodeId && detailsByNodeId[preferredNodeId]
-      ? preferredNodeId
-      : focusNodeId;
+    preferredNodeId && detailsByNodeId[preferredNodeId] ? preferredNodeId : focusNodeId;
 
   return {
     key: `elements:${graph.discipline.id}:${topic.id}`,

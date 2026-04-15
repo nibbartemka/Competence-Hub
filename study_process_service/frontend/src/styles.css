@@ -160,6 +160,24 @@ textarea {
   min-width: 0;
 }
 
+.orphan-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.orphan-list__chip {
+  display: inline-flex;
+  align-items: center;
+  padding: 7px 11px;
+  border-radius: 999px;
+  background: rgba(31, 79, 168, 0.08);
+  color: var(--ink);
+  font-size: 0.84rem;
+  font-weight: 700;
+}
+
 .card {
   padding: 24px;
   border-radius: 24px;
@@ -206,6 +224,17 @@ textarea {
   margin-top: 6px;
   color: var(--topic);
   font-weight: 700;
+}
+
+.inspector-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 16px;
+}
+
+.inspector-actions__editor {
+  box-shadow: none;
 }
 
 .ghost-button {
@@ -936,6 +965,53 @@ textarea {
   border-left-color: var(--relation);
 }
 
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 20;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: rgba(18, 34, 54, 0.42);
+  backdrop-filter: blur(8px);
+}
+
+.modal-panel {
+  width: min(1040px, 100%);
+  max-height: min(90vh, 960px);
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  border-radius: 28px;
+  border: 1px solid rgba(31, 55, 84, 0.12);
+  background: rgba(255, 255, 255, 0.96);
+  box-shadow: 0 28px 70px rgba(20, 36, 56, 0.26);
+  overflow: hidden;
+}
+
+.modal-panel__header {
+  display: flex;
+  align-items: start;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 22px 24px 18px;
+  border-bottom: 1px solid rgba(31, 55, 84, 0.08);
+  background: linear-gradient(180deg, rgba(255, 248, 234, 0.78), rgba(244, 248, 252, 0.72));
+}
+
+.modal-panel__header h2 {
+  margin: 8px 0 0;
+}
+
+.modal-panel__body {
+  overflow: auto;
+  padding: 18px;
+}
+
+.modal-panel__body .card--editor {
+  box-shadow: none;
+  border-radius: 22px;
+}
+
 @keyframes pulse {
   0% {
     transform: scale(0.92);
@@ -975,6 +1051,14 @@ textarea {
 @media (max-width: 720px) {
   .page-shell {
     padding: 16px;
+  }
+
+  .modal-backdrop {
+    padding: 12px;
+  }
+
+  .modal-panel {
+    max-height: 94vh;
   }
 
   .hero {
