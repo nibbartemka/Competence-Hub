@@ -1,4 +1,4 @@
-import { type FormEvent, useEffect, useState } from "react";
+import { type FormEvent, useEffect, useMemo, useState } from "react";
 
 import {
   createKnowledgeElement,
@@ -53,7 +53,10 @@ const TOPIC_DEPENDENCY_OPTIONS: Array<{ label: string; value: TopicDependencyRel
   { label: "Возможный переход", value: "possible_flow" },
 ];
 
-const KNOW_RELATION_OPTIONS: Array<{ label: string; value: KnowledgeElementRelationType }> = [
+const KNOW_TO_KNOW_RELATION_OPTIONS: Array<{
+  label: string;
+  value: KnowledgeElementRelationType;
+}> = [
   { label: "Требует", value: "requires" },
   { label: "Строится на", value: "builds_on" },
   { label: "Содержит", value: "contains" },
@@ -65,6 +68,16 @@ const KNOW_RELATION_OPTIONS: Array<{ label: string; value: KnowledgeElementRelat
   { label: "Противопоставляется", value: "contrasts_with" },
   { label: "Используется вместе", value: "used_with" },
 ];
+
+const KNOW_TO_CAN_RELATION_OPTIONS: Array<{
+  label: string;
+  value: KnowledgeElementRelationType;
+}> = [{ label: "Реализует", value: "implements" }];
+
+const CAN_TO_MASTER_RELATION_OPTIONS: Array<{
+  label: string;
+  value: KnowledgeElementRelationType;
+}> = [{ label: "Переходит во владение", value: "automates" }];
 
 function competenceLabel(value: CompetenceType) {
   return COMPETENCE_OPTIONS.find((option) => option.value === value)?.label ?? value;
@@ -88,6 +101,25 @@ function createDraft(): TopicNewElementDraft {
     description: "",
     name: "",
   };
+}
+
+function getRelationOptions(
+  sourceType?: CompetenceType,
+  targetType?: CompetenceType,
+): Array<{ label: string; value: KnowledgeElementRelationType }> {
+  if (sourceType === "know" && targetType === "know") {
+    return KNOW_TO_KNOW_RELATION_OPTIONS;
+  }
+
+  if (sourceType === "know" && targetType === "can") {
+    return KNOW_TO_CAN_RELATION_OPTIONS;
+  }
+
+  if (sourceType === "can" && targetType === "master") {
+    return CAN_TO_MASTER_RELATION_OPTIONS;
+  }
+
+  return [];
 }
 
 export function GraphEditor({
@@ -123,18 +155,32 @@ export function GraphEditor({
 
   const [relationSourceElementId, setRelationSourceElementId] = useState("");
   const [relationTargetElementId, setRelationTargetElementId] = useState("");
-  const [relationType, setRelationType] =
-    useState<KnowledgeElementRelationType>("requires");
+  const [relationType, setRelationType] = useState<KnowledgeElementRelationType | "">("");
   const [relationDescription, setRelationDescription] = useState("");
 
   const sortedTopics = topics.slice().sort((left, right) => left.name.localeCompare(right.name));
   const sortedAllElements = allElements
     .slice()
     .sort((left, right) => left.name.localeCompare(right.name));
-  const disciplineKnowElements = disciplineElements
-    .filter((element) => element.competence_type === "know")
+  const disciplineRelationElements = disciplineElements
     .slice()
     .sort((left, right) => left.name.localeCompare(right.name));
+  const relationSourceElement = useMemo(
+    () => disciplineRelationElements.find((element) => element.id === relationSourceElementId),
+    [disciplineRelationElements, relationSourceElementId],
+  );
+  const relationTargetElement = useMemo(
+    () => disciplineRelationElements.find((element) => element.id === relationTargetElementId),
+    [disciplineRelationElements, relationTargetElementId],
+  );
+  const relationOptions = useMemo(
+    () =>
+      getRelationOptions(
+        relationSourceElement?.competence_type,
+        relationTargetElement?.competence_type,
+      ),
+    [relationSourceElement?.competence_type, relationTargetElement?.competence_type],
+  );
 
   useEffect(() => {
     const controller = new AbortController();
@@ -207,22 +253,34 @@ export function GraphEditor({
   }, [sortedAllElements, topicElementElementId]);
 
   useEffect(() => {
-    if (!disciplineKnowElements.length) {
+    if (!disciplineRelationElements.length) {
       setRelationSourceElementId("");
       setRelationTargetElementId("");
+      setRelationType("");
       return;
     }
 
-    if (!disciplineKnowElements.some((element) => element.id === relationSourceElementId)) {
-      setRelationSourceElementId(disciplineKnowElements[0].id);
+    if (!disciplineRelationElements.some((element) => element.id === relationSourceElementId)) {
+      setRelationSourceElementId(disciplineRelationElements[0].id);
     }
 
-    if (!disciplineKnowElements.some((element) => element.id === relationTargetElementId)) {
+    if (!disciplineRelationElements.some((element) => element.id === relationTargetElementId)) {
       setRelationTargetElementId(
-        nextDifferentValue(relationSourceElementId, disciplineKnowElements),
+        nextDifferentValue(relationSourceElementId, disciplineRelationElements),
       );
     }
-  }, [disciplineKnowElements, relationSourceElementId, relationTargetElementId]);
+  }, [disciplineRelationElements, relationSourceElementId, relationTargetElementId]);
+
+  useEffect(() => {
+    if (!relationOptions.length) {
+      setRelationType("");
+      return;
+    }
+
+    if (!relationOptions.some((option) => option.value === relationType)) {
+      setRelationType(relationOptions[0].value);
+    }
+  }, [relationOptions, relationType]);
 
   async function reloadElements() {
     const items = await fetchKnowledgeElements();
@@ -394,6 +452,14 @@ export function GraphEditor({
       return;
     }
 
+    if (!relationType) {
+      setFeedback({
+        kind: "error",
+        text: "Для выбранной пары элементов сейчас нет допустимых типов связи.",
+      });
+      return;
+    }
+
     try {
       setBusyAction("element-relation");
       setFeedback(null);
@@ -420,8 +486,8 @@ export function GraphEditor({
       </div>
       <h3>Редактирование графа</h3>
       <p className="card__text">
-        Здесь можно добавлять темы, элементы и связи прямо из интерфейса. Связи
-        между элементами сейчас доступны только для элементов типа "Знать".
+        Здесь можно добавлять темы, элементы и связи прямо из интерфейса.
+        Доступные типы связей между элементами зависят от выбранной пары компетенций.
       </p>
 
       {feedback ? (
@@ -772,34 +838,34 @@ export function GraphEditor({
         </details>
 
         <details className="editor-block">
-          <summary>Добавить связь между элементами Знать</summary>
+          <summary>Добавить связь между элементами</summary>
           <form className="editor-form" onSubmit={handleCreateElementRelation}>
             <div className="editor-form__grid">
               <label className="field">
-                <span>Исходный элемент</span>
+                <span>Элемент 1</span>
                 <select
                   value={relationSourceElementId}
                   onChange={(event) => setRelationSourceElementId(event.target.value)}
-                  disabled={!disciplineKnowElements.length}
+                  disabled={!disciplineRelationElements.length}
                 >
-                  {disciplineKnowElements.map((element) => (
+                  {disciplineRelationElements.map((element) => (
                     <option key={element.id} value={element.id}>
-                      {element.name}
+                      {element.name} ({competenceLabel(element.competence_type)})
                     </option>
                   ))}
                 </select>
               </label>
 
               <label className="field">
-                <span>Целевой элемент</span>
+                <span>Элемент 2</span>
                 <select
                   value={relationTargetElementId}
                   onChange={(event) => setRelationTargetElementId(event.target.value)}
-                  disabled={!disciplineKnowElements.length}
+                  disabled={!disciplineRelationElements.length}
                 >
-                  {disciplineKnowElements.map((element) => (
+                  {disciplineRelationElements.map((element) => (
                     <option key={element.id} value={element.id}>
-                      {element.name}
+                      {element.name} ({competenceLabel(element.competence_type)})
                     </option>
                   ))}
                 </select>
@@ -814,8 +880,9 @@ export function GraphEditor({
                   onChange={(event) =>
                     setRelationType(event.target.value as KnowledgeElementRelationType)
                   }
+                  disabled={!relationOptions.length}
                 >
-                  {KNOW_RELATION_OPTIONS.map((option) => (
+                  {relationOptions.map((option) => (
                     <option key={option.value} value={option.value}>
                       {option.label}
                     </option>
@@ -823,6 +890,12 @@ export function GraphEditor({
                 </select>
               </label>
             </div>
+
+            {!relationOptions.length ? (
+              <p className="editor-empty">
+                Для такой пары элементов связь сейчас не поддерживается.
+              </p>
+            ) : null}
 
             <label className="field">
               <span>Описание</span>
@@ -837,7 +910,10 @@ export function GraphEditor({
             <button
               className="primary-button"
               disabled={
-                !relationSourceElementId || !relationTargetElementId || !!busyAction
+                !relationSourceElementId ||
+                !relationTargetElementId ||
+                !relationType ||
+                !!busyAction
               }
             >
               {busyAction === "element-relation" ? "Сохраняю..." : "Создать связь элементов"}

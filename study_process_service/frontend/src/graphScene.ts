@@ -40,11 +40,35 @@ function relationLabel(type: string) {
   return labels[type] ?? type;
 }
 
-function isKnowToKnowRelation(
+function isSupportedElementRelation(
   sourceType: string | undefined,
   targetType: string | undefined,
+  relationType: string,
 ) {
-  return sourceType === "know" && targetType === "know";
+  if (sourceType === "know" && targetType === "know") {
+    return [
+      "requires",
+      "builds_on",
+      "contains",
+      "part_of",
+      "property_of",
+      "refines",
+      "generalizes",
+      "similar",
+      "contrasts_with",
+      "used_with",
+    ].includes(relationType);
+  }
+
+  if (sourceType === "know" && targetType === "can") {
+    return relationType === "implements";
+  }
+
+  if (sourceType === "can" && targetType === "master") {
+    return relationType === "automates";
+  }
+
+  return false;
 }
 
 function isBidirectionalRelation(type: string) {
@@ -53,8 +77,27 @@ function isBidirectionalRelation(type: string) {
 
 function shortText(value: string | null | undefined, fallback: string) {
   if (!value) return fallback;
-  if (value.length <= 105) return value;
-  return `${value.slice(0, 102)}...`;
+  return value;
+}
+
+function estimateTopicNodeHeight(description: string | null | undefined) {
+  const text = description?.trim() || "Открой тему, чтобы увидеть требуемые и формируемые элементы.";
+  const approximateLines = Math.max(2, Math.ceil(text.length / 24));
+  return Math.min(220, 122 + approximateLines * 18);
+}
+
+function topicDependencyVisual(type: string) {
+  if (type === "possible_flow") {
+    return {
+      color: "#1f8b74",
+      text: "Возможен путь",
+    };
+  }
+
+  return {
+    color: "#365a95",
+    text: "Требуется",
+  };
 }
 
 function computeTopicLevels(topics: Topic[], dependencies: TopicDependency[]) {
@@ -173,6 +216,26 @@ function topicLegend(): LegendItem[] {
   ];
 }
 
+function topicLegendV2(): LegendItem[] {
+  return [
+    {
+      label: "Тема",
+      hint: "Клик по карточке только выделяет тему.",
+      tone: "topic",
+    },
+    {
+      label: "Требуется",
+      hint: "Синяя стрелка показывает обязательную зависимость между темами.",
+      tone: "line",
+    },
+    {
+      label: "Возможен путь",
+      hint: "Зеленая стрелка показывает допустимый, но не обязательный переход.",
+      tone: "line",
+    },
+  ];
+}
+
 function elementLegend(): LegendItem[] {
   return [
     {
@@ -244,10 +307,11 @@ export function buildTopicScene(
       left.name.localeCompare(right.name, "ru"),
     );
     const x = 180 + level * 270;
-    const totalHeight = Math.max((topics.length - 1) * 170, 0);
+    const totalHeight = Math.max((topics.length - 1) * 220, 0);
 
     topics.forEach((topic, index) => {
-      const y = 170 + index * 170 - totalHeight / 2 + 260;
+      const nodeHeight = estimateTopicNodeHeight(topic.description);
+      const y = 170 + index * 220 - totalHeight / 2 + 260;
       const nodeId = `topic:${topic.id}`;
 
       nodes.push({
@@ -255,8 +319,8 @@ export function buildTopicScene(
         text: topic.name,
         x,
         y,
-        width: 212,
-        height: 126,
+        width: 236,
+        height: nodeHeight,
         nodeShape: 1,
         data: buildTopicNodeData(topic, graph.topic_knowledge_elements, graph.topic_dependencies),
       });
@@ -269,19 +333,25 @@ export function buildTopicScene(
     });
   }
 
-  const lines: JsonLine[] = graph.topic_dependencies.map((dependency) => ({
-    from: `topic:${dependency.prerequisite_topic_id}`,
-    to: `topic:${dependency.dependent_topic_id}`,
-    color: "#365a95",
-    lineWidth: 2,
-    animation: 1,
-    text: "",
-    showEndArrow: true,
-    data: {
-      kind: "topic-dependency",
-      relationType: dependency.relation_type,
-    },
-  }));
+  const lines: JsonLine[] = graph.topic_dependencies.map((dependency) => {
+    const visual = topicDependencyVisual(dependency.relation_type);
+
+    return {
+      from: `topic:${dependency.prerequisite_topic_id}`,
+      to: `topic:${dependency.dependent_topic_id}`,
+      color: visual.color,
+      fontColor: visual.color,
+      lineWidth: 2,
+      animation: 1,
+      text: visual.text,
+      textOffset_y: -16,
+      showEndArrow: true,
+      data: {
+        kind: "topic-dependency",
+        relationType: dependency.relation_type,
+      },
+    };
+  });
 
   const defaultSelectedNodeId =
     preferredNodeId && detailsByNodeId[preferredNodeId]
@@ -300,7 +370,7 @@ export function buildTopicScene(
     lines,
     defaultSelectedNodeId,
     detailsByNodeId,
-    legend: topicLegend(),
+    legend: topicLegendV2(),
   };
 }
 
@@ -525,9 +595,10 @@ export function buildElementScene(
     const sourceElement = elementsById.get(relation.source_element_id);
     const targetElement = elementsById.get(relation.target_element_id);
     if (
-      !isKnowToKnowRelation(
+      !isSupportedElementRelation(
         sourceElement?.competence_type,
         targetElement?.competence_type,
+        relation.relation_type,
       )
     ) {
       continue;

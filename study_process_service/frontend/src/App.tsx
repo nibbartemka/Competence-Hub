@@ -55,32 +55,37 @@ const GRAPH_OPTIONS: RGOptions = {
 
 const TOPIC_LEGEND_SECTIONS: OverlayLegendSection[] = [
   {
-    title: "Arrows",
+    title: "Стрелки",
     items: [
       {
         markerClass: "graph-legend-overlay__marker--topic-arrow",
-        label: "Topic dependency",
-        hint: "One topic helps prepare the next topic.",
+        label: "Требуется",
+        hint: "Обязательная зависимость между темами.",
+      },
+      {
+        markerClass: "graph-legend-overlay__marker--topic-optional-arrow",
+        label: "Возможен путь",
+        hint: "Допустимый, но не обязательный переход.",
       },
     ],
   },
   {
-    title: "Colors",
+    title: "Цвета",
     items: [
       {
         markerClass: "graph-legend-overlay__marker--topic-color",
-        label: "Blue",
-        hint: "Topic nodes and topic graph connections.",
+        label: "Синий",
+        hint: "Темы и обязательные связи между темами.",
       },
       {
         markerClass: "graph-legend-overlay__marker--required-color",
-        label: "Dark",
-        hint: "Required elements before the topic starts.",
+        label: "Темный",
+        hint: "Требуемые элементы до начала темы.",
       },
       {
         markerClass: "graph-legend-overlay__marker--formed-color",
-        label: "Green",
-        hint: "Elements learned after the topic.",
+        label: "Зеленый",
+        hint: "Новые элементы и возможный путь между темами.",
       },
     ],
   },
@@ -245,7 +250,46 @@ export default function App() {
     if (!graphData) {
       return null;
     }
-    return buildSceneFromView(graphData, view, selectedNodeId || undefined);
+    const baseScene = buildSceneFromView(graphData, view, selectedNodeId || undefined);
+
+    return {
+      ...baseScene,
+      nodes: baseScene.nodes.map((node) => {
+        const data = node.data as
+          | ({ entity?: string; topicId?: string; onHintClick?: () => void } & Record<string, unknown>)
+          | undefined;
+
+        if (!data?.entity || !data.topicId) {
+          return node;
+        }
+
+        if (data.entity === "topic") {
+          return {
+            ...node,
+            data: {
+              ...data,
+              onHintClick: () => {
+                void applyView({ level: "elements", topicId: data.topicId! }, node.id);
+              },
+            },
+          };
+        }
+
+        if (data.entity === "topic-focus") {
+          return {
+            ...node,
+            data: {
+              ...data,
+              onHintClick: () => {
+                void applyView({ level: "topics" }, `topic:${data.topicId}`);
+              },
+            },
+          };
+        }
+
+        return node;
+      }),
+    };
   }, [graphData, view, selectedNodeId]);
 
   useEffect(() => {
@@ -406,22 +450,6 @@ export default function App() {
   }
 
   function handleNodeClick(node: RGNode) {
-    const payload = node.data as { entity?: string; topicId?: string } | undefined;
-    if (!payload?.entity) {
-      setSelectedNodeId(node.id);
-      return;
-    }
-
-    if (payload.entity === "topic" && payload.topicId) {
-      void applyView({ level: "elements", topicId: payload.topicId });
-      return false;
-    }
-
-    if (payload.entity === "topic-focus" && payload.topicId) {
-      void applyView({ level: "topics" }, `topic:${payload.topicId}`);
-      return false;
-    }
-
     setSelectedNodeId(node.id);
     return false;
   }

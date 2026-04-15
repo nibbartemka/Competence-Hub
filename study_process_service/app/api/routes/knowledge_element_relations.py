@@ -6,7 +6,7 @@ from sqlalchemy import or_, select
 from app.api.crud import commit_or_409, delete_and_commit, not_found
 from app.api.deps import DbSession
 from app.models import KnowledgeElement, KnowledgeElementRelation
-from app.models.enums import CompetenceType
+from app.models.enums import CompetenceType, KnowledgeElementRelationType
 from app.schemas import KnowledgeElementRelationCreate, KnowledgeElementRelationRead
 
 
@@ -14,6 +14,34 @@ router = APIRouter(
     prefix="/knowledge-element-relations",
     tags=["Knowledge Element Relations"],
 )
+
+
+def _is_allowed_relation(
+    source_type: CompetenceType,
+    target_type: CompetenceType,
+    relation_type: KnowledgeElementRelationType,
+) -> bool:
+    if source_type == CompetenceType.KNOW and target_type == CompetenceType.KNOW:
+        return relation_type in {
+            KnowledgeElementRelationType.REQUIRES,
+            KnowledgeElementRelationType.BUILDS_ON,
+            KnowledgeElementRelationType.CONTAINS,
+            KnowledgeElementRelationType.PART_OF,
+            KnowledgeElementRelationType.PROPERTY_OF,
+            KnowledgeElementRelationType.REFINES,
+            KnowledgeElementRelationType.GENERALIZES,
+            KnowledgeElementRelationType.SIMILAR,
+            KnowledgeElementRelationType.CONTRASTS_WITH,
+            KnowledgeElementRelationType.USED_WITH,
+        }
+
+    if source_type == CompetenceType.KNOW and target_type == CompetenceType.CAN:
+        return relation_type == KnowledgeElementRelationType.IMPLEMENTS
+
+    if source_type == CompetenceType.CAN and target_type == CompetenceType.MASTER:
+        return relation_type == KnowledgeElementRelationType.AUTOMATES
+
+    return False
 
 
 @router.get("/", response_model=list[KnowledgeElementRelationRead])
@@ -50,16 +78,18 @@ async def create_knowledge_element_relation(
     if target_element is None:
         raise not_found("Knowledge element", payload.target_element_id)
 
-    if source_element.competence_type != CompetenceType.KNOW:
+    if not _is_allowed_relation(
+        source_element.competence_type,
+        target_element.competence_type,
+        payload.relation_type,
+    ):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Element relations are currently supported only for competence type 'know'.",
-        )
-
-    if target_element.competence_type != CompetenceType.KNOW:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Element relations are currently supported only for competence type 'know'.",
+            detail=(
+                "Unsupported relation for the selected element pair. "
+                "Allowed combinations: know->know, know->can (implements), "
+                "can->master (automates)."
+            ),
         )
 
     relation = KnowledgeElementRelation(

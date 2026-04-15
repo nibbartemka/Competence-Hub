@@ -590,10 +590,10 @@ textarea {
   border: 1px solid rgba(30, 54, 86, 0.12);
   background: linear-gradient(180deg, rgba(255, 255, 255, 0.98), rgba(244, 248, 250, 0.9));
   box-shadow: 0 18px 32px rgba(32, 56, 84, 0.12);
-  display: grid;
-  grid-template-rows: auto auto auto minmax(0, 1fr);
+  display: flex;
+  flex-direction: column;
   gap: 8px;
-  overflow: hidden;
+  overflow: visible;
   transition: transform 0.18s ease, box-shadow 0.18s ease;
 }
 
@@ -659,6 +659,7 @@ textarea {
   padding: 6px 10px;
   background: rgba(37, 59, 89, 0.08);
   color: var(--muted);
+  cursor: pointer;
 }
 
 .graph-node__title {
@@ -680,14 +681,16 @@ textarea {
   font-size: 0.88rem;
   line-height: 1.4;
   color: var(--muted);
+  overflow-wrap: anywhere;
 }
 
 .graph-node__metrics {
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
-  align-self: end;
+  margin-top: auto;
   margin-bottom: 2px;
+  padding-top: 8px;
 }
 
 .graph-node__metrics span {
@@ -856,6 +859,7 @@ textarea {
 }
 
 .graph-legend-overlay__marker--topic-arrow,
+.graph-legend-overlay__marker--topic-optional-arrow,
 .graph-legend-overlay__marker--required-arrow,
 .graph-legend-overlay__marker--formed-arrow,
 .graph-legend-overlay__marker--relation-arrow {
@@ -864,6 +868,7 @@ textarea {
 }
 
 .graph-legend-overlay__marker--topic-arrow::before,
+.graph-legend-overlay__marker--topic-optional-arrow::before,
 .graph-legend-overlay__marker--required-arrow::before,
 .graph-legend-overlay__marker--formed-arrow::before,
 .graph-legend-overlay__marker--relation-arrow::before {
@@ -877,6 +882,7 @@ textarea {
 }
 
 .graph-legend-overlay__marker--topic-arrow::after,
+.graph-legend-overlay__marker--topic-optional-arrow::after,
 .graph-legend-overlay__marker--required-arrow::after,
 .graph-legend-overlay__marker--formed-arrow::after,
 .graph-legend-overlay__marker--relation-arrow::after {
@@ -890,12 +896,19 @@ textarea {
 }
 
 .graph-legend-overlay__marker--topic-arrow::before {
-  border-top-style: dashed;
   border-top-color: var(--line);
 }
 
 .graph-legend-overlay__marker--topic-arrow::after {
   border-left-color: var(--line);
+}
+
+.graph-legend-overlay__marker--topic-optional-arrow::before {
+  border-top-color: var(--formed);
+}
+
+.graph-legend-overlay__marker--topic-optional-arrow::after {
+  border-left-color: var(--formed);
 }
 
 .graph-legend-overlay__marker--required-arrow::before {
