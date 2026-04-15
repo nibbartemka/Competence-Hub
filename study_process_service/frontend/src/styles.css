@@ -246,6 +246,22 @@ textarea {
   box-shadow: none;
 }
 
+.secondary-button {
+  min-height: 38px;
+  padding: 0 12px;
+  border: 1px solid rgba(31, 55, 84, 0.14);
+  border-radius: 12px;
+  background: rgba(236, 243, 255, 0.9);
+  color: var(--topic);
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.secondary-button--danger {
+  color: #a23b32;
+  background: rgba(162, 59, 50, 0.08);
+}
+
 .legend {
   display: grid;
   gap: 12px;
@@ -291,6 +307,91 @@ textarea {
 .editor-form__grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.editor-subsection {
+  display: grid;
+  gap: 12px;
+  padding: 14px;
+  border-radius: 18px;
+  background: rgba(247, 250, 255, 0.95);
+  border: 1px solid rgba(31, 55, 84, 0.08);
+}
+
+.editor-subsection__header {
+  display: flex;
+  align-items: start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.editor-subsection__header strong {
+  display: block;
+  color: var(--ink);
+}
+
+.editor-subsection__header p,
+.editor-empty {
+  margin: 4px 0 0;
+  color: var(--muted);
+  font-size: 0.9rem;
+  line-height: 1.45;
+}
+
+.editor-checklist {
+  display: grid;
+  gap: 10px;
+  max-height: 240px;
+  overflow: auto;
+  padding-right: 4px;
+}
+
+.editor-checklist__item {
+  display: flex;
+  align-items: start;
+  gap: 10px;
+  padding: 10px 12px;
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.9);
+  border: 1px solid rgba(31, 55, 84, 0.08);
+}
+
+.editor-checklist__item input {
+  margin-top: 4px;
+}
+
+.editor-checklist__item span {
+  display: grid;
+  gap: 3px;
+}
+
+.editor-checklist__item strong {
+  color: var(--ink);
+}
+
+.editor-checklist__item small {
+  color: var(--muted);
+}
+
+.editor-drafts {
+  display: grid;
+  gap: 12px;
+}
+
+.editor-draft-card {
+  display: grid;
+  gap: 12px;
+  padding: 14px;
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.92);
+  border: 1px solid rgba(31, 55, 84, 0.08);
+}
+
+.editor-draft-card__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
   gap: 12px;
 }
 
@@ -627,6 +728,58 @@ textarea {
   backdrop-filter: blur(12px);
 }
 
+.graph-orphans-overlay {
+  position: absolute;
+  top: 18px;
+  right: 18px;
+  z-index: 3;
+  width: min(280px, calc(100% - 36px));
+  padding: 14px 16px;
+  border-radius: 18px;
+  border: 1px solid rgba(31, 55, 84, 0.12);
+  background: rgba(255, 255, 255, 0.94);
+  box-shadow: 0 18px 36px rgba(24, 44, 72, 0.14);
+  backdrop-filter: blur(12px);
+}
+
+.graph-orphans-overlay__eyebrow {
+  margin: 0 0 8px;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.14em;
+  font-size: 0.68rem;
+  font-weight: 700;
+}
+
+.graph-orphans-overlay__chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.graph-orphans-overlay__chip {
+  display: inline-flex;
+  align-items: center;
+  padding: 6px 10px;
+  border-radius: 999px;
+  background: rgba(31, 79, 168, 0.08);
+  color: var(--ink);
+  font-size: 0.82rem;
+  font-weight: 700;
+}
+
+.graph-orphans-overlay__chip--muted {
+  background: rgba(31, 55, 84, 0.08);
+  color: var(--muted);
+}
+
+.graph-orphans-overlay__text {
+  margin: 10px 0 0;
+  color: var(--muted);
+  font-size: 0.84rem;
+  line-height: 1.4;
+}
+
 .graph-legend-overlay__eyebrow {
   margin: 0 0 10px;
   color: var(--muted);
@@ -828,6 +981,18 @@ textarea {
 
   .editor-form__grid {
     grid-template-columns: 1fr;
+  }
+
+  .editor-subsection__header,
+  .editor-draft-card__header {
+    grid-template-columns: 1fr;
+    display: grid;
+  }
+
+  .graph-orphans-overlay {
+    top: 12px;
+    right: 12px;
+    width: calc(100% - 24px);
   }
 
   .graph-legend-overlay {

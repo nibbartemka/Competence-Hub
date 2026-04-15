@@ -21,10 +21,27 @@ type RequestOptions = {
   signal?: AbortSignal;
 };
 
+export function isAbortError(error: unknown) {
+  if (error instanceof DOMException) {
+    return error.name === "AbortError";
+  }
+
+  if (error instanceof Error) {
+    return (
+      error.name === "AbortError" ||
+      error.message === "signal is aborted without reason" ||
+      error.message === "The operation was aborted."
+    );
+  }
+
+  return false;
+}
+
 async function request<T>(path: string, options: RequestOptions = {}): Promise<T> {
   const { body, method = "GET", signal } = options;
   const response = await fetch(`${API_BASE}${path}`, {
     method,
+    cache: "no-store",
     headers: {
       Accept: "application/json",
       ...(body ? { "Content-Type": "application/json" } : {}),
@@ -62,6 +79,10 @@ export function fetchDisciplineKnowledgeGraph(
 
 export function fetchKnowledgeElements(signal?: AbortSignal) {
   return request<KnowledgeElement[]>("/knowledge-elements/", { signal });
+}
+
+export function fetchTopicKnowledgeElements(signal?: AbortSignal) {
+  return request<TopicKnowledgeElement[]>("/topic-knowledge-elements/", { signal });
 }
 
 export function createTopic(payload: {

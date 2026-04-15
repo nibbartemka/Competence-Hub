@@ -3,9 +3,9 @@ import RelationGraph, {
   type RGOptions,
   type RelationGraphComponent,
 } from "relation-graph-react";
-import { startTransition, useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
-import { fetchDisciplineKnowledgeGraph, fetchDisciplines } from "./api";
+import { fetchDisciplines } from "./api";
 import { GraphEditor } from "./components/GraphEditor";
 import { GraphNode } from "./components/GraphNode";
 import { buildElementScene, buildTopicScene } from "./graphScene";
@@ -13,9 +13,11 @@ import type {
   DetailCard,
   Discipline,
   DisciplineKnowledgeGraph,
-  GraphScene,
   ViewMode,
 } from "./types";
+
+const API_BASE =
+  import.meta.env.VITE_API_BASE?.replace(/\/$/, "") ?? "http://127.0.0.1:8000/api";
 
 type OverlayLegendItem = {
   markerClass: string;
@@ -53,31 +55,31 @@ const GRAPH_OPTIONS: RGOptions = {
 
 const TOPIC_LEGEND_SECTIONS: OverlayLegendSection[] = [
   {
-    title: "Стрелки",
+    title: "Arrows",
     items: [
       {
         markerClass: "graph-legend-overlay__marker--topic-arrow",
-        label: "Зависимость от темы",
-        hint: "Показывает изучение каких тем требуется перед тем как приступить к изучению текущей",
+        label: "Topic dependency",
+        hint: "One topic helps prepare the next topic.",
       },
     ],
   },
   {
-    title: "Цвета",
+    title: "Colors",
     items: [
       {
         markerClass: "graph-legend-overlay__marker--topic-color",
-        label: "Синий",
+        label: "Blue",
         hint: "Topic nodes and topic graph connections.",
       },
       {
         markerClass: "graph-legend-overlay__marker--required-color",
-        label: "Темно-серый",
+        label: "Dark",
         hint: "Required elements before the topic starts.",
       },
       {
         markerClass: "graph-legend-overlay__marker--formed-color",
-        label: "Зеленый",
+        label: "Green",
         hint: "Elements learned after the topic.",
       },
     ],
@@ -86,7 +88,7 @@ const TOPIC_LEGEND_SECTIONS: OverlayLegendSection[] = [
 
 const ELEMENT_LEGEND_SECTIONS: OverlayLegendSection[] = [
   {
-    title: "Стрелки",
+    title: "Arrows",
     items: [
       {
         markerClass: "graph-legend-overlay__marker--required-arrow",
@@ -176,7 +178,7 @@ function buildSceneFromView(
   graphData: DisciplineKnowledgeGraph,
   view: ViewMode,
   preferredNodeId?: string,
-): GraphScene {
+) {
   if (view.level === "elements") {
     return buildElementScene(graphData, view.topicId, preferredNodeId);
   }
@@ -192,80 +194,154 @@ function extractErrorMessage(error: unknown) {
   return "Не удалось загрузить данные графа.";
 }
 
+async function fetchKnowledgeGraphDirect(
+  disciplineId: string,
+): Promise<{ debug: string; graph: DisciplineKnowledgeGraph }> {
+  const response = await fetch(
+    `${API_BASE}/disciplines/${disciplineId}/knowledge-graph?ts=${Date.now()}`,
+    {
+      method: "GET",
+      cache: "no-store",
+      headers: {
+        Accept: "application/json",
+      },
+    },
+  );
+
+  const rawText = await response.text();
+  const parsed = JSON.parse(rawText) as DisciplineKnowledgeGraph;
+  const topicsCount = Array.isArray(parsed.topics) ? parsed.topics.length : "not-array";
+  const topicNames = Array.isArray(parsed.topics)
+    ? parsed.topics.map((topic) => topic.name).join(", ") || "none"
+    : "not-array";
+
+  if (!response.ok) {
+    throw new Error(rawText || `HTTP ${response.status}`);
+  }
+
+  return {
+    debug:
+      `status=${response.status}; keys=${Object.keys(parsed).join(",")}; ` +
+      `topics=${topicsCount}; topicNames=${topicNames}`,
+    graph: parsed,
+  };
+}
+
 export default function App() {
   const graphRef = useRef<RelationGraphComponent>();
 
   const [disciplines, setDisciplines] = useState<Discipline[]>([]);
   const [selectedDisciplineId, setSelectedDisciplineId] = useState("");
   const [graphData, setGraphData] = useState<DisciplineKnowledgeGraph | null>(null);
-  const [scene, setScene] = useState<GraphScene | null>(null);
   const [view, setView] = useState<ViewMode>({ level: "topics" });
   const [selectedNodeId, setSelectedNodeId] = useState("");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [graphFetchDebug, setGraphFetchDebug] = useState("");
+
+  const activeDisciplineId = selectedDisciplineId || disciplines[0]?.id || "";
+
+  const scene = useMemo(() => {
+    if (!graphData) {
+      return null;
+    }
+    return buildSceneFromView(graphData, view, selectedNodeId || undefined);
+  }, [graphData, view, selectedNodeId]);
 
   useEffect(() => {
-    const controller = new AbortController();
+    let cancelled = false;
 
     async function loadDisciplines() {
       try {
         setLoading(true);
         setError("");
-        const items = await fetchDisciplines(controller.signal);
+        const items = await fetchDisciplines();
+        if (cancelled) {
+          return;
+        }
+
         setDisciplines(items);
         if (!items.length) {
           setSelectedDisciplineId("");
           setGraphData(null);
-          setScene(null);
           return;
         }
+
         setSelectedDisciplineId((current) => current || items[0].id);
       } catch (loadError) {
+        if (cancelled) {
+          return;
+        }
         setError(extractErrorMessage(loadError));
       } finally {
-        setLoading(false);
+        if (!cancelled) {
+          setLoading(false);
+        }
       }
     }
 
     void loadDisciplines();
 
-    return () => controller.abort();
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   useEffect(() => {
-    if (!selectedDisciplineId) {
+    if (!activeDisciplineId) {
       return;
     }
 
-    const controller = new AbortController();
+    let cancelled = false;
 
     async function loadGraphData() {
       try {
         setLoading(true);
         setError("");
-        const nextGraph = await fetchDisciplineKnowledgeGraph(
-          selectedDisciplineId,
-          controller.signal,
-        );
-        const nextScene = buildTopicScene(nextGraph);
+        setGraphFetchDebug("loading knowledge-graph...");
 
-        startTransition(() => {
-          setGraphData(nextGraph);
-          setView({ level: "topics" });
-          setScene(nextScene);
-          setSelectedNodeId(nextScene.defaultSelectedNodeId);
-        });
+        const { debug, graph: nextGraph } = await fetchKnowledgeGraphDirect(activeDisciplineId);
+        if (cancelled) {
+          return;
+        }
+
+        setGraphFetchDebug(debug);
+        const nextScene = buildTopicScene(nextGraph);
+        setGraphData(nextGraph);
+        setView({ level: "topics" });
+        setSelectedNodeId(nextScene.defaultSelectedNodeId);
       } catch (loadError) {
+        if (cancelled) {
+          return;
+        }
         setError(extractErrorMessage(loadError));
+        setGraphFetchDebug((current) => `${current} | error=${extractErrorMessage(loadError)}`);
+        setGraphData(null);
       } finally {
-        setLoading(false);
+        if (!cancelled) {
+          setLoading(false);
+        }
       }
     }
 
     void loadGraphData();
 
-    return () => controller.abort();
-  }, [selectedDisciplineId]);
+    return () => {
+      cancelled = true;
+    };
+  }, [activeDisciplineId]);
+
+  useEffect(() => {
+    if (!scene) {
+      return;
+    }
+
+    if (!selectedNodeId || !scene.detailsByNodeId[selectedNodeId]) {
+      if (scene.defaultSelectedNodeId && scene.defaultSelectedNodeId !== selectedNodeId) {
+        setSelectedNodeId(scene.defaultSelectedNodeId);
+      }
+    }
+  }, [scene, selectedNodeId]);
 
   useEffect(() => {
     if (!scene || !graphRef.current) {
@@ -294,104 +370,88 @@ export default function App() {
     graphRef.current.getInstance().setCheckedNode(selectedNodeId);
   }, [selectedNodeId]);
 
-  function applyView(nextView: ViewMode, preferredNodeId?: string) {
+  async function applyView(nextView: ViewMode, preferredNodeId?: string) {
     if (!graphData) {
       return;
     }
 
-    const nextScene = buildSceneFromView(graphData, nextView, preferredNodeId);
+    let activeGraph = graphData;
+    let nextScene = buildSceneFromView(activeGraph, nextView, preferredNodeId);
 
-    startTransition(() => {
-      setView(nextView);
-      setScene(nextScene);
-      setSelectedNodeId(nextScene.defaultSelectedNodeId);
-    });
+    if (
+      nextView.level === "elements" &&
+      nextScene.key.startsWith("missing-topic:") &&
+      activeDisciplineId
+    ) {
+      const { graph: freshGraph } = await fetchKnowledgeGraphDirect(activeDisciplineId);
+      activeGraph = freshGraph;
+      nextScene = buildSceneFromView(freshGraph, nextView, preferredNodeId);
+      setGraphData(freshGraph);
+    }
+
+    setView(nextView);
+    setSelectedNodeId(nextScene.defaultSelectedNodeId);
   }
 
   function handleDisciplineChange(nextDisciplineId: string) {
-    if (nextDisciplineId === selectedDisciplineId) {
+    if (nextDisciplineId === activeDisciplineId) {
       return;
     }
 
-    startTransition(() => {
-      setSelectedDisciplineId(nextDisciplineId);
-      setScene(null);
-      setSelectedNodeId("");
-      setView({ level: "topics" });
-    });
+    setSelectedDisciplineId(nextDisciplineId);
+    setGraphData(null);
+    setSelectedNodeId("");
+    setView({ level: "topics" });
+    setError("");
   }
 
-  /**
-   * Клик по ноде ТОЛЬКО выделяет её.
-   * Переход между уровнями — через кнопки в карточке или hint.
-   */
   function handleNodeClick(node: RGNode) {
+    const payload = node.data as { entity?: string; topicId?: string } | undefined;
+    if (!payload?.entity) {
+      setSelectedNodeId(node.id);
+      return;
+    }
+
+    if (payload.entity === "topic" && payload.topicId) {
+      void applyView({ level: "elements", topicId: payload.topicId });
+      return false;
+    }
+
+    if (payload.entity === "topic-focus" && payload.topicId) {
+      void applyView({ level: "topics" }, `topic:${payload.topicId}`);
+      return false;
+    }
+
     setSelectedNodeId(node.id);
     return false;
   }
 
   async function refreshSelectedDisciplineGraph() {
-    if (!selectedDisciplineId) {
+    if (!activeDisciplineId) {
       return;
     }
 
-    const nextGraph = await fetchDisciplineKnowledgeGraph(selectedDisciplineId);
+    const { debug, graph: nextGraph } = await fetchKnowledgeGraphDirect(activeDisciplineId);
     const nextView =
       view.level === "elements" &&
       nextGraph.topics.some((topic) => topic.id === view.topicId)
         ? view
         : { level: "topics" as const };
-    const nextScene = buildSceneFromView(nextGraph, nextView, selectedNodeId);
-
-    startTransition(() => {
-      setGraphData(nextGraph);
-      setView(nextView);
-      setScene(nextScene);
-      setSelectedNodeId(nextScene.defaultSelectedNodeId);
-    });
+    const nextScene = buildSceneFromView(nextGraph, nextView, selectedNodeId || undefined);
+    setGraphFetchDebug(debug);
+    setGraphData(nextGraph);
+    setView(nextView);
+    setSelectedNodeId(nextScene.defaultSelectedNodeId);
+    setError("");
   }
 
   const selectedDiscipline = disciplines.find(
-    (discipline) => discipline.id === selectedDisciplineId,
+    (discipline) => discipline.id === activeDisciplineId,
   );
   const detail: DetailCard | null =
     scene?.detailsByNodeId[selectedNodeId || scene.defaultSelectedNodeId] ?? null;
   const overlayLegendSections =
     view.level === "topics" ? TOPIC_LEGEND_SECTIONS : ELEMENT_LEGEND_SECTIONS;
-
-  // 🆕 Хелперы для извлечения topicId из selectedNodeId
-  const getTopicIdFromSelectedNode = () => {
-    if (selectedNodeId.startsWith("topic:")) {
-      return selectedNodeId.slice(6);
-    }
-    if (selectedNodeId.startsWith("topic-focus:")) {
-      return selectedNodeId.slice(12);
-    }
-    return null;
-  };
-
-  // 🆕 Обработчики кнопок навигации
-  const handleNavigateToElements = () => {
-    const topicId = getTopicIdFromSelectedNode();
-    if (topicId) {
-      applyView({ level: "elements", topicId });
-    }
-  };
-
-  const handleNavigateToTopics = () => {
-    const topicId = getTopicIdFromSelectedNode();
-    if (topicId) {
-      applyView({ level: "topics" }, `topic:${topicId}`);
-    } else {
-      applyView({ level: "topics" });
-    }
-  };
-
-  // 🆕 Флаги для условного рендера кнопок
-  const isTopicNodeSelected = selectedNodeId.startsWith("topic:");
-  const isTopicFocusSelected = selectedNodeId.startsWith("topic-focus:");
-  const canNavigateToElements = view.level === "topics" && isTopicNodeSelected;
-  const canNavigateToTopics = view.level === "elements" && (isTopicFocusSelected || isTopicNodeSelected);
 
   return (
     <div className={`page-shell page-shell--${view.level}`}>
@@ -409,7 +469,7 @@ export default function App() {
           <label className="field">
             <span>Дисциплина</span>
             <select
-              value={selectedDisciplineId}
+              value={activeDisciplineId}
               onChange={(event) => handleDisciplineChange(event.target.value)}
               disabled={!disciplines.length || loading}
             >
@@ -437,7 +497,7 @@ export default function App() {
               {view.level === "elements" && (
                 <button
                   className="ghost-button"
-                  onClick={() => applyView({ level: "topics" })}
+                  onClick={() => void applyView({ level: "topics" })}
                   type="button"
                 >
                   Назад к темам
@@ -469,26 +529,6 @@ export default function App() {
           <section className="card" key={`${scene?.key ?? "empty"}-${selectedNodeId}`}>
             <div className="card__header">
               <span className="card__eyebrow">Выбранная вершина</span>
-              {/* 🆕 Кнопка перехода к элементам темы (показывается на уровне тем при выборе темы) */}
-              {canNavigateToElements && (
-                <button
-                  className="primary-button primary-button--small"
-                  onClick={handleNavigateToElements}
-                  type="button"
-                >
-                  Раскрыть тему →
-                </button>
-              )}
-              {/* 🆕 Кнопка возврата к темам (показывается на уровне элементов) */}
-              {canNavigateToTopics && (
-                <button
-                  className="ghost-button ghost-button--small"
-                  onClick={handleNavigateToTopics}
-                  type="button"
-                >
-                  ← Назад к темам
-                </button>
-              )}
             </div>
             {detail ? (
               <>
@@ -540,9 +580,9 @@ export default function App() {
         </aside>
 
         <div className="workspace-main">
-          {selectedDisciplineId ? (
+          {activeDisciplineId ? (
             <GraphEditor
-              disciplineId={selectedDisciplineId}
+              disciplineId={activeDisciplineId}
               topics={graphData?.topics ?? []}
               disciplineElements={graphData?.knowledge_elements ?? []}
               onDataChanged={refreshSelectedDisciplineGraph}
@@ -578,6 +618,12 @@ export default function App() {
                 <div className="status-view">
                   <h3>Нет данных для визуализации</h3>
                   <p>Добавь дисциплины и темы, затем страница покажет их граф.</p>
+                  <p>
+                    debug: disciplines={disciplines.length}, activeDisciplineId=
+                    {activeDisciplineId || "empty"}, topics=
+                    {graphData?.topics.length ?? 0}
+                  </p>
+                  <p>fetch-debug: {graphFetchDebug || "empty"}</p>
                 </div>
               ) : (
                 <>

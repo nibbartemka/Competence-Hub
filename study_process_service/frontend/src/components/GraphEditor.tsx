@@ -7,6 +7,7 @@ import {
   createTopicDependency,
   createTopicKnowledgeElement,
   fetchKnowledgeElements,
+  isAbortError,
 } from "../api";
 import type {
   CompetenceType,
@@ -27,6 +28,13 @@ type GraphEditorProps = {
 type Feedback = {
   kind: "error" | "success";
   text: string;
+};
+
+type TopicNewElementDraft = {
+  clientId: string;
+  competenceType: CompetenceType;
+  description: string;
+  name: string;
 };
 
 const COMPETENCE_OPTIONS: Array<{ label: string; value: CompetenceType }> = [
@@ -73,6 +81,15 @@ function nextDifferentValue(currentValue: string, items: Array<{ id: string }>) 
   return items.find((item) => item.id !== currentValue)?.id ?? currentValue;
 }
 
+function createDraft(): TopicNewElementDraft {
+  return {
+    clientId: `${Date.now()}-${Math.random().toString(16).slice(2)}`,
+    competenceType: "know",
+    description: "",
+    name: "",
+  };
+}
+
 export function GraphEditor({
   disciplineId,
   disciplineElements,
@@ -85,6 +102,8 @@ export function GraphEditor({
 
   const [topicName, setTopicName] = useState("");
   const [topicDescription, setTopicDescription] = useState("");
+  const [selectedRequiredElementIds, setSelectedRequiredElementIds] = useState<string[]>([]);
+  const [topicNewElements, setTopicNewElements] = useState<TopicNewElementDraft[]>([]);
 
   const [elementName, setElementName] = useState("");
   const [elementDescription, setElementDescription] = useState("");
@@ -123,8 +142,14 @@ export function GraphEditor({
     async function loadAllElements() {
       try {
         const items = await fetchKnowledgeElements(controller.signal);
+        if (controller.signal.aborted) {
+          return;
+        }
         setAllElements(items);
       } catch (error) {
+        if (isAbortError(error)) {
+          return;
+        }
         setFeedback({
           kind: "error",
           text: extractErrorMessage(error),
@@ -166,12 +191,19 @@ export function GraphEditor({
   useEffect(() => {
     if (!sortedAllElements.length) {
       setTopicElementElementId("");
+      setSelectedRequiredElementIds([]);
       return;
     }
 
     if (!sortedAllElements.some((element) => element.id === topicElementElementId)) {
       setTopicElementElementId(sortedAllElements[0].id);
     }
+
+    setSelectedRequiredElementIds((current) =>
+      current.filter((elementId) =>
+        sortedAllElements.some((element) => element.id === elementId),
+      ),
+    );
   }, [sortedAllElements, topicElementElementId]);
 
   useEffect(() => {
@@ -197,6 +229,31 @@ export function GraphEditor({
     setAllElements(items);
   }
 
+  function toggleRequiredElement(elementId: string) {
+    setSelectedRequiredElementIds((current) =>
+      current.includes(elementId)
+        ? current.filter((item) => item !== elementId)
+        : [...current, elementId],
+    );
+  }
+
+  function addTopicNewElementDraft() {
+    setTopicNewElements((current) => [...current, createDraft()]);
+  }
+
+  function removeTopicNewElementDraft(clientId: string) {
+    setTopicNewElements((current) => current.filter((item) => item.clientId !== clientId));
+  }
+
+  function updateTopicNewElementDraft(
+    clientId: string,
+    patch: Partial<Omit<TopicNewElementDraft, "clientId">>,
+  ) {
+    setTopicNewElements((current) =>
+      current.map((item) => (item.clientId === clientId ? { ...item, ...patch } : item)),
+    );
+  }
+
   async function handleCreateTopic(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!disciplineId) {
@@ -206,13 +263,46 @@ export function GraphEditor({
     try {
       setBusyAction("topic");
       setFeedback(null);
-      await createTopic({
+
+      const createdTopic = await createTopic({
         name: topicName.trim(),
         description: topicDescription.trim(),
         discipline_id: disciplineId,
       });
+
+      for (const elementId of selectedRequiredElementIds) {
+        await createTopicKnowledgeElement({
+          topic_id: createdTopic.id,
+          element_id: elementId,
+          role: "required",
+          note: "",
+        });
+      }
+
+      for (const draft of topicNewElements) {
+        if (!draft.name.trim()) {
+          continue;
+        }
+
+        const createdElement = await createKnowledgeElement({
+          name: draft.name.trim(),
+          description: draft.description.trim(),
+          competence_type: draft.competenceType,
+        });
+
+        await createTopicKnowledgeElement({
+          topic_id: createdTopic.id,
+          element_id: createdElement.id,
+          role: "formed",
+          note: "",
+        });
+      }
+
       setTopicName("");
       setTopicDescription("");
+      setSelectedRequiredElementIds([]);
+      setTopicNewElements([]);
+      await reloadElements();
       await onDataChanged();
       setFeedback({ kind: "success", text: "Тема создана." });
     } catch (error) {
@@ -361,6 +451,130 @@ export function GraphEditor({
                 placeholder="Короткое описание темы"
               />
             </label>
+
+            <div className="editor-subsection">
+              <div className="editor-subsection__header">
+                <div>
+                  <strong>Требуемые элементы</strong>
+                  <p>
+                    Выбери уже существующие элементы, которые нужны до начала
+                    изучения этой темы.
+                  </p>
+                </div>
+              </div>
+
+              {sortedAllElements.length ? (
+                <div className="editor-checklist">
+                  {sortedAllElements.map((element) => (
+                    <label className="editor-checklist__item" key={element.id}>
+                      <input
+                        type="checkbox"
+                        checked={selectedRequiredElementIds.includes(element.id)}
+                        onChange={() => toggleRequiredElement(element.id)}
+                      />
+                      <span>
+                        <strong>{element.name}</strong>
+                        <small>{competenceLabel(element.competence_type)}</small>
+                      </span>
+                    </label>
+                  ))}
+                </div>
+              ) : (
+                <p className="editor-empty">
+                  Пока нет элементов, которые можно выбрать как требуемые.
+                </p>
+              )}
+            </div>
+
+            <div className="editor-subsection">
+              <div className="editor-subsection__header">
+                <div>
+                  <strong>Новые элементы</strong>
+                  <p>
+                    Добавь элементы, которые будут сформированы в результате
+                    изучения темы.
+                  </p>
+                </div>
+
+                <button
+                  className="secondary-button"
+                  onClick={addTopicNewElementDraft}
+                  type="button"
+                >
+                  + Добавить элемент
+                </button>
+              </div>
+
+              {topicNewElements.length ? (
+                <div className="editor-drafts">
+                  {topicNewElements.map((draft, index) => (
+                    <div className="editor-draft-card" key={draft.clientId}>
+                      <div className="editor-draft-card__header">
+                        <strong>Новый элемент {index + 1}</strong>
+                        <button
+                          className="secondary-button secondary-button--danger"
+                          onClick={() => removeTopicNewElementDraft(draft.clientId)}
+                          type="button"
+                        >
+                          Удалить
+                        </button>
+                      </div>
+
+                      <div className="editor-form__grid">
+                        <label className="field">
+                          <span>Название</span>
+                          <input
+                            value={draft.name}
+                            onChange={(event) =>
+                              updateTopicNewElementDraft(draft.clientId, {
+                                name: event.target.value,
+                              })
+                            }
+                            placeholder="Название нового элемента"
+                          />
+                        </label>
+
+                        <label className="field">
+                          <span>Компетенция</span>
+                          <select
+                            value={draft.competenceType}
+                            onChange={(event) =>
+                              updateTopicNewElementDraft(draft.clientId, {
+                                competenceType: event.target.value as CompetenceType,
+                              })
+                            }
+                          >
+                            {COMPETENCE_OPTIONS.map((option) => (
+                              <option key={option.value} value={option.value}>
+                                {option.label}
+                              </option>
+                            ))}
+                          </select>
+                        </label>
+                      </div>
+
+                      <label className="field">
+                        <span>Описание</span>
+                        <textarea
+                          rows={2}
+                          value={draft.description}
+                          onChange={(event) =>
+                            updateTopicNewElementDraft(draft.clientId, {
+                              description: event.target.value,
+                            })
+                          }
+                          placeholder="Короткое описание нового элемента"
+                        />
+                      </label>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <p className="editor-empty">
+                  Пока не добавлено ни одного нового элемента для этой темы.
+                </p>
+              )}
+            </div>
 
             <button className="primary-button" disabled={!topicName.trim() || !!busyAction}>
               {busyAction === "topic" ? "Сохраняю..." : "Создать тему"}

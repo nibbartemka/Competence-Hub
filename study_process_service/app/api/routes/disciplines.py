@@ -119,7 +119,24 @@ async def get_discipline_knowledge_graph(
                 .order_by(KnowledgeElementRelation.id)
             )
             knowledge_element_relations = list(relations_result.scalars().all())
-
+    # print (DisciplineKnowledgeGraphRead(
+    #     discipline=DisciplineRead.model_validate(discipline),
+    #     topics=[TopicRead.model_validate(item) for item in topics],
+    #     topic_dependencies=[
+    #         TopicDependencyRead.model_validate(item) for item in topic_dependencies
+    #     ],
+    #     knowledge_elements=[
+    #         KnowledgeElementRead.model_validate(item) for item in knowledge_elements
+    #     ],
+    #     topic_knowledge_elements=[
+    #         TopicKnowledgeElementRead.model_validate(item)
+    #         for item in topic_knowledge_elements
+    #     ],
+    #     knowledge_element_relations=[
+    #         KnowledgeElementRelationRead.model_validate(item)
+    #         for item in knowledge_element_relations
+    #     ],
+    # ))
     return DisciplineKnowledgeGraphRead(
         discipline=DisciplineRead.model_validate(discipline),
         topics=[TopicRead.model_validate(item) for item in topics],

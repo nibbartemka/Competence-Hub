@@ -1,4 +1,5 @@
 from enum import StrEnum
+from pathlib import Path
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from pydantic import Field, BaseModel
@@ -40,12 +41,19 @@ class SQLiteSettings(BaseModel):
     PATH: str = "app.db"
 
     @property
+    def resolved_path(self) -> Path:
+        configured_path = Path(self.PATH)
+        if configured_path.is_absolute():
+            return configured_path
+        return Path(__file__).resolve().parents[2] / configured_path
+
+    @property
     def async_DSN(self) -> str:
-        return f"sqlite+aiosqlite:///{self.PATH}"
+        return f"sqlite+aiosqlite:///{self.resolved_path.as_posix()}"
 
     @property
     def DSN(self) -> str:
-        return f"sqlite:///{self.PATH}"
+        return f"sqlite:///{self.resolved_path.as_posix()}"
 
 
 class AppSettings(BaseModel):
