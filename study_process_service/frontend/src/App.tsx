@@ -536,11 +536,11 @@ export default function App() {
             </select>
           </label>
 
-          <div className="hero__chip">
+          {/* <div className="hero__chip">
             {view.level === "topics"
               ? "Режим тем"
               : `Элементы темы: ${detail?.title ?? ""}`}
-          </div>
+          </div> */}
         </div>
       </header>
 
