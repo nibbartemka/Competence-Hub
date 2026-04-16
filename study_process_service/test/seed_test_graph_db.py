@@ -50,18 +50,342 @@ def recreate_database() -> None:
 
 
 def seed_data(session: Session) -> None:
-    discipline = Discipline(name="Graphs")
+    KNOW = CompetenceType.KNOW
+    CAN = CompetenceType.CAN
+    MASTER = CompetenceType.MASTER
+
+    discipline = Discipline(name="Теория графов (Кристофидес)")
     session.add(discipline)
     session.flush()
 
-    element_names = ["E1", "E2", "E3", "E4", "E5", "E6", "E7"]
+    element_specs = [
+        # ===== ГЛАВА 1. ВВЕДЕНИЕ =====
+        (
+            "Понятие графа",
+            "Знание определения графа, вершин, ребер и базовых обозначений.",
+            KNOW,
+        ),
+        (
+            "Пути и маршруты",
+            "Знание понятий путь, маршрут, простая цепь, длина пути.",
+            KNOW,
+        ),
+        (
+            "Циклы и петли",
+            "Знание понятий цикл, ориентированный цикл, замкнутый путь, петля.",
+            KNOW,
+        ),
+        (
+            "Определять тип графа",
+            "Умение различать ориентированный, неориентированный, полный, двудольный, планарный граф.",
+            CAN,
+        ),
+        (
+            "Представлять граф матрицей",
+            "Умение строить матрицу смежности и матрицу инцидентности.",
+            CAN,
+        ),
+        (
+            "Свободно оперировать базовыми представлениями графа",
+            "Владение переходом между рисунком графа, множественным и матричным представлением.",
+            MASTER,
+        ),
+
+        # ===== ГЛАВА 2. ДОСТИЖИМОСТЬ И СВЯЗНОСТЬ =====
+        (
+            "Достижимость",
+            "Знание понятия достижимости и контрадостижимости в ориентированном графе.",
+            KNOW,
+        ),
+        (
+            "Сильная компонента",
+            "Знание понятия сильной компоненты и связности графа.",
+            KNOW,
+        ),
+        (
+            "Матрица достижимости",
+            "Умение строить и использовать матрицу достижимости.",
+            CAN,
+        ),
+        (
+            "Находить сильные компоненты",
+            "Умение выделять сильные компоненты графа.",
+            CAN,
+        ),
+        (
+            "Анализировать структуру связности графа",
+            "Владение анализом баз, сильных компонент и ограниченной достижимости.",
+            MASTER,
+        ),
+
+        # ===== ГЛАВА 3. НЕЗАВИСИМЫЕ / ДОМИНИРУЮЩИЕ МНОЖЕСТВА / ПОКРЫТИЕ =====
+        (
+            "Независимое множество",
+            "Знание понятия независимого множества вершин.",
+            KNOW,
+        ),
+        (
+            "Доминирующее множество",
+            "Знание понятия доминирующего множества.",
+            KNOW,
+        ),
+        (
+            "Покрытие в графе",
+            "Знание задачи о покрытии и ее интерпретаций.",
+            KNOW,
+        ),
+        (
+            "Находить покрытия и независимые множества",
+            "Умение формулировать и решать задачи на независимые, доминирующие множества и покрытия.",
+            CAN,
+        ),
+        (
+            "Моделировать прикладные задачи как покрытие",
+            "Владение сведением прикладных задач к задачам покрытия.",
+            MASTER,
+        ),
+
+        # ===== ГЛАВА 4. РАСКРАСКИ =====
+        (
+            "Хроматическое число",
+            "Знание понятия хроматического числа и основных оценок.",
+            KNOW,
+        ),
+        (
+            "Раскраска графа",
+            "Знание постановки задачи раскраски графа.",
+            KNOW,
+        ),
+        (
+            "Выполнять точную раскраску",
+            "Умение применять точные алгоритмы раскраски.",
+            CAN,
+        ),
+        (
+            "Выполнять приближенную раскраску",
+            "Умение применять приближенные алгоритмы раскраски.",
+            CAN,
+        ),
+        (
+            "Выбирать метод раскраски под задачу",
+            "Владение выбором стратегии раскраски в зависимости от ограничений задачи.",
+            MASTER,
+        ),
+
+        # ===== ГЛАВА 5. РАЗМЕЩЕНИЕ ЦЕНТРОВ =====
+        (
+            "Центр и радиус графа",
+            "Знание понятий центр, радиус, абсолютный центр графа.",
+            KNOW,
+        ),
+        (
+            "p-центр",
+            "Знание понятия кратного центра и абсолютного p-центра.",
+            KNOW,
+        ),
+        (
+            "Находить центр графа",
+            "Умение находить центр, абсолютный центр и p-центр графа.",
+            CAN,
+        ),
+        (
+            "Решать задачи размещения центров",
+            "Владение моделированием задач размещения сервисов и пунктов обслуживания через центры графа.",
+            MASTER,
+        ),
+
+        # ===== ГЛАВА 6. РАЗМЕЩЕНИЕ МЕДИАН =====
+        (
+            "Медиана графа",
+            "Знание понятия медианы и p-медианы графа.",
+            KNOW,
+        ),
+        (
+            "Обобщенная p-медиана",
+            "Знание постановки задачи обобщенной p-медианы.",
+            KNOW,
+        ),
+        (
+            "Находить медиану графа",
+            "Умение решать задачу о медиане и p-медиане.",
+            CAN,
+        ),
+        (
+            "Решать задачи размещения медиан",
+            "Владение выбором медианных моделей для задач минимизации суммарных затрат.",
+            MASTER,
+        ),
+
+        # ===== ГЛАВА 7. ДЕРЕВЬЯ =====
+        (
+            "Дерево и остов",
+            "Знание понятий дерево, остовное дерево, остовный подграф.",
+            KNOW,
+        ),
+        (
+            "Кратчайший остов",
+            "Знание постановки задачи о кратчайшем остове.",
+            KNOW,
+        ),
+        (
+            "Строить остовные деревья",
+            "Умение строить остовные деревья и кратчайший остов.",
+            CAN,
+        ),
+        (
+            "Задача Штейнера",
+            "Знание и понимание задачи Штейнера на графах.",
+            KNOW,
+        ),
+        (
+            "Применять остовные конструкции",
+            "Владение использованием остовов и деревьев Штейнера в проектировании сетей.",
+            MASTER,
+        ),
+
+        # ===== ГЛАВА 8. КРАТЧАЙШИЕ ПУТИ =====
+        (
+            "Кратчайший путь",
+            "Знание постановки задачи о кратчайшем пути.",
+            KNOW,
+        ),
+        (
+            "Кратчайшие пути между всеми парами",
+            "Знание постановки задачи кратчайших путей между всеми парами вершин.",
+            KNOW,
+        ),
+        (
+            "Находить кратчайшие пути",
+            "Умение решать задачу кратчайшего пути между двумя вершинами и между всеми парами.",
+            CAN,
+        ),
+        (
+            "Обнаруживать отрицательные циклы",
+            "Умение обнаруживать циклы отрицательного веса.",
+            CAN,
+        ),
+        (
+            "Применять модели кратчайших путей",
+            "Владение использованием моделей кратчайших путей в маршрутизации и сетевом планировании.",
+            MASTER,
+        ),
+
+        # ===== ГЛАВА 9. ЦИКЛЫ, РАЗРЕЗЫ И ЭЙЛЕР =====
+        (
+            "Цикломатическое число",
+            "Знание цикломатического числа и фундаментальных циклов.",
+            KNOW,
+        ),
+        (
+            "Разрез графа",
+            "Знание понятия разреза и матриц циклов и разрезов.",
+            KNOW,
+        ),
+        (
+            "Эйлеров цикл",
+            "Знание условий существования эйлерова цикла.",
+            KNOW,
+        ),
+        (
+            "Находить эйлеровы циклы",
+            "Умение строить эйлеровы циклы и решать задачу китайского почтальона.",
+            CAN,
+        ),
+        (
+            "Анализировать циклическую структуру графа",
+            "Владение использованием циклов и разрезов для анализа структуры сети.",
+            MASTER,
+        ),
+
+        # ===== ГЛАВА 10. ГАМИЛЬТОН / КОММИВОЯЖЕР =====
+        (
+            "Гамильтонов цикл",
+            "Знание понятия гамильтонова цикла и цепи.",
+            KNOW,
+        ),
+        (
+            "Задача коммивояжера",
+            "Знание постановки задачи коммивояжера.",
+            KNOW,
+        ),
+        (
+            "Искать гамильтоновы циклы",
+            "Умение применять методы поиска гамильтоновых циклов.",
+            CAN,
+        ),
+        (
+            "Связывать TSP с остовом и назначениями",
+            "Умение использовать связи задачи коммивояжера с задачей остова и назначений.",
+            CAN,
+        ),
+        (
+            "Проектировать маршруты обхода",
+            "Владение выбором моделей обхода и транспортных маршрутов.",
+            MASTER,
+        ),
+
+        # ===== ГЛАВА 11. ПОТОКИ В СЕТЯХ =====
+        (
+            "Поток в сети",
+            "Знание понятий поток, источник, сток, пропускная способность.",
+            KNOW,
+        ),
+        (
+            "Максимальный поток",
+            "Знание постановки задачи о максимальном потоке.",
+            KNOW,
+        ),
+        (
+            "Находить максимальный поток",
+            "Умение решать задачу о максимальном потоке.",
+            CAN,
+        ),
+        (
+            "Поток минимальной стоимости",
+            "Знание и понимание задачи о потоке минимальной стоимости.",
+            KNOW,
+        ),
+        (
+            "Моделировать сетевые потоки",
+            "Владение моделями потоков для транспортных и производственных сетей.",
+            MASTER,
+        ),
+
+        # ===== ГЛАВА 12. ПАРОСОЧЕТАНИЯ / НАЗНАЧЕНИЯ =====
+        (
+            "Паросочетание",
+            "Знание понятия паросочетания и его видов.",
+            KNOW,
+        ),
+        (
+            "Задача о назначениях",
+            "Знание постановки задачи о назначениях.",
+            KNOW,
+        ),
+        (
+            "Находить максимальное паросочетание",
+            "Умение находить наибольшие и максимальные паросочетания.",
+            CAN,
+        ),
+        (
+            "Решать задачу о назначениях",
+            "Умение решать задачу о назначениях и связанные транспортные задачи.",
+            CAN,
+        ),
+        (
+            "Использовать модели соответствия и назначения",
+            "Владение сведением прикладных задач к паросочетаниям, назначениям и покрытиям.",
+            MASTER,
+        ),
+    ]
+
     elements: dict[str, KnowledgeElement] = {}
 
-    for name in element_names:
+    for name, description, competence_type in element_specs:
         element = KnowledgeElement(
             name=name,
-            description=f"Seed knowledge element {name}",
-            competence_type=CompetenceType.KNOW,
+            description=description,
+            competence_type=competence_type,
         )
         session.add(element)
         elements[name] = element
@@ -70,34 +394,196 @@ def seed_data(session: Session) -> None:
 
     topics_spec = [
         {
-            "name": "T1",
-            "description": "Entry topic. Produces E1 and E2.",
+            "name": "Глава 1. Введение",
+            "description": "Базовые понятия графов: определения, пути, циклы, степени, подграфы, типы графов, матричные представления.",
             "required": [],
-            "formed": ["E1", "E2"],
+            "formed": [
+                "Понятие графа",
+                "Пути и маршруты",
+                "Циклы и петли",
+                "Определять тип графа",
+                "Представлять граф матрицей",
+                "Свободно оперировать базовыми представлениями графа",
+            ],
         },
         {
-            "name": "T2",
-            "description": "Requires E1 and E2. Produces E3 and E4.",
-            "required": ["E1", "E2"],
-            "formed": ["E3", "E4"],
+            "name": "Глава 2. Достижимость и связность",
+            "description": "Достижимость, сильные компоненты, базы, ограниченная достижимость.",
+            "required": [
+                "Понятие графа",
+                "Пути и маршруты",
+                "Циклы и петли",
+                "Представлять граф матрицей",
+            ],
+            "formed": [
+                "Достижимость",
+                "Сильная компонента",
+                "Матрица достижимости",
+                "Находить сильные компоненты",
+                "Анализировать структуру связности графа",
+            ],
         },
         {
-            "name": "T3",
-            "description": "Requires E1. Produces E5.",
-            "required": ["E1"],
-            "formed": ["E5"],
+            "name": "Глава 3. Независимые и доминирующие множества. Покрытие",
+            "description": "Независимые множества, доминирующие множества, задача о покрытии.",
+            "required": [
+                "Понятие графа",
+                "Пути и маршруты",
+                "Определять тип графа",
+            ],
+            "formed": [
+                "Независимое множество",
+                "Доминирующее множество",
+                "Покрытие в графе",
+                "Находить покрытия и независимые множества",
+                "Моделировать прикладные задачи как покрытие",
+            ],
         },
         {
-            "name": "T4",
-            "description": "Requires E1, E2 and E3. Produces E6.",
-            "required": ["E1", "E2", "E3"],
-            "formed": ["E6"],
+            "name": "Глава 4. Раскраски",
+            "description": "Хроматическое число, точные и приближенные алгоритмы раскраски.",
+            "required": [
+                "Понятие графа",
+                "Определять тип графа",
+                "Независимое множество",
+            ],
+            "formed": [
+                "Хроматическое число",
+                "Раскраска графа",
+                "Выполнять точную раскраску",
+                "Выполнять приближенную раскраску",
+                "Выбирать метод раскраски под задачу",
+            ],
         },
         {
-            "name": "T5",
-            "description": "Requires E3 and E5. Produces E7.",
-            "required": ["E3", "E5"],
-            "formed": ["E7"],
+            "name": "Глава 5. Размещение центров",
+            "description": "Центр, радиус, абсолютный центр, p-центры.",
+            "required": [
+                "Понятие графа",
+                "Пути и маршруты",
+            ],
+            "formed": [
+                "Центр и радиус графа",
+                "p-центр",
+                "Находить центр графа",
+                "Решать задачи размещения центров",
+            ],
+        },
+        {
+            "name": "Глава 6. Размещение медиан в графе",
+            "description": "Медианы и p-медианы графа.",
+            "required": [
+                "Понятие графа",
+                "Пути и маршруты",
+                "Центр и радиус графа",
+            ],
+            "formed": [
+                "Медиана графа",
+                "Обобщенная p-медиана",
+                "Находить медиану графа",
+                "Решать задачи размещения медиан",
+            ],
+        },
+        {
+            "name": "Глава 7. Деревья",
+            "description": "Остовные деревья, кратчайший остов, задача Штейнера.",
+            "required": [
+                "Понятие графа",
+                "Пути и маршруты",
+                "Циклы и петли",
+            ],
+            "formed": [
+                "Дерево и остов",
+                "Кратчайший остов",
+                "Строить остовные деревья",
+                "Задача Штейнера",
+                "Применять остовные конструкции",
+            ],
+        },
+        {
+            "name": "Глава 8. Кратчайшие пути",
+            "description": "Кратчайшие пути между двумя вершинами и всеми парами, отрицательные циклы.",
+            "required": [
+                "Понятие графа",
+                "Пути и маршруты",
+                "Представлять граф матрицей",
+                "Дерево и остов",
+            ],
+            "formed": [
+                "Кратчайший путь",
+                "Кратчайшие пути между всеми парами",
+                "Находить кратчайшие пути",
+                "Обнаруживать отрицательные циклы",
+                "Применять модели кратчайших путей",
+            ],
+        },
+        {
+            "name": "Глава 9. Циклы, разрезы и задача Эйлера",
+            "description": "Цикломатическое число, разрезы, матрицы циклов и разрезов, эйлеровы циклы.",
+            "required": [
+                "Понятие графа",
+                "Пути и маршруты",
+                "Циклы и петли",
+                "Дерево и остов",
+            ],
+            "formed": [
+                "Цикломатическое число",
+                "Разрез графа",
+                "Эйлеров цикл",
+                "Находить эйлеровы циклы",
+                "Анализировать циклическую структуру графа",
+            ],
+        },
+        {
+            "name": "Глава 10. Гамильтоновы циклы, цепи и задача коммивояжера",
+            "description": "Гамильтоновы циклы, задача коммивояжера, связи с остовом и назначениями.",
+            "required": [
+                "Понятие графа",
+                "Пути и маршруты",
+                "Циклы и петли",
+                "Кратчайший остов",
+            ],
+            "formed": [
+                "Гамильтонов цикл",
+                "Задача коммивояжера",
+                "Искать гамильтоновы циклы",
+                "Связывать TSP с остовом и назначениями",
+                "Проектировать маршруты обхода",
+            ],
+        },
+        {
+            "name": "Глава 11. Потоки в сетях",
+            "description": "Максимальный поток, поток минимальной стоимости, потоки в графах с выигрышами.",
+            "required": [
+                "Понятие графа",
+                "Пути и маршруты",
+                "Разрез графа",
+                "Представлять граф матрицей",
+            ],
+            "formed": [
+                "Поток в сети",
+                "Максимальный поток",
+                "Находить максимальный поток",
+                "Поток минимальной стоимости",
+                "Моделировать сетевые потоки",
+            ],
+        },
+        {
+            "name": "Глава 12. Паросочетания, транспортная задача и задача о назначениях",
+            "description": "Паросочетания, задача о назначениях, покрытия, остовные подграфы с предписанными степенями.",
+            "required": [
+                "Понятие графа",
+                "Покрытие в графе",
+                "Поток в сети",
+                "Максимальный поток",
+            ],
+            "formed": [
+                "Паросочетание",
+                "Задача о назначениях",
+                "Находить максимальное паросочетание",
+                "Решать задачу о назначениях",
+                "Использовать модели соответствия и назначения",
+            ],
         },
     ]
 
@@ -123,7 +609,7 @@ def seed_data(session: Session) -> None:
                     topic_id=topic.id,
                     element_id=elements[element_name].id,
                     role=TopicKnowledgeElementRole.REQUIRED,
-                    note=f"{element_name} is required before starting topic {topic.name}",
+                    note=f"'{element_name}' is required before starting topic '{topic.name}'",
                 )
             )
 
@@ -133,7 +619,7 @@ def seed_data(session: Session) -> None:
                     topic_id=topic.id,
                     element_id=elements[element_name].id,
                     role=TopicKnowledgeElementRole.FORMED,
-                    note=f"{element_name} is formed while studying topic {topic.name}",
+                    note=f"'{element_name}' is formed while studying topic '{topic.name}'",
                 )
             )
 
@@ -150,64 +636,208 @@ def seed_knowledge_element_relations(
 ) -> None:
     relations_spec = [
         (
-            "E1",
-            "E2",
-            KnowledgeElementRelationType.BUILDS_ON,
-            "E2 builds on understanding of E1.",
-        ),
-        (
-            "E2",
-            "E3",
+            "Пути и маршруты",
+            "Понятие графа",
             KnowledgeElementRelationType.REQUIRES,
-            "E3 requires prior understanding of E2.",
+            "The concept of a path is defined only after mastering the concept of a graph.",
         ),
         (
-            "E3",
-            "E4",
-            KnowledgeElementRelationType.CONTAINS,
-            "E3 contains E4 as a component.",
+            "Циклы и петли",
+            "Пути и маршруты",
+            KnowledgeElementRelationType.BUILDS_ON,
+            "The concept of a cycle is built on the concept of a path and route.",
         ),
         (
-            "E4",
-            "E3",
-            KnowledgeElementRelationType.PART_OF,
-            "E4 is part of E3.",
+            "Определять тип графа",
+            "Понятие графа",
+            KnowledgeElementRelationType.IMPLEMENTS,
+            "Knowledge of the graph concept is expressed in the ability to classify graphs.",
         ),
         (
-            "E5",
-            "E3",
-            KnowledgeElementRelationType.REFINES,
-            "E5 refines the broader idea represented by E3.",
+            "Представлять граф матрицей",
+            "Понятие графа",
+            KnowledgeElementRelationType.IMPLEMENTS,
+            "Basic graph knowledge is expressed in matrix representation.",
         ),
         (
-            "E3",
-            "E6",
-            KnowledgeElementRelationType.GENERALIZES,
-            "E3 generalizes the more specific case represented by E6.",
+            "Матрица достижимости",
+            "Достижимость",
+            KnowledgeElementRelationType.IMPLEMENTS,
+            "The reachability concept is implemented in constructing the reachability matrix.",
         ),
         (
-            "E6",
-            "E7",
-            KnowledgeElementRelationType.SIMILAR,
-            "E6 and E7 are conceptually similar.",
+            "Сильная компонента",
+            "Достижимость",
+            KnowledgeElementRelationType.REQUIRES,
+            "The concept of a strongly connected component requires understanding reachability.",
         ),
         (
-            "E2",
-            "E5",
+            "Находить сильные компоненты",
+            "Сильная компонента",
+            KnowledgeElementRelationType.IMPLEMENTS,
+            "Understanding strong connectivity is expressed in the ability to find components.",
+        ),
+        (
+            "Покрытие в графе",
+            "Независимое множество",
             KnowledgeElementRelationType.CONTRASTS_WITH,
-            "E2 contrasts with E5 and should be distinguished.",
+            "Covering and independent sets must be distinguished.",
         ),
         (
-            "E1",
-            "E5",
-            KnowledgeElementRelationType.USED_WITH,
-            "E1 is often used together with E5.",
+            "Доминирующее множество",
+            "Покрытие в графе",
+            KnowledgeElementRelationType.SIMILAR,
+            "Dominating sets are conceptually related to covering problems.",
         ),
         (
-            "E7",
-            "E2",
+            "Раскраска графа",
+            "Независимое множество",
+            KnowledgeElementRelationType.BUILDS_ON,
+            "Graph coloring is closely related to partitioning into independent sets.",
+        ),
+        (
+            "Хроматическое число",
+            "Раскраска графа",
             KnowledgeElementRelationType.PROPERTY_OF,
-            "E7 can be treated as a property of E2.",
+            "The chromatic number is a property of graph coloring.",
+        ),
+        (
+            "Выполнять точную раскраску",
+            "Раскраска графа",
+            KnowledgeElementRelationType.IMPLEMENTS,
+            "Knowledge of graph coloring is expressed in the ability to perform exact coloring.",
+        ),
+        (
+            "Выполнять приближенную раскраску",
+            "Выполнять точную раскраску",
+            KnowledgeElementRelationType.CONTRASTS_WITH,
+            "Approximate and exact coloring are different solution strategies.",
+        ),
+        (
+            "p-центр",
+            "Центр и радиус графа",
+            KnowledgeElementRelationType.REFINES,
+            "The p-center refines the broader center concept.",
+        ),
+        (
+            "Медиана графа",
+            "Центр и радиус графа",
+            KnowledgeElementRelationType.CONTRASTS_WITH,
+            "Center-based and median-based models solve different optimization problems.",
+        ),
+        (
+            "Дерево и остов",
+            "Циклы и петли",
+            KnowledgeElementRelationType.CONTRASTS_WITH,
+            "A tree is characterized by the absence of cycles.",
+        ),
+        (
+            "Кратчайший остов",
+            "Дерево и остов",
+            KnowledgeElementRelationType.REFINES,
+            "A minimum spanning tree refines the spanning tree concept.",
+        ),
+        (
+            "Строить остовные деревья",
+            "Кратчайший остов",
+            KnowledgeElementRelationType.IMPLEMENTS,
+            "Understanding spanning trees is expressed in the ability to construct them.",
+        ),
+        (
+            "Кратчайший путь",
+            "Пути и маршруты",
+            KnowledgeElementRelationType.REFINES,
+            "The shortest path is a refinement of the general path concept.",
+        ),
+        (
+            "Находить кратчайшие пути",
+            "Кратчайший путь",
+            KnowledgeElementRelationType.IMPLEMENTS,
+            "Knowledge of shortest paths is expressed in algorithmic solving ability.",
+        ),
+        (
+            "Обнаруживать отрицательные циклы",
+            "Кратчайший путь",
+            KnowledgeElementRelationType.USED_WITH,
+            "Negative cycle detection is used together with shortest path problems.",
+        ),
+        (
+            "Эйлеров цикл",
+            "Циклы и петли",
+            KnowledgeElementRelationType.REFINES,
+            "An Eulerian cycle refines the general cycle concept.",
+        ),
+        (
+            "Гамильтонов цикл",
+            "Циклы и петли",
+            KnowledgeElementRelationType.REFINES,
+            "A Hamiltonian cycle refines the general cycle concept.",
+        ),
+        (
+            "Гамильтонов цикл",
+            "Эйлеров цикл",
+            KnowledgeElementRelationType.CONTRASTS_WITH,
+            "Hamiltonian and Eulerian cycles must be distinguished.",
+        ),
+        (
+            "Задача коммивояжера",
+            "Гамильтонов цикл",
+            KnowledgeElementRelationType.BUILDS_ON,
+            "The traveling salesman problem is built on the idea of a Hamiltonian tour.",
+        ),
+        (
+            "Связывать TSP с остовом и назначениями",
+            "Задача коммивояжера",
+            KnowledgeElementRelationType.IMPLEMENTS,
+            "Knowledge of TSP is expressed in the ability to relate it to spanning tree and assignment models.",
+        ),
+        (
+            "Максимальный поток",
+            "Поток в сети",
+            KnowledgeElementRelationType.REFINES,
+            "Maximum flow refines the general flow model.",
+        ),
+        (
+            "Поток минимальной стоимости",
+            "Поток в сети",
+            KnowledgeElementRelationType.REFINES,
+            "Minimum-cost flow refines the general flow model.",
+        ),
+        (
+            "Находить максимальный поток",
+            "Максимальный поток",
+            KnowledgeElementRelationType.IMPLEMENTS,
+            "Understanding maximum flow is expressed in the ability to solve it algorithmically.",
+        ),
+        (
+            "Паросочетание",
+            "Покрытие в графе",
+            KnowledgeElementRelationType.USED_WITH,
+            "Matchings are tightly related to covering problems.",
+        ),
+        (
+            "Находить максимальное паросочетание",
+            "Паросочетание",
+            KnowledgeElementRelationType.IMPLEMENTS,
+            "Matching knowledge is expressed in the ability to find maximum matchings.",
+        ),
+        (
+            "Задача о назначениях",
+            "Паросочетание",
+            KnowledgeElementRelationType.BUILDS_ON,
+            "The assignment problem is built on the matching model.",
+        ),
+        (
+            "Решать задачу о назначениях",
+            "Задача о назначениях",
+            KnowledgeElementRelationType.IMPLEMENTS,
+            "Knowledge of the assignment problem is expressed in the ability to solve it.",
+        ),
+        (
+            "Использовать модели соответствия и назначения",
+            "Решать задачу о назначениях",
+            KnowledgeElementRelationType.AUTOMATES,
+            "A stable skill of solving assignment problems turns into mastery of applied modeling.",
         ),
     ]
 
