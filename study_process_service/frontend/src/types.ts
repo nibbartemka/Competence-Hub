@@ -123,6 +123,7 @@ export type SceneNodeData = {
   metrics: string[];
   hint?: string;
   topicId?: string;
+  actionTopicId?: string;
 };
 
 export type GraphScene = {

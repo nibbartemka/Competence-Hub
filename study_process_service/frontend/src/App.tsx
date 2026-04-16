@@ -233,17 +233,22 @@ export default function App() {
       ...baseScene,
       nodes: baseScene.nodes.map((node) => {
         const data = node.data as
-          | ({ entity?: string; topicId?: string; onHintClick?: () => void } & Record<
+          | ({
+              entity?: string;
+              topicId?: string;
+              actionTopicId?: string;
+              onHintClick?: () => void;
+            } & Record<
               string,
               unknown
             >)
           | undefined;
 
-        if (!data?.entity || !data.topicId) {
+        if (!data?.entity) {
           return node;
         }
 
-        if (data.entity === "topic") {
+        if (data.entity === "topic" && data.topicId) {
           return {
             ...node,
             data: {
@@ -255,13 +260,28 @@ export default function App() {
           };
         }
 
-        if (data.entity === "topic-focus") {
+        if (data.entity === "topic-focus" && data.topicId) {
           return {
             ...node,
             data: {
               ...data,
               onHintClick: () => {
                 void applyView({ level: "topics" }, `topic:${data.topicId}`);
+              },
+            },
+          };
+        }
+
+        if (data.entity === "element" && data.actionTopicId) {
+          return {
+            ...node,
+            data: {
+              ...data,
+              onHintClick: () => {
+                void applyView(
+                  { level: "elements", topicId: data.actionTopicId! },
+                  `topic-focus:${data.actionTopicId}`,
+                );
               },
             },
           };

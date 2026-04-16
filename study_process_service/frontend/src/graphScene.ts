@@ -211,6 +211,36 @@ function topicMetrics(
   return { requiredCount, formedCount, incomingCount, outgoingCount };
 }
 
+function findFormationTopicId(
+  graph: DisciplineKnowledgeGraph,
+  currentTopicId: string,
+  elementId: string,
+) {
+  const topicById = new Map(graph.topics.map((topic) => [topic.id, topic]));
+  const formedTopicIds = [
+    ...new Set(
+      graph.topic_knowledge_elements
+        .filter((item) => item.element_id === elementId && item.role === "formed")
+        .map((item) => item.topic_id),
+    ),
+  ];
+
+  if (!formedTopicIds.length) {
+    return undefined;
+  }
+
+  formedTopicIds.sort((left, right) => {
+    if (left === currentTopicId) return -1;
+    if (right === currentTopicId) return 1;
+
+    const leftName = topicById.get(left)?.name ?? "";
+    const rightName = topicById.get(right)?.name ?? "";
+    return leftName.localeCompare(rightName, "ru");
+  });
+
+  return formedTopicIds[0];
+}
+
 function buildTopicDetailCard(
   topic: Topic,
   allLinks: TopicKnowledgeElement[],
@@ -402,6 +432,7 @@ function createElementNodeData(
   competenceType: string,
   role: string,
   description?: string | null,
+  _actionTopicId?: string,
 ): SceneNodeData {
   return {
     entity: "element",
@@ -414,6 +445,28 @@ function createElementNodeData(
     description: fullText(description, "Описание элемента пока не добавлено."),
     metrics: [],
     hint: "Показать детали",
+  };
+}
+
+function createElementNavigationNodeData(
+  name: string,
+  competenceType: string,
+  role: string,
+  description?: string | null,
+  actionTopicId?: string,
+): SceneNodeData {
+  const nodeData = createElementNodeData(
+    name,
+    competenceType,
+    role,
+    description,
+    actionTopicId,
+  );
+
+  return {
+    ...nodeData,
+    hint: actionTopicId ? "Где изучается" : undefined,
+    actionTopicId,
   };
 }
 
@@ -557,6 +610,8 @@ export function buildElementScene(
       continue;
     }
 
+    const actionTopicId = findFormationTopicId(graph, topic.id, element.id);
+
     const nodeId = `element:${topic.id}:${element.id}`;
     nodes.push({
       id: nodeId,
@@ -566,11 +621,12 @@ export function buildElementScene(
       width: 210,
       height: estimateElementNodeHeight(element.description),
       nodeShape: 1,
-      data: createElementNodeData(
+      data: createElementNavigationNodeData(
         element.name,
         element.competence_type,
         item.link.role,
         element.description,
+        actionTopicId,
       ),
     });
     detailsByNodeId[nodeId] = buildElementDetailCard(topic, item.link, graph);
