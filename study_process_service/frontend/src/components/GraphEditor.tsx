@@ -6,8 +6,12 @@ import {
   createTopic,
   createTopicDependency,
   createTopicKnowledgeElement,
+  deleteKnowledgeElement,
+  deleteTopic,
   fetchKnowledgeElements,
   isAbortError,
+  updateKnowledgeElement,
+  updateTopic,
 } from "../api";
 import type {
   CompetenceType,
@@ -30,6 +34,8 @@ type Feedback = {
   text: string;
 };
 
+type EditorTab = "topics" | "elements" | "relations";
+
 type TopicNewElementDraft = {
   clientId: string;
   competenceType: CompetenceType;
@@ -49,8 +55,8 @@ const TOPIC_LINK_ROLE_OPTIONS: Array<{ label: string; value: TopicKnowledgeEleme
 ];
 
 const TOPIC_DEPENDENCY_OPTIONS: Array<{ label: string; value: TopicDependencyRelationType }> = [
-  { label: "Требует", value: "requires" },
-  { label: "Возможный переход", value: "possible_flow" },
+  { label: "Требуется", value: "requires" },
+  { label: "Возможен путь", value: "possible_flow" },
 ];
 
 const KNOW_TO_KNOW_RELATION_OPTIONS: Array<{
@@ -87,11 +93,29 @@ function extractErrorMessage(error: unknown) {
   if (error instanceof Error) {
     return error.message;
   }
+
   return "Не удалось выполнить запрос.";
 }
 
 function nextDifferentValue(currentValue: string, items: Array<{ id: string }>) {
-  return items.find((item) => item.id !== currentValue)?.id ?? currentValue;
+  return items.find((item) => item.id !== currentValue)?.id ?? items[0]?.id ?? "";
+}
+
+function uniqueElements(
+  disciplineElements: KnowledgeElement[],
+  allElements: KnowledgeElement[],
+) {
+  const byId = new Map<string, KnowledgeElement>();
+
+  for (const element of disciplineElements) {
+    byId.set(element.id, element);
+  }
+
+  for (const element of allElements) {
+    byId.set(element.id, element);
+  }
+
+  return [...byId.values()].sort((left, right) => left.name.localeCompare(right.name, "ru"));
 }
 
 function createDraft(): TopicNewElementDraft {
@@ -128,6 +152,7 @@ export function GraphEditor({
   onDataChanged,
   topics,
 }: GraphEditorProps) {
+  const [activeTab, setActiveTab] = useState<EditorTab>("topics");
   const [allElements, setAllElements] = useState<KnowledgeElement[]>([]);
   const [busyAction, setBusyAction] = useState("");
   const [feedback, setFeedback] = useState<Feedback | null>(null);
@@ -136,16 +161,25 @@ export function GraphEditor({
   const [topicDescription, setTopicDescription] = useState("");
   const [selectedRequiredElementIds, setSelectedRequiredElementIds] = useState<string[]>([]);
   const [topicNewElements, setTopicNewElements] = useState<TopicNewElementDraft[]>([]);
+  const [editTopicId, setEditTopicId] = useState("");
+  const [editTopicName, setEditTopicName] = useState("");
+  const [editTopicDescription, setEditTopicDescription] = useState("");
+  const [deleteTopicId, setDeleteTopicId] = useState("");
 
   const [elementName, setElementName] = useState("");
   const [elementDescription, setElementDescription] = useState("");
   const [elementCompetence, setElementCompetence] = useState<CompetenceType>("know");
-
   const [topicElementTopicId, setTopicElementTopicId] = useState("");
   const [topicElementElementId, setTopicElementElementId] = useState("");
   const [topicElementRole, setTopicElementRole] =
     useState<TopicKnowledgeElementRole>("required");
   const [topicElementNote, setTopicElementNote] = useState("");
+  const [editElementId, setEditElementId] = useState("");
+  const [editElementName, setEditElementName] = useState("");
+  const [editElementDescription, setEditElementDescription] = useState("");
+  const [editElementCompetence, setEditElementCompetence] =
+    useState<CompetenceType>("know");
+  const [deleteElementId, setDeleteElementId] = useState("");
 
   const [dependencySourceTopicId, setDependencySourceTopicId] = useState("");
   const [dependencyTargetTopicId, setDependencyTargetTopicId] = useState("");
@@ -158,21 +192,17 @@ export function GraphEditor({
   const [relationType, setRelationType] = useState<KnowledgeElementRelationType | "">("");
   const [relationDescription, setRelationDescription] = useState("");
 
-  // ✅ FIX #1: Мемоизируем сортированные массивы, чтобы они не меняли reference на каждом рендере
-  const sortedTopics = useMemo(() =>
-    topics.slice().sort((left, right) => left.name.localeCompare(right.name, "ru")),
-    [topics]
+  const sortedTopics = useMemo(
+    () => topics.slice().sort((left, right) => left.name.localeCompare(right.name, "ru")),
+    [topics],
   );
 
-  const sortedAllElements = useMemo(() =>
-    allElements.slice().sort((left, right) => left.name.localeCompare(right.name, "ru")),
-    [allElements]
+  const sortedAllElements = useMemo(
+    () => uniqueElements(disciplineElements, allElements),
+    [allElements, disciplineElements],
   );
 
-  const relationElements = useMemo(() => {
-    const elements = allElements.length ? allElements : disciplineElements;
-    return elements.slice().sort((left, right) => left.name.localeCompare(right.name, "ru"));
-  }, [allElements, disciplineElements]);
+  const relationElements = sortedAllElements;
 
   const relationSourceElement = useMemo(
     () => relationElements.find((element) => element.id === relationSourceElementId),
@@ -205,10 +235,7 @@ export function GraphEditor({
         if (isAbortError(error)) {
           return;
         }
-        setFeedback({
-          kind: "error",
-          text: extractErrorMessage(error),
-        });
+        setFeedback({ kind: "error", text: extractErrorMessage(error) });
       }
     }
 
@@ -219,92 +246,105 @@ export function GraphEditor({
 
   useEffect(() => {
     if (!sortedTopics.length) {
-      if (topicElementTopicId) setTopicElementTopicId("");
-      if (dependencySourceTopicId) setDependencySourceTopicId("");
-      if (dependencyTargetTopicId) setDependencyTargetTopicId("");
+      setTopicElementTopicId("");
+      setDependencySourceTopicId("");
+      setDependencyTargetTopicId("");
+      setEditTopicId("");
+      setDeleteTopicId("");
       return;
     }
 
-    if (topicElementTopicId && !sortedTopics.some((topic) => topic.id === topicElementTopicId)) {
-      setTopicElementTopicId(sortedTopics[0].id);
-    } else if (!topicElementTopicId && sortedTopics[0]) {
+    if (!sortedTopics.some((topic) => topic.id === topicElementTopicId)) {
       setTopicElementTopicId(sortedTopics[0].id);
     }
 
-    if (dependencySourceTopicId && !sortedTopics.some((topic) => topic.id === dependencySourceTopicId)) {
-      setDependencySourceTopicId(sortedTopics[0].id);
-    } else if (!dependencySourceTopicId && sortedTopics[0]) {
+    if (!sortedTopics.some((topic) => topic.id === dependencySourceTopicId)) {
       setDependencySourceTopicId(sortedTopics[0].id);
     }
 
-    if (dependencyTargetTopicId && !sortedTopics.some((topic) => topic.id === dependencyTargetTopicId)) {
+    if (!sortedTopics.some((topic) => topic.id === dependencyTargetTopicId)) {
       setDependencyTargetTopicId(sortedTopics[0].id);
-    } else if (!dependencyTargetTopicId && sortedTopics[0]) {
-      setDependencyTargetTopicId(sortedTopics[0].id);
+    }
+
+    if (!sortedTopics.some((topic) => topic.id === editTopicId)) {
+      setEditTopicId(sortedTopics[0].id);
+    }
+
+    if (!sortedTopics.some((topic) => topic.id === deleteTopicId)) {
+      setDeleteTopicId(sortedTopics[0].id);
     }
   }, [
+    deleteTopicId,
     dependencySourceTopicId,
     dependencyTargetTopicId,
+    editTopicId,
     sortedTopics,
     topicElementTopicId,
   ]);
 
   useEffect(() => {
+    const selectedTopic = sortedTopics.find((topic) => topic.id === editTopicId);
+    setEditTopicName(selectedTopic?.name ?? "");
+    setEditTopicDescription(selectedTopic?.description ?? "");
+  }, [editTopicId, sortedTopics]);
+
+  useEffect(() => {
     if (!sortedAllElements.length) {
-      if (topicElementElementId) setTopicElementElementId("");
-      if (selectedRequiredElementIds.length) setSelectedRequiredElementIds([]);
+      setTopicElementElementId("");
+      setSelectedRequiredElementIds([]);
+      setEditElementId("");
+      setDeleteElementId("");
       return;
     }
 
-    if (topicElementElementId && !sortedAllElements.some((element) => element.id === topicElementElementId)) {
-      setTopicElementElementId(sortedAllElements[0].id);
-    } else if (!topicElementElementId && sortedAllElements[0]) {
+    if (!sortedAllElements.some((element) => element.id === topicElementElementId)) {
       setTopicElementElementId(sortedAllElements[0].id);
     }
 
-    setSelectedRequiredElementIds((current) => {
-      const filtered = current.filter((elementId) =>
-        sortedAllElements.some((element) => element.id === elementId),
-      );
-      // Обновляем только если массив изменился
-      return filtered.length !== current.length ? filtered : current;
-    });
-  }, [sortedAllElements, topicElementElementId]);
+    setSelectedRequiredElementIds((current) =>
+      current.filter((elementId) => sortedAllElements.some((element) => element.id === elementId)),
+    );
+
+    if (!sortedAllElements.some((element) => element.id === editElementId)) {
+      setEditElementId(sortedAllElements[0].id);
+    }
+
+    if (!sortedAllElements.some((element) => element.id === deleteElementId)) {
+      setDeleteElementId(sortedAllElements[0].id);
+    }
+  }, [deleteElementId, editElementId, sortedAllElements, topicElementElementId]);
+
+  useEffect(() => {
+    const selectedElement = sortedAllElements.find((element) => element.id === editElementId);
+    setEditElementName(selectedElement?.name ?? "");
+    setEditElementDescription(selectedElement?.description ?? "");
+    setEditElementCompetence(selectedElement?.competence_type ?? "know");
+  }, [editElementId, sortedAllElements]);
 
   useEffect(() => {
     if (!relationElements.length) {
-      if (relationSourceElementId) setRelationSourceElementId("");
-      if (relationTargetElementId) setRelationTargetElementId("");
-      if (relationType) setRelationType("");
+      setRelationSourceElementId("");
+      setRelationTargetElementId("");
+      setRelationType("");
       return;
     }
 
-    if (relationSourceElementId && !relationElements.some((element) => element.id === relationSourceElementId)) {
-      setRelationSourceElementId(relationElements[0].id);
-    } else if (!relationSourceElementId && relationElements[0]) {
+    if (!relationElements.some((element) => element.id === relationSourceElementId)) {
       setRelationSourceElementId(relationElements[0].id);
     }
 
-    if (relationTargetElementId && !relationElements.some((element) => element.id === relationTargetElementId)) {
-      setRelationTargetElementId(
-        nextDifferentValue(relationSourceElementId, relationElements),
-      );
-    } else if (!relationTargetElementId && relationElements.length > 1) {
-      setRelationTargetElementId(
-        nextDifferentValue(relationSourceElementId, relationElements),
-      );
+    if (!relationElements.some((element) => element.id === relationTargetElementId)) {
+      setRelationTargetElementId(nextDifferentValue(relationSourceElementId, relationElements));
     }
   }, [relationElements, relationSourceElementId, relationTargetElementId]);
 
   useEffect(() => {
     if (!relationOptions.length) {
-      if (relationType) setRelationType("");
+      setRelationType("");
       return;
     }
 
-    if (relationType && !relationOptions.some((option) => option.value === relationType)) {
-      setRelationType(relationOptions[0].value);
-    } else if (!relationType && relationOptions[0]) {
+    if (!relationOptions.some((option) => option.value === relationType)) {
       setRelationType(relationOptions[0].value);
     }
   }, [relationOptions, relationType]);
@@ -312,6 +352,13 @@ export function GraphEditor({
   async function reloadElements() {
     const items = await fetchKnowledgeElements();
     setAllElements(items);
+  }
+
+  async function syncAfterChange(reloadElementList = false) {
+    if (reloadElementList) {
+      await reloadElements();
+    }
+    await onDataChanged();
   }
 
   function toggleRequiredElement(elementId: string) {
@@ -338,7 +385,6 @@ export function GraphEditor({
       current.map((item) => (item.clientId === clientId ? { ...item, ...patch } : item)),
     );
   }
-
   async function handleCreateTopic(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!disciplineId) {
@@ -346,7 +392,7 @@ export function GraphEditor({
     }
 
     try {
-      setBusyAction("topic");
+      setBusyAction("topic-create");
       setFeedback(null);
 
       const createdTopic = await createTopic({
@@ -387,9 +433,57 @@ export function GraphEditor({
       setTopicDescription("");
       setSelectedRequiredElementIds([]);
       setTopicNewElements([]);
-      await reloadElements();
-      await onDataChanged();
+      await syncAfterChange(true);
+      setTopicElementTopicId(createdTopic.id);
+      setEditTopicId(createdTopic.id);
+      setDeleteTopicId(createdTopic.id);
       setFeedback({ kind: "success", text: "Тема создана." });
+    } catch (error) {
+      setFeedback({ kind: "error", text: extractErrorMessage(error) });
+    } finally {
+      setBusyAction("");
+    }
+  }
+
+  async function handleUpdateTopic(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!editTopicId) {
+      return;
+    }
+
+    try {
+      setBusyAction("topic-update");
+      setFeedback(null);
+      await updateTopic(editTopicId, {
+        name: editTopicName.trim(),
+        description: editTopicDescription.trim(),
+      });
+      await syncAfterChange();
+      setFeedback({ kind: "success", text: "Тема обновлена." });
+    } catch (error) {
+      setFeedback({ kind: "error", text: extractErrorMessage(error) });
+    } finally {
+      setBusyAction("");
+    }
+  }
+
+  async function handleDeleteTopic(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!deleteTopicId) {
+      return;
+    }
+
+    const selectedTopic = sortedTopics.find((topic) => topic.id === deleteTopicId);
+    if (!selectedTopic || !window.confirm(`Удалить тему "${selectedTopic.name}"?`)) {
+      return;
+    }
+
+    try {
+      setBusyAction("topic-delete");
+      setFeedback(null);
+      await deleteTopic(deleteTopicId);
+      await syncAfterChange();
+      setFeedback({ kind: "success", text: "Тема удалена." });
     } catch (error) {
       setFeedback({ kind: "error", text: extractErrorMessage(error) });
     } finally {
@@ -401,19 +495,23 @@ export function GraphEditor({
     event.preventDefault();
 
     try {
-      setBusyAction("element");
+      setBusyAction("element-create");
       setFeedback(null);
+
       const createdElement = await createKnowledgeElement({
         name: elementName.trim(),
         description: elementDescription.trim(),
         competence_type: elementCompetence,
       });
+
       setElementName("");
       setElementDescription("");
       setElementCompetence("know");
-      await reloadElements();
+      await syncAfterChange(true);
       setTopicElementElementId(createdElement.id);
-      await onDataChanged();
+      setEditElementId(createdElement.id);
+      setDeleteElementId(createdElement.id);
+      setRelationSourceElementId(createdElement.id);
       setFeedback({ kind: "success", text: "Элемент создан." });
     } catch (error) {
       setFeedback({ kind: "error", text: extractErrorMessage(error) });
@@ -435,8 +533,55 @@ export function GraphEditor({
         note: topicElementNote.trim(),
       });
       setTopicElementNote("");
-      await onDataChanged();
+      await syncAfterChange();
       setFeedback({ kind: "success", text: "Элемент привязан к теме." });
+    } catch (error) {
+      setFeedback({ kind: "error", text: extractErrorMessage(error) });
+    } finally {
+      setBusyAction("");
+    }
+  }
+
+  async function handleUpdateElement(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!editElementId) {
+      return;
+    }
+
+    try {
+      setBusyAction("element-update");
+      setFeedback(null);
+      await updateKnowledgeElement(editElementId, {
+        name: editElementName.trim(),
+        description: editElementDescription.trim(),
+        competence_type: editElementCompetence,
+      });
+      await syncAfterChange(true);
+      setFeedback({ kind: "success", text: "Элемент обновлен." });
+    } catch (error) {
+      setFeedback({ kind: "error", text: extractErrorMessage(error) });
+    } finally {
+      setBusyAction("");
+    }
+  }
+
+  async function handleDeleteElement(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!deleteElementId) {
+      return;
+    }
+
+    const selectedElement = sortedAllElements.find((element) => element.id === deleteElementId);
+    if (!selectedElement || !window.confirm(`Удалить элемент "${selectedElement.name}"?`)) {
+      return;
+    }
+
+    try {
+      setBusyAction("element-delete");
+      setFeedback(null);
+      await deleteKnowledgeElement(deleteElementId);
+      await syncAfterChange(true);
+      setFeedback({ kind: "success", text: "Элемент удален." });
     } catch (error) {
       setFeedback({ kind: "error", text: extractErrorMessage(error) });
     } finally {
@@ -462,7 +607,7 @@ export function GraphEditor({
         description: dependencyDescription.trim(),
       });
       setDependencyDescription("");
-      await onDataChanged();
+      await syncAfterChange();
       setFeedback({ kind: "success", text: "Связь между темами создана." });
     } catch (error) {
       setFeedback({ kind: "error", text: extractErrorMessage(error) });
@@ -497,7 +642,7 @@ export function GraphEditor({
         description: relationDescription.trim(),
       });
       setRelationDescription("");
-      await onDataChanged();
+      await syncAfterChange();
       setFeedback({ kind: "success", text: "Связь между элементами создана." });
     } catch (error) {
       setFeedback({ kind: "error", text: extractErrorMessage(error) });
@@ -506,24 +651,11 @@ export function GraphEditor({
     }
   }
 
-  return (
-    <section className="card card--editor">
-      <div className="card__header">
-        <span className="card__eyebrow">Редактор</span>
-      </div>
-      <h3>Редактирование графа</h3>
-      <p className="card__text">
-        Здесь можно добавлять темы, элементы и связи прямо из интерфейса.
-        Доступные типы связей между элементами зависят от выбранной пары компетенций.
-      </p>
-
-      {feedback ? (
-        <div className={`editor-status editor-status--${feedback.kind}`}>{feedback.text}</div>
-      ) : null}
-
+  function renderTopicTab() {
+    return (
       <div className="editor-accordion">
         <details className="editor-block" open>
-          <summary>Добавить тему</summary>
+          <summary>Создать тему</summary>
           <form className="editor-form" onSubmit={handleCreateTopic}>
             <label className="field">
               <span>Название</span>
@@ -541,7 +673,7 @@ export function GraphEditor({
                 rows={3}
                 value={topicDescription}
                 onChange={(event) => setTopicDescription(event.target.value)}
-                placeholder="Короткое описание темы"
+                placeholder="Краткое описание темы"
               />
             </label>
 
@@ -549,10 +681,7 @@ export function GraphEditor({
               <div className="editor-subsection__header">
                 <div>
                   <strong>Требуемые элементы</strong>
-                  <p>
-                    Выбери уже существующие элементы, которые нужны до начала
-                    изучения этой темы.
-                  </p>
+                  <p>Выбери существующие элементы, которые нужны до начала темы.</p>
                 </div>
               </div>
 
@@ -573,9 +702,7 @@ export function GraphEditor({
                   ))}
                 </div>
               ) : (
-                <p className="editor-empty">
-                  Пока нет элементов, которые можно выбрать как требуемые.
-                </p>
+                <p className="editor-empty">Пока нет элементов для выбора.</p>
               )}
             </div>
 
@@ -583,10 +710,7 @@ export function GraphEditor({
               <div className="editor-subsection__header">
                 <div>
                   <strong>Новые элементы</strong>
-                  <p>
-                    Добавь элементы, которые будут сформированы в результате
-                    изучения темы.
-                  </p>
+                  <p>Добавь элементы, которые будут сформированы в результате изучения темы.</p>
                 </div>
 
                 <button
@@ -656,27 +780,114 @@ export function GraphEditor({
                               description: event.target.value,
                             })
                           }
-                          placeholder="Короткое описание нового элемента"
+                          placeholder="Краткое описание нового элемента"
                         />
                       </label>
                     </div>
                   ))}
                 </div>
               ) : (
-                <p className="editor-empty">
-                  Пока не добавлено ни одного нового элемента для этой темы.
-                </p>
+                <p className="editor-empty">Пока не добавлено ни одного нового элемента.</p>
               )}
             </div>
 
             <button className="primary-button" disabled={!topicName.trim() || !!busyAction}>
-              {busyAction === "topic" ? "Сохраняю..." : "Создать тему"}
+              {busyAction === "topic-create" ? "Сохраняю..." : "Создать тему"}
             </button>
           </form>
         </details>
 
         <details className="editor-block">
-          <summary>Добавить элемент</summary>
+          <summary>Редактировать тему</summary>
+          <form className="editor-form" onSubmit={handleUpdateTopic}>
+            <label className="field">
+              <span>Тема</span>
+              <select
+                value={editTopicId}
+                onChange={(event) => setEditTopicId(event.target.value)}
+                disabled={!sortedTopics.length}
+              >
+                {sortedTopics.map((topic) => (
+                  <option key={topic.id} value={topic.id}>
+                    {topic.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+
+            {!sortedTopics.length ? (
+              <p className="editor-empty">Сначала создай хотя бы одну тему.</p>
+            ) : null}
+
+            <label className="field">
+              <span>Название</span>
+              <input
+                value={editTopicName}
+                onChange={(event) => setEditTopicName(event.target.value)}
+                placeholder="Название темы"
+                disabled={!sortedTopics.length}
+                required
+              />
+            </label>
+
+            <label className="field">
+              <span>Описание</span>
+              <textarea
+                rows={3}
+                value={editTopicDescription}
+                onChange={(event) => setEditTopicDescription(event.target.value)}
+                placeholder="Описание темы"
+                disabled={!sortedTopics.length}
+              />
+            </label>
+
+            <button
+              className="primary-button"
+              disabled={!editTopicId || !editTopicName.trim() || !!busyAction}
+            >
+              {busyAction === "topic-update" ? "Сохраняю..." : "Сохранить тему"}
+            </button>
+          </form>
+        </details>
+
+        <details className="editor-block">
+          <summary>Удалить тему</summary>
+          <form className="editor-form" onSubmit={handleDeleteTopic}>
+            <label className="field">
+              <span>Тема</span>
+              <select
+                value={deleteTopicId}
+                onChange={(event) => setDeleteTopicId(event.target.value)}
+                disabled={!sortedTopics.length}
+              >
+                {sortedTopics.map((topic) => (
+                  <option key={topic.id} value={topic.id}>
+                    {topic.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+
+            {!sortedTopics.length ? (
+              <p className="editor-empty">Сейчас нет тем для удаления.</p>
+            ) : null}
+
+            <button
+              className="secondary-button secondary-button--danger"
+              disabled={!deleteTopicId || !!busyAction}
+            >
+              {busyAction === "topic-delete" ? "Удаляю..." : "Удалить тему"}
+            </button>
+          </form>
+        </details>
+      </div>
+    );
+  }
+  function renderElementsTab() {
+    return (
+      <div className="editor-accordion">
+        <details className="editor-block" open>
+          <summary>Создать элемент</summary>
           <form className="editor-form" onSubmit={handleCreateElement}>
             <label className="field">
               <span>Название</span>
@@ -693,9 +904,7 @@ export function GraphEditor({
                 <span>Компетенция</span>
                 <select
                   value={elementCompetence}
-                  onChange={(event) =>
-                    setElementCompetence(event.target.value as CompetenceType)
-                  }
+                  onChange={(event) => setElementCompetence(event.target.value as CompetenceType)}
                 >
                   {COMPETENCE_OPTIONS.map((option) => (
                     <option key={option.value} value={option.value}>
@@ -712,12 +921,12 @@ export function GraphEditor({
                 rows={3}
                 value={elementDescription}
                 onChange={(event) => setElementDescription(event.target.value)}
-                placeholder="Короткое описание элемента"
+                placeholder="Краткое описание элемента"
               />
             </label>
 
             <button className="primary-button" disabled={!elementName.trim() || !!busyAction}>
-              {busyAction === "element" ? "Сохраняю..." : "Создать элемент"}
+              {busyAction === "element-create" ? "Сохраняю..." : "Создать элемент"}
             </button>
           </form>
         </details>
@@ -725,6 +934,13 @@ export function GraphEditor({
         <details className="editor-block">
           <summary>Привязать элемент к теме</summary>
           <form className="editor-form" onSubmit={handleAttachElement}>
+            {!sortedTopics.length ? (
+              <p className="editor-empty">Сначала создай тему.</p>
+            ) : null}
+            {!sortedAllElements.length ? (
+              <p className="editor-empty">Сначала создай элемент.</p>
+            ) : null}
+
             <div className="editor-form__grid">
               <label className="field">
                 <span>Тема</span>
@@ -779,7 +995,7 @@ export function GraphEditor({
                 rows={2}
                 value={topicElementNote}
                 onChange={(event) => setTopicElementNote(event.target.value)}
-                placeholder="Необязательный комментарий к связи темы и элемента"
+                placeholder="Необязательный комментарий к привязке"
               />
             </label>
 
@@ -793,8 +1009,121 @@ export function GraphEditor({
         </details>
 
         <details className="editor-block">
+          <summary>Редактировать элемент</summary>
+          <form className="editor-form" onSubmit={handleUpdateElement}>
+            <label className="field">
+              <span>Элемент</span>
+              <select
+                value={editElementId}
+                onChange={(event) => setEditElementId(event.target.value)}
+                disabled={!sortedAllElements.length}
+              >
+                {sortedAllElements.map((element) => (
+                  <option key={element.id} value={element.id}>
+                    {element.name} ({competenceLabel(element.competence_type)})
+                  </option>
+                ))}
+              </select>
+            </label>
+
+            {!sortedAllElements.length ? (
+              <p className="editor-empty">Сейчас нет элементов для редактирования.</p>
+            ) : null}
+
+            <label className="field">
+              <span>Название</span>
+              <input
+                value={editElementName}
+                onChange={(event) => setEditElementName(event.target.value)}
+                placeholder="Название элемента"
+                disabled={!sortedAllElements.length}
+                required
+              />
+            </label>
+
+            <div className="editor-form__grid">
+              <label className="field">
+                <span>Компетенция</span>
+                <select
+                  value={editElementCompetence}
+                  onChange={(event) =>
+                    setEditElementCompetence(event.target.value as CompetenceType)
+                  }
+                  disabled={!sortedAllElements.length}
+                >
+                  {COMPETENCE_OPTIONS.map((option) => (
+                    <option key={option.value} value={option.value}>
+                      {option.label}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            </div>
+
+            <label className="field">
+              <span>Описание</span>
+              <textarea
+                rows={3}
+                value={editElementDescription}
+                onChange={(event) => setEditElementDescription(event.target.value)}
+                placeholder="Описание элемента"
+                disabled={!sortedAllElements.length}
+              />
+            </label>
+
+            <button
+              className="primary-button"
+              disabled={!editElementId || !editElementName.trim() || !!busyAction}
+            >
+              {busyAction === "element-update" ? "Сохраняю..." : "Сохранить элемент"}
+            </button>
+          </form>
+        </details>
+
+        <details className="editor-block">
+          <summary>Удалить элемент</summary>
+          <form className="editor-form" onSubmit={handleDeleteElement}>
+            <label className="field">
+              <span>Элемент</span>
+              <select
+                value={deleteElementId}
+                onChange={(event) => setDeleteElementId(event.target.value)}
+                disabled={!sortedAllElements.length}
+              >
+                {sortedAllElements.map((element) => (
+                  <option key={element.id} value={element.id}>
+                    {element.name} ({competenceLabel(element.competence_type)})
+                  </option>
+                ))}
+              </select>
+            </label>
+
+            {!sortedAllElements.length ? (
+              <p className="editor-empty">Сейчас нет элементов для удаления.</p>
+            ) : null}
+
+            <button
+              className="secondary-button secondary-button--danger"
+              disabled={!deleteElementId || !!busyAction}
+            >
+              {busyAction === "element-delete" ? "Удаляю..." : "Удалить элемент"}
+            </button>
+          </form>
+        </details>
+      </div>
+    );
+  }
+
+  function renderRelationsTab() {
+    return (
+      <div className="editor-accordion">
+        <details className="editor-block" open>
           <summary>Добавить связь между темами</summary>
           <form className="editor-form" onSubmit={handleCreateDependency}>
+            {!sortedTopics.length ? (
+              <p className="editor-empty">Сначала создай хотя бы две темы.</p>
+            ) : null}
+
             <div className="editor-form__grid">
               <label className="field">
                 <span>Тема-источник</span>
@@ -867,6 +1196,10 @@ export function GraphEditor({
         <details className="editor-block">
           <summary>Добавить связь между элементами</summary>
           <form className="editor-form" onSubmit={handleCreateElementRelation}>
+            {!sortedAllElements.length ? (
+              <p className="editor-empty">Сначала создай элементы.</p>
+            ) : null}
+
             <div className="editor-form__grid">
               <label className="field">
                 <span>Элемент 1</span>
@@ -920,7 +1253,7 @@ export function GraphEditor({
 
             {!relationOptions.length ? (
               <p className="editor-empty">
-                Для такой пары элементов связь сейчас не поддерживается.
+                Для выбранной пары элементов связь сейчас не поддерживается.
               </p>
             ) : null}
 
@@ -948,6 +1281,51 @@ export function GraphEditor({
           </form>
         </details>
       </div>
+    );
+  }
+
+  return (
+    <section className="card card--editor">
+      <div className="card__header">
+        <span className="card__eyebrow">Редактор</span>
+      </div>
+      <h3>Редактор графа</h3>
+      <p className="card__text">
+        Модальное окно разбито на разделы «Темы», «Элементы» и «Связи». Логика
+        создания темы с требуемыми элементами и добавлением новых элементов сохранена.
+      </p>
+
+      {feedback ? (
+        <div className={`editor-status editor-status--${feedback.kind}`}>{feedback.text}</div>
+      ) : null}
+
+      <div className="editor-tabs">
+        <button
+          className={`editor-tab ${activeTab === "topics" ? "editor-tab--active" : ""}`}
+          onClick={() => setActiveTab("topics")}
+          type="button"
+        >
+          Темы
+        </button>
+        <button
+          className={`editor-tab ${activeTab === "elements" ? "editor-tab--active" : ""}`}
+          onClick={() => setActiveTab("elements")}
+          type="button"
+        >
+          Элементы
+        </button>
+        <button
+          className={`editor-tab ${activeTab === "relations" ? "editor-tab--active" : ""}`}
+          onClick={() => setActiveTab("relations")}
+          type="button"
+        >
+          Связи
+        </button>
+      </div>
+
+      {activeTab === "topics" ? renderTopicTab() : null}
+      {activeTab === "elements" ? renderElementsTab() : null}
+      {activeTab === "relations" ? renderRelationsTab() : null}
     </section>
   );
 }

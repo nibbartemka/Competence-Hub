@@ -76,22 +76,22 @@ const TOPIC_LEGEND_SECTIONS: OverlayLegendSection[] = [
     ],
   },
   // {
-  //   title: "Цвета",
+  //   title: "Р¦РІРµС‚Р°",
   //   items: [
   //     {
   //       markerClass: "graph-legend-overlay__marker--topic-color",
-  //       label: "Синий",
-  //       hint: "Темы и обязательные связи между темами.",
+  //       label: "РЎРёРЅРёР№",
+  //       hint: "РўРµРјС‹ Рё РѕР±СЏР·Р°С‚РµР»СЊРЅС‹Рµ СЃРІСЏР·Рё РјРµР¶РґСѓ С‚РµРјР°РјРё.",
   //     },
   //     {
   //       markerClass: "graph-legend-overlay__marker--required-color",
-  //       label: "Темный",
-  //       hint: "Требуемые элементы до начала темы.",
+  //       label: "РўРµРјРЅС‹Р№",
+  //       hint: "РўСЂРµР±СѓРµРјС‹Рµ СЌР»РµРјРµРЅС‚С‹ РґРѕ РЅР°С‡Р°Р»Р° С‚РµРјС‹.",
   //     },
   //     {
   //       markerClass: "graph-legend-overlay__marker--formed-color",
-  //       label: "Зеленый",
-  //       hint: "Новые элементы и возможный путь между темами.",
+  //       label: "Р—РµР»РµРЅС‹Р№",
+  //       hint: "РќРѕРІС‹Рµ СЌР»РµРјРµРЅС‚С‹ Рё РІРѕР·РјРѕР¶РЅС‹Р№ РїСѓС‚СЊ РјРµР¶РґСѓ С‚РµРјР°РјРё.",
   //     },
   //   ],
   // },
@@ -119,22 +119,22 @@ const ELEMENT_LEGEND_SECTIONS: OverlayLegendSection[] = [
     ],
   },
   // {
-  //   title: "Цвета",
+  //   title: "Р¦РІРµС‚Р°",
   //   items: [
   //     {
   //       markerClass: "graph-legend-overlay__marker--required-color",
-  //       label: "Темный",
-  //       hint: "Требуемые элементы.",
+  //       label: "РўРµРјРЅС‹Р№",
+  //       hint: "РўСЂРµР±СѓРµРјС‹Рµ СЌР»РµРјРµРЅС‚С‹.",
   //     },
   //     {
   //       markerClass: "graph-legend-overlay__marker--formed-color",
-  //       label: "Зеленый",
-  //       hint: "Элементы, которые будут сформированы.",
+  //       label: "Р—РµР»РµРЅС‹Р№",
+  //       hint: "Р­Р»РµРјРµРЅС‚С‹, РєРѕС‚РѕСЂС‹Рµ Р±СѓРґСѓС‚ СЃС„РѕСЂРјРёСЂРѕРІР°РЅС‹.",
   //     },
   //     {
   //       markerClass: "graph-legend-overlay__marker--relation-color",
-  //       label: "Оранжевый",
-  //       hint: "Подписи и связи между элементами.",
+  //       label: "РћСЂР°РЅР¶РµРІС‹Р№",
+  //       hint: "РџРѕРґРїРёСЃРё Рё СЃРІСЏР·Рё РјРµР¶РґСѓ СЌР»РµРјРµРЅС‚Р°РјРё.",
   //     },
   //   ],
   // },
@@ -228,17 +228,22 @@ export default function App() {
       ...baseScene,
       nodes: baseScene.nodes.map((node) => {
         const data = node.data as
-          | ({ entity?: string; topicId?: string; onHintClick?: () => void } & Record<
+          | ({
+              entity?: string;
+              topicId?: string;
+              actionTopicId?: string;
+              onHintClick?: () => void;
+            } & Record<
               string,
               unknown
             >)
           | undefined;
 
-        if (!data?.entity || !data.topicId) {
+        if (!data?.entity) {
           return node;
         }
 
-        if (data.entity === "topic") {
+        if (data.entity === "topic" && data.topicId) {
           return {
             ...node,
             data: {
@@ -250,13 +255,28 @@ export default function App() {
           };
         }
 
-        if (data.entity === "topic-focus") {
+        if (data.entity === "topic-focus" && data.topicId) {
           return {
             ...node,
             data: {
               ...data,
               onHintClick: () => {
                 void applyView({ level: "topics" }, `topic:${data.topicId}`);
+              },
+            },
+          };
+        }
+
+        if (data.entity === "element" && data.actionTopicId) {
+          return {
+            ...node,
+            data: {
+              ...data,
+              onHintClick: () => {
+                void applyView(
+                  { level: "elements", topicId: data.actionTopicId! },
+                  `topic-focus:${data.actionTopicId}`,
+                );
               },
             },
           };
@@ -515,8 +535,8 @@ export default function App() {
           <p className="hero__eyebrow">Competence Hub</p>
           <h1>Граф знаний дисциплины</h1>
           {/* <p className="hero__subtitle">
-            Первый уровень показывает темы дисциплины, второй уровень раскрывает знания,
-            умения и владения конкретной темы.
+            РџРµСЂРІС‹Р№ СѓСЂРѕРІРµРЅСЊ РїРѕРєР°Р·С‹РІР°РµС‚ С‚РµРјС‹ РґРёСЃС†РёРїР»РёРЅС‹, РІС‚РѕСЂРѕР№ СѓСЂРѕРІРµРЅСЊ СЂР°СЃРєСЂС‹РІР°РµС‚ Р·РЅР°РЅРёСЏ,
+            СѓРјРµРЅРёСЏ Рё РІР»Р°РґРµРЅРёСЏ РєРѕРЅРєСЂРµС‚РЅРѕР№ С‚РµРјС‹.
           </p> */}
         </div>
 
@@ -538,8 +558,8 @@ export default function App() {
 
           {/* <div className="hero__chip">
             {view.level === "topics"
-              ? "Режим тем"
-              : `Элементы темы: ${detail?.title ?? ""}`}
+              ? "Р РµР¶РёРј С‚РµРј"
+              : `Р­Р»РµРјРµРЅС‚С‹ С‚РµРјС‹: ${detail?.title ?? ""}`}
           </div> */}
         </div>
       </header>
@@ -562,14 +582,14 @@ export default function App() {
                 </button>
               ) : null}
 
-              {/* <button
+              <button
                 className="primary-button inspector-actions__editor"
                 onClick={() => setEditorOpen(true)}
                 type="button"
                 disabled={!activeDisciplineId}
               >
                 Редактор
-              </button> */}
+              </button>
             </div>
 
 
@@ -593,14 +613,6 @@ export default function App() {
               </div>
             ) : null}
           </section>
-          <button
-                className="primary-button inspector-actions__editor"
-                onClick={() => setEditorOpen(true)}
-                type="button"
-                disabled={!activeDisciplineId}
-              >
-                Редактор
-              </button>
           <section className="card card--soft">
             <div className="card__header">
               <span className="card__eyebrow">Непривязанные элементы</span>
