@@ -11,6 +11,9 @@
   --topic: #2450b8;
   --required: #2f3742;
   --formed: #13755b;
+  --know: #127a67;
+  --can: #c46a1e;
+  --master: #8e3f2f;
   --relation: #b96b2f;
   --line: #456187;
 }
@@ -614,7 +617,7 @@ textarea {
   width: 100%;
   height: 100%;
   min-height: 100%;
-  padding: 14px 16px 22px;
+  padding: 14px 16px 24px;
   border-radius: 22px;
   border: 1px solid rgba(30, 54, 86, 0.12);
   background: linear-gradient(180deg, rgba(255, 255, 255, 0.98), rgba(244, 248, 250, 0.9));
@@ -676,6 +679,18 @@ textarea {
   background: var(--topic);
 }
 
+.graph-node__badge--know {
+  background: var(--know);
+}
+
+.graph-node__badge--can {
+  background: var(--can);
+}
+
+.graph-node__badge--master {
+  background: var(--master);
+}
+
 .graph-node__badge--required {
   background: var(--required);
 }
@@ -692,6 +707,7 @@ textarea {
 }
 
 .graph-node__title {
+  display: block;
   font-size: 1.05rem;
   line-height: 1.2;
   color: #1f4fa8;
@@ -708,7 +724,7 @@ textarea {
 .graph-node__description {
   margin: 0;
   font-size: 0.88rem;
-  line-height: 1.4;
+  line-height: 1.32;
   color: var(--muted);
   overflow-wrap: anywhere;
 }
@@ -718,7 +734,7 @@ textarea {
   flex-wrap: wrap;
   gap: 8px;
   margin-top: auto;
-  margin-bottom: 2px;
+  margin-bottom: 0;
   padding-top: 8px;
 }
 
@@ -726,6 +742,18 @@ textarea {
   padding: 6px 10px;
   background: rgba(30, 54, 86, 0.08);
   color: var(--ink);
+}
+
+.graph-node--element.graph-node--accent-know {
+  border-top: 3px solid var(--know);
+}
+
+.graph-node--element.graph-node--accent-can {
+  border-top: 3px solid var(--can);
+}
+
+.graph-node--element.graph-node--accent-master {
+  border-top: 3px solid var(--master);
 }
 
 .graph-node--topic-focus {
@@ -736,6 +764,13 @@ textarea {
 .graph-node--topic .graph-node__title,
 .graph-node--topic-focus .graph-node__title {
   color: #2b5ec0;
+  font-size: 0.98rem;
+  line-height: 1.18;
+}
+
+.graph-node--topic .graph-node__description,
+.graph-node--topic-focus .graph-node__description {
+  line-height: 1.28;
 }
 
 .graph-node--fallback {
@@ -865,6 +900,9 @@ textarea {
 .graph-legend-overlay__marker--topic-color,
 .graph-legend-overlay__marker--required-color,
 .graph-legend-overlay__marker--formed-color,
+.graph-legend-overlay__marker--know-color,
+.graph-legend-overlay__marker--can-color,
+.graph-legend-overlay__marker--master-color,
 .graph-legend-overlay__marker--relation-color {
   width: 14px;
   height: 14px;
@@ -881,6 +919,18 @@ textarea {
 
 .graph-legend-overlay__marker--formed-color {
   background: var(--formed);
+}
+
+.graph-legend-overlay__marker--know-color {
+  background: var(--know);
+}
+
+.graph-legend-overlay__marker--can-color {
+  background: var(--can);
+}
+
+.graph-legend-overlay__marker--master-color {
+  background: var(--master);
 }
 
 .graph-legend-overlay__marker--relation-color {

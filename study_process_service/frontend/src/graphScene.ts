@@ -96,9 +96,9 @@ function estimateTopicNodeHeight(description: string | null | undefined) {
   return estimateCardHeight(
     description,
     "Открой тему, чтобы увидеть требуемые и формируемые элементы.",
-    154,
-    280,
-    24,
+    184,
+    360,
+    28,
   );
 }
 
@@ -287,6 +287,8 @@ function buildTopicNodeData(
   return {
     entity: "topic",
     tone: "topic",
+    badgeTone: "topic",
+    accentTone: "topic",
     badge: "Тема",
     title: topic.name,
     subtitle: "Первый уровень графа",
@@ -328,11 +330,11 @@ export function buildTopicScene(
       left.name.localeCompare(right.name, "ru"),
     );
     const x = 180 + level * 270;
-    const totalHeight = Math.max((topics.length - 1) * 260, 0);
+    const totalHeight = Math.max((topics.length - 1) * 320, 0);
 
     topics.forEach((topic, index) => {
       const nodeHeight = estimateTopicNodeHeight(topic.description);
-      const y = 170 + index * 260 - totalHeight / 2 + 260;
+      const y = 170 + index * 320 - totalHeight / 2 + 260;
       const nodeId = `topic:${topic.id}`;
 
       nodes.push({
@@ -340,7 +342,7 @@ export function buildTopicScene(
         text: topic.name,
         x,
         y,
-        width: 236,
+        width: 260,
         height: nodeHeight,
         nodeShape: 1,
         data: buildTopicNodeData(topic, graph.topic_knowledge_elements, graph.topic_dependencies),
@@ -404,11 +406,13 @@ function createElementNodeData(
   return {
     entity: "element",
     tone: role === "required" ? "required" : "formed",
+    badgeTone: competenceType as "know" | "can" | "master",
+    accentTone: competenceType as "know" | "can" | "master",
     badge: competenceLabel(competenceType),
     title: name,
     subtitle: roleLabel(role),
     description: fullText(description, "Описание элемента пока не добавлено."),
-    metrics: [roleLabel(role)],
+    metrics: [],
     hint: "Показать детали",
   };
 }
@@ -531,6 +535,8 @@ export function buildElementScene(
     data: {
       entity: "topic-focus",
       tone: "topic",
+      badgeTone: "topic",
+      accentTone: "topic",
       badge: "Тема",
       title: topic.name,
       subtitle: "Второй уровень графа",

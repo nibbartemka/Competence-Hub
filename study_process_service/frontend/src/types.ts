@@ -103,9 +103,19 @@ export type LegendItem = {
   tone: "topic" | "required" | "formed" | "relation" | "line";
 };
 
+export type NodeAccentTone =
+  | "topic"
+  | "required"
+  | "formed"
+  | "know"
+  | "can"
+  | "master";
+
 export type SceneNodeData = {
   entity: "topic" | "topic-focus" | "element";
   tone: "topic" | "required" | "formed";
+  badgeTone?: NodeAccentTone;
+  accentTone?: NodeAccentTone;
   badge: string;
   title: string;
   subtitle?: string;

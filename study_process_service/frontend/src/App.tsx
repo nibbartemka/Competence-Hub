@@ -122,14 +122,19 @@ const ELEMENT_LEGEND_SECTIONS: OverlayLegendSection[] = [
     title: "Цвета",
     items: [
       {
-        markerClass: "graph-legend-overlay__marker--required-color",
-        label: "Темный",
-        hint: "Требуемые элементы.",
+        markerClass: "graph-legend-overlay__marker--know-color",
+        label: "Знать",
+        hint: "Теоретические и понятийные элементы.",
       },
       {
-        markerClass: "graph-legend-overlay__marker--formed-color",
-        label: "Зеленый",
-        hint: "Элементы, которые будут сформированы.",
+        markerClass: "graph-legend-overlay__marker--can-color",
+        label: "Уметь",
+        hint: "Практические действия и умения.",
+      },
+      {
+        markerClass: "graph-legend-overlay__marker--master-color",
+        label: "Владеть",
+        hint: "Устойчивые навыки и владение.",
       },
       {
         markerClass: "graph-legend-overlay__marker--relation-color",

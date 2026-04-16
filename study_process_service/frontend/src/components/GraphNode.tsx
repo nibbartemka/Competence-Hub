@@ -32,11 +32,15 @@ export function GraphNode({ node }: RGNodeSlotProps) {
 
   return (
     <div
-      className={`graph-node graph-node--${data.entity} graph-node--${data.tone}`}
+      className={`graph-node graph-node--${data.entity} graph-node--${data.tone} graph-node--accent-${
+        data.accentTone ?? data.tone
+      }`}
       title={data.description ?? data.title}
     >
       <div className="graph-node__header">
-        <span className={`graph-node__badge graph-node__badge--${data.tone}`}>
+        <span
+          className={`graph-node__badge graph-node__badge--${data.badgeTone ?? data.tone}`}
+        >
           {data.badge}
         </span>
 
