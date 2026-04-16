@@ -1085,6 +1085,45 @@ textarea {
   border-left-color: var(--relation);
 }
 
+.editor-confirm-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 30;
+  display: grid;
+  place-items: center;
+  padding: 20px;
+  background: rgba(18, 34, 54, 0.34);
+  backdrop-filter: blur(6px);
+}
+
+.editor-confirm-dialog {
+  width: min(480px, 100%);
+  padding: 22px;
+  border-radius: 24px;
+  border: 1px solid rgba(31, 55, 84, 0.12);
+  background: rgba(255, 255, 255, 0.97);
+  box-shadow: 0 24px 60px rgba(20, 36, 56, 0.22);
+}
+
+.editor-confirm-dialog__header h4 {
+  margin: 8px 0 0;
+  font-size: 1.2rem;
+  color: var(--ink);
+}
+
+.editor-confirm-dialog__text {
+  margin: 14px 0 0;
+  color: var(--muted);
+  line-height: 1.55;
+}
+
+.editor-confirm-dialog__actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  margin-top: 22px;
+}
+
 .modal-backdrop {
   position: fixed;
   inset: 0;

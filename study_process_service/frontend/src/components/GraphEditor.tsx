@@ -36,6 +36,14 @@ type Feedback = {
 
 type EditorTab = "topics" | "elements" | "relations";
 
+type ConfirmDeleteState =
+  | {
+      entityId: string;
+      entityName: string;
+      entityType: "topic" | "element";
+    }
+  | null;
+
 type TopicNewElementDraft = {
   clientId: string;
   competenceType: CompetenceType;
@@ -169,6 +177,9 @@ export function GraphEditor({
   const [elementName, setElementName] = useState("");
   const [elementDescription, setElementDescription] = useState("");
   const [elementCompetence, setElementCompetence] = useState<CompetenceType>("know");
+  const [elementCreateTopicId, setElementCreateTopicId] = useState("");
+  const [elementCreateRole, setElementCreateRole] =
+    useState<TopicKnowledgeElementRole>("formed");
   const [topicElementTopicId, setTopicElementTopicId] = useState("");
   const [topicElementElementId, setTopicElementElementId] = useState("");
   const [topicElementRole, setTopicElementRole] =
@@ -191,6 +202,7 @@ export function GraphEditor({
   const [relationTargetElementId, setRelationTargetElementId] = useState("");
   const [relationType, setRelationType] = useState<KnowledgeElementRelationType | "">("");
   const [relationDescription, setRelationDescription] = useState("");
+  const [confirmDelete, setConfirmDelete] = useState<ConfirmDeleteState>(null);
 
   const sortedTopics = useMemo(
     () => topics.slice().sort((left, right) => left.name.localeCompare(right.name, "ru")),
@@ -246,12 +258,20 @@ export function GraphEditor({
 
   useEffect(() => {
     if (!sortedTopics.length) {
+      setElementCreateTopicId("");
       setTopicElementTopicId("");
       setDependencySourceTopicId("");
       setDependencyTargetTopicId("");
       setEditTopicId("");
       setDeleteTopicId("");
       return;
+    }
+
+    if (
+      elementCreateTopicId &&
+      !sortedTopics.some((topic) => topic.id === elementCreateTopicId)
+    ) {
+      setElementCreateTopicId("");
     }
 
     if (!sortedTopics.some((topic) => topic.id === topicElementTopicId)) {
@@ -277,6 +297,7 @@ export function GraphEditor({
     deleteTopicId,
     dependencySourceTopicId,
     dependencyTargetTopicId,
+    elementCreateTopicId,
     editTopicId,
     sortedTopics,
     topicElementTopicId,
@@ -359,6 +380,70 @@ export function GraphEditor({
       await reloadElements();
     }
     await onDataChanged();
+  }
+
+  function openDeleteConfirmation(entityType: "topic" | "element", entityId: string) {
+    if (entityType === "topic") {
+      const selectedTopic = sortedTopics.find((topic) => topic.id === entityId);
+      if (!selectedTopic) {
+        return;
+      }
+
+      setConfirmDelete({
+        entityId,
+        entityName: selectedTopic.name,
+        entityType,
+      });
+      return;
+    }
+
+    const selectedElement = sortedAllElements.find((element) => element.id === entityId);
+    if (!selectedElement) {
+      return;
+    }
+
+    setConfirmDelete({
+      entityId,
+      entityName: selectedElement.name,
+      entityType,
+    });
+  }
+
+  function closeDeleteConfirmation() {
+    if (busyAction === "topic-delete" || busyAction === "element-delete") {
+      return;
+    }
+
+    setConfirmDelete(null);
+  }
+
+  async function handleConfirmDelete() {
+    if (!confirmDelete) {
+      return;
+    }
+
+    try {
+      setBusyAction(
+        confirmDelete.entityType === "topic" ? "topic-delete" : "element-delete",
+      );
+      setFeedback(null);
+
+      if (confirmDelete.entityType === "topic") {
+        await deleteTopic(confirmDelete.entityId);
+        await syncAfterChange();
+        setFeedback({ kind: "success", text: "Тема удалена." });
+      } else {
+        await deleteKnowledgeElement(confirmDelete.entityId);
+        await syncAfterChange(true);
+        setFeedback({ kind: "success", text: "Элемент удален." });
+      }
+
+      setConfirmDelete(null);
+    } catch (error) {
+      setFeedback({ kind: "error", text: extractErrorMessage(error) });
+    } finally {
+      setBusyAction("");
+    }
   }
 
   function toggleRequiredElement(elementId: string) {
@@ -473,22 +558,7 @@ export function GraphEditor({
       return;
     }
 
-    const selectedTopic = sortedTopics.find((topic) => topic.id === deleteTopicId);
-    if (!selectedTopic || !window.confirm(`Удалить тему "${selectedTopic.name}"?`)) {
-      return;
-    }
-
-    try {
-      setBusyAction("topic-delete");
-      setFeedback(null);
-      await deleteTopic(deleteTopicId);
-      await syncAfterChange();
-      setFeedback({ kind: "success", text: "Тема удалена." });
-    } catch (error) {
-      setFeedback({ kind: "error", text: extractErrorMessage(error) });
-    } finally {
-      setBusyAction("");
-    }
+    openDeleteConfirmation("topic", deleteTopicId);
   }
 
   async function handleCreateElement(event: FormEvent<HTMLFormElement>) {
@@ -504,6 +574,15 @@ export function GraphEditor({
         competence_type: elementCompetence,
       });
 
+      if (elementCreateTopicId) {
+        await createTopicKnowledgeElement({
+          topic_id: elementCreateTopicId,
+          element_id: createdElement.id,
+          role: elementCreateRole,
+          note: "",
+        });
+      }
+
       setElementName("");
       setElementDescription("");
       setElementCompetence("know");
@@ -512,7 +591,12 @@ export function GraphEditor({
       setEditElementId(createdElement.id);
       setDeleteElementId(createdElement.id);
       setRelationSourceElementId(createdElement.id);
-      setFeedback({ kind: "success", text: "Элемент создан." });
+      setFeedback({
+        kind: "success",
+        text: elementCreateTopicId
+          ? "Элемент создан и привязан к теме."
+          : "Элемент создан.",
+      });
     } catch (error) {
       setFeedback({ kind: "error", text: extractErrorMessage(error) });
     } finally {
@@ -571,22 +655,7 @@ export function GraphEditor({
       return;
     }
 
-    const selectedElement = sortedAllElements.find((element) => element.id === deleteElementId);
-    if (!selectedElement || !window.confirm(`Удалить элемент "${selectedElement.name}"?`)) {
-      return;
-    }
-
-    try {
-      setBusyAction("element-delete");
-      setFeedback(null);
-      await deleteKnowledgeElement(deleteElementId);
-      await syncAfterChange(true);
-      setFeedback({ kind: "success", text: "Элемент удален." });
-    } catch (error) {
-      setFeedback({ kind: "error", text: extractErrorMessage(error) });
-    } finally {
-      setBusyAction("");
-    }
+    openDeleteConfirmation("element", deleteElementId);
   }
 
   async function handleCreateDependency(event: FormEvent<HTMLFormElement>) {
@@ -924,6 +993,52 @@ export function GraphEditor({
                 placeholder="Краткое описание элемента"
               />
             </label>
+
+            {!sortedTopics.length ? (
+              <p className="editor-empty">
+                Пока нет тем. Элемент будет создан без привязки и появится в списке непривязанных.
+              </p>
+            ) : (
+              <div className="editor-form__grid">
+                <label className="field">
+                  <span>Сразу привязать к теме</span>
+                  <select
+                    value={elementCreateTopicId}
+                    onChange={(event) => setElementCreateTopicId(event.target.value)}
+                  >
+                    <option value="">Не привязывать</option>
+                    {sortedTopics.map((topic) => (
+                      <option key={topic.id} value={topic.id}>
+                        {topic.name}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+
+                <label className="field">
+                  <span>Роль в теме</span>
+                  <select
+                    value={elementCreateRole}
+                    onChange={(event) =>
+                      setElementCreateRole(event.target.value as TopicKnowledgeElementRole)
+                    }
+                    disabled={!elementCreateTopicId}
+                  >
+                    {TOPIC_LINK_ROLE_OPTIONS.map((option) => (
+                      <option key={option.value} value={option.value}>
+                        {option.label}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              </div>
+            )}
+
+            {sortedTopics.length > 0 && !elementCreateTopicId ? (
+              <p className="editor-empty">
+                Привязка к теме необязательна. Если тему не выбирать, элемент будет создан как непривязанный.
+              </p>
+            ) : null}
 
             <button className="primary-button" disabled={!elementName.trim() || !!busyAction}>
               {busyAction === "element-create" ? "Сохраняю..." : "Создать элемент"}
@@ -1285,47 +1400,95 @@ export function GraphEditor({
   }
 
   return (
-    <section className="card card--editor">
-      <div className="card__header">
-        <span className="card__eyebrow">Редактор</span>
-      </div>
-      <h3>Редактор графа</h3>
-      <p className="card__text">
-        Модальное окно разбито на разделы «Темы», «Элементы» и «Связи». Логика
-        создания темы с требуемыми элементами и добавлением новых элементов сохранена.
-      </p>
+    <>
+      <section className="card card--editor">
+        <div className="card__header">
+          <span className="card__eyebrow">Редактор</span>
+        </div>
+        <h3>Редактор графа</h3>
+        <p className="card__text">
+          Модальное окно разбито на разделы «Темы», «Элементы» и «Связи». Логика
+          создания темы с требуемыми элементами и добавлением новых элементов сохранена.
+        </p>
 
-      {feedback ? (
-        <div className={`editor-status editor-status--${feedback.kind}`}>{feedback.text}</div>
+        {feedback ? (
+          <div className={`editor-status editor-status--${feedback.kind}`}>{feedback.text}</div>
+        ) : null}
+
+        <div className="editor-tabs">
+          <button
+            className={`editor-tab ${activeTab === "topics" ? "editor-tab--active" : ""}`}
+            onClick={() => setActiveTab("topics")}
+            type="button"
+          >
+            Темы
+          </button>
+          <button
+            className={`editor-tab ${activeTab === "elements" ? "editor-tab--active" : ""}`}
+            onClick={() => setActiveTab("elements")}
+            type="button"
+          >
+            Элементы
+          </button>
+          <button
+            className={`editor-tab ${activeTab === "relations" ? "editor-tab--active" : ""}`}
+            onClick={() => setActiveTab("relations")}
+            type="button"
+          >
+            Связи
+          </button>
+        </div>
+
+        {activeTab === "topics" ? renderTopicTab() : null}
+        {activeTab === "elements" ? renderElementsTab() : null}
+        {activeTab === "relations" ? renderRelationsTab() : null}
+      </section>
+
+      {confirmDelete ? (
+        <div className="editor-confirm-backdrop" onClick={closeDeleteConfirmation} role="presentation">
+          <div
+            className="editor-confirm-dialog"
+            onClick={(event) => event.stopPropagation()}
+            role="dialog"
+            aria-modal="true"
+            aria-label="Подтверждение удаления"
+          >
+            <div className="editor-confirm-dialog__header">
+              <p className="card__eyebrow">Подтверждение</p>
+              <h4>
+                {confirmDelete.entityType === "topic" ? "Удалить тему?" : "Удалить элемент?"}
+              </h4>
+            </div>
+
+            <p className="editor-confirm-dialog__text">
+              {confirmDelete.entityType === "topic"
+                ? `Тема "${confirmDelete.entityName}" будет удалена вместе со связанными зависимостями и привязками.`
+                : `Элемент "${confirmDelete.entityName}" будет удален вместе со связями и привязками к темам.`}
+            </p>
+
+            <div className="editor-confirm-dialog__actions">
+              <button
+                className="ghost-button"
+                onClick={closeDeleteConfirmation}
+                type="button"
+                disabled={busyAction === "topic-delete" || busyAction === "element-delete"}
+              >
+                Отмена
+              </button>
+              <button
+                className="secondary-button secondary-button--danger"
+                onClick={() => void handleConfirmDelete()}
+                type="button"
+                disabled={busyAction === "topic-delete" || busyAction === "element-delete"}
+              >
+                {busyAction === "topic-delete" || busyAction === "element-delete"
+                  ? "Удаляю..."
+                  : "Удалить"}
+              </button>
+            </div>
+          </div>
+        </div>
       ) : null}
-
-      <div className="editor-tabs">
-        <button
-          className={`editor-tab ${activeTab === "topics" ? "editor-tab--active" : ""}`}
-          onClick={() => setActiveTab("topics")}
-          type="button"
-        >
-          Темы
-        </button>
-        <button
-          className={`editor-tab ${activeTab === "elements" ? "editor-tab--active" : ""}`}
-          onClick={() => setActiveTab("elements")}
-          type="button"
-        >
-          Элементы
-        </button>
-        <button
-          className={`editor-tab ${activeTab === "relations" ? "editor-tab--active" : ""}`}
-          onClick={() => setActiveTab("relations")}
-          type="button"
-        >
-          Связи
-        </button>
-      </div>
-
-      {activeTab === "topics" ? renderTopicTab() : null}
-      {activeTab === "elements" ? renderElementsTab() : null}
-      {activeTab === "relations" ? renderRelationsTab() : null}
-    </section>
+    </>
   );
 }
