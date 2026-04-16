@@ -96,6 +96,25 @@ export function createTopic(payload: {
   });
 }
 
+export function updateTopic(
+  topicId: string,
+  payload: {
+    name: string;
+    description: string;
+  },
+) {
+  return request<Topic>(`/topics/${topicId}`, {
+    method: "PUT",
+    body: payload,
+  });
+}
+
+export function deleteTopic(topicId: string) {
+  return request<void>(`/topics/${topicId}`, {
+    method: "DELETE",
+  });
+}
+
 export function createKnowledgeElement(payload: {
   name: string;
   description: string;
@@ -104,6 +123,26 @@ export function createKnowledgeElement(payload: {
   return request<KnowledgeElement>("/knowledge-elements/", {
     method: "POST",
     body: payload,
+  });
+}
+
+export function updateKnowledgeElement(
+  elementId: string,
+  payload: {
+    name: string;
+    description: string;
+    competence_type: CompetenceType;
+  },
+) {
+  return request<KnowledgeElement>(`/knowledge-elements/${elementId}`, {
+    method: "PUT",
+    body: payload,
+  });
+}
+
+export function deleteKnowledgeElement(elementId: string) {
+  return request<void>(`/knowledge-elements/${elementId}`, {
+    method: "DELETE",
   });
 }
 

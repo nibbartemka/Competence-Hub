@@ -6,7 +6,11 @@ from sqlalchemy import select
 from app.api.crud import commit_or_409, delete_and_commit, not_found
 from app.api.deps import DbSession
 from app.models import KnowledgeElement
-from app.schemas import KnowledgeElementCreate, KnowledgeElementRead
+from app.schemas import (
+    KnowledgeElementCreate,
+    KnowledgeElementRead,
+    KnowledgeElementUpdate,
+)
 
 
 router = APIRouter(prefix="/knowledge-elements", tags=["Knowledge Elements"])
@@ -44,6 +48,24 @@ async def get_knowledge_element(element_id: UUID, session: DbSession) -> Knowled
     element = await session.get(KnowledgeElement, element_id)
     if element is None:
         raise not_found("Knowledge element", element_id)
+    return element
+
+
+@router.put("/{element_id}", response_model=KnowledgeElementRead)
+async def update_knowledge_element(
+    element_id: UUID,
+    payload: KnowledgeElementUpdate,
+    session: DbSession,
+) -> KnowledgeElement:
+    element = await session.get(KnowledgeElement, element_id)
+    if element is None:
+        raise not_found("Knowledge element", element_id)
+
+    element.name = payload.name
+    element.description = payload.description
+    element.competence_type = payload.competence_type
+    await commit_or_409(session)
+    await session.refresh(element)
     return element
 
 

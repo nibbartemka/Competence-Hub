@@ -11,6 +11,12 @@ class KnowledgeElementCreate(BaseModel):
     competence_type: CompetenceType
 
 
+class KnowledgeElementUpdate(BaseModel):
+    name: str = Field(min_length=1, max_length=255)
+    description: str | None = None
+    competence_type: CompetenceType
+
+
 class KnowledgeElementRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 

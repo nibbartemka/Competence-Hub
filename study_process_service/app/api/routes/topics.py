@@ -6,7 +6,7 @@ from sqlalchemy import select
 from app.api.crud import commit_or_409, delete_and_commit, not_found
 from app.api.deps import DbSession
 from app.models import Discipline, Topic
-from app.schemas import TopicCreate, TopicRead
+from app.schemas import TopicCreate, TopicRead, TopicUpdate
 
 
 router = APIRouter(prefix="/topics", tags=["Topics"])
@@ -46,6 +46,23 @@ async def get_topic(topic_id: UUID, session: DbSession) -> Topic:
     topic = await session.get(Topic, topic_id)
     if topic is None:
         raise not_found("Topic", topic_id)
+    return topic
+
+
+@router.put("/{topic_id}", response_model=TopicRead)
+async def update_topic(
+    topic_id: UUID,
+    payload: TopicUpdate,
+    session: DbSession,
+) -> Topic:
+    topic = await session.get(Topic, topic_id)
+    if topic is None:
+        raise not_found("Topic", topic_id)
+
+    topic.name = payload.name
+    topic.description = payload.description
+    await commit_or_409(session)
+    await session.refresh(topic)
     return topic
 
 

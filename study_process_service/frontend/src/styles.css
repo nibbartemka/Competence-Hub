@@ -306,6 +306,76 @@ textarea {
   margin-top: 18px;
 }
 
+.editor-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 18px;
+}
+
+.editor-tab {
+  min-height: 42px;
+  padding: 0 16px;
+  border: 1px solid rgba(31, 55, 84, 0.12);
+  border-radius: 999px;
+  background: rgba(242, 247, 255, 0.92);
+  color: var(--muted);
+  font-weight: 700;
+  cursor: pointer;
+  transition: background-color 0.18s ease, color 0.18s ease, transform 0.18s ease;
+}
+
+.editor-tab:hover {
+  transform: translateY(-1px);
+}
+
+.editor-tab--active {
+  background: linear-gradient(135deg, #2d57bf, #3f7deb);
+  color: white;
+  border-color: transparent;
+}
+
+.editor-panels,
+.editor-panels__topics,
+.editor-panels__elements,
+.editor-panels__relations {
+  display: grid;
+  gap: 14px;
+  margin-top: 18px;
+}
+
+.editor-panel {
+  border: 1px solid rgba(31, 55, 84, 0.1);
+  border-radius: 20px;
+  background: rgba(248, 251, 255, 0.92);
+  overflow: hidden;
+}
+
+.editor-panel--danger {
+  background: linear-gradient(180deg, rgba(255, 249, 248, 0.96), rgba(255, 255, 255, 0.92));
+}
+
+.editor-panel__header {
+  display: flex;
+  align-items: start;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 16px 18px 0;
+}
+
+.editor-panel__header h4 {
+  margin: 0;
+  color: var(--ink);
+  font-size: 1rem;
+}
+
+.editor-panel__header p {
+  margin: 6px 0 0;
+  color: var(--muted);
+  font-size: 0.92rem;
+  line-height: 1.45;
+}
+
 .editor-block {
   border: 1px solid rgba(31, 55, 84, 0.1);
   border-radius: 18px;

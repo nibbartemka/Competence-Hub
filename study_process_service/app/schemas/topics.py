@@ -9,6 +9,11 @@ class TopicCreate(BaseModel):
     discipline_id: UUID
 
 
+class TopicUpdate(BaseModel):
+    name: str = Field(min_length=1, max_length=255)
+    description: str | None = None
+
+
 class TopicRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 

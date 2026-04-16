@@ -4,13 +4,17 @@ from .knowledge_element_relations import (
     KnowledgeElementRelationRead,
 )
 from .knowledge_graph_view import DisciplineKnowledgeGraphRead
-from .knowledge_elements import KnowledgeElementCreate, KnowledgeElementRead
+from .knowledge_elements import (
+    KnowledgeElementCreate,
+    KnowledgeElementRead,
+    KnowledgeElementUpdate,
+)
 from .topic_dependencies import TopicDependencyCreate, TopicDependencyRead
 from .topic_knowledge_elements import (
     TopicKnowledgeElementCreate,
     TopicKnowledgeElementRead,
 )
-from .topics import TopicCreate, TopicRead
+from .topics import TopicCreate, TopicRead, TopicUpdate
 
 __all__ = [
     "DisciplineCreate",
@@ -18,10 +22,12 @@ __all__ = [
     "DisciplineKnowledgeGraphRead",
     "TopicCreate",
     "TopicRead",
+    "TopicUpdate",
     "TopicDependencyCreate",
     "TopicDependencyRead",
     "KnowledgeElementCreate",
     "KnowledgeElementRead",
+    "KnowledgeElementUpdate",
     "TopicKnowledgeElementCreate",
     "TopicKnowledgeElementRead",
     "KnowledgeElementRelationCreate",
