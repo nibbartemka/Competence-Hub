@@ -253,8 +253,8 @@ function buildTopicDetailCard(
     subtitle: "Тема дисциплины",
     description: topic.description ?? "Описание темы пока не добавлено.",
     chips: [
-      { label: `Требует: ${metrics.requiredCount}`, tone: "required" },
-      { label: `Формирует: ${metrics.formedCount}`, tone: "formed" },
+      { label: `Требует ЗУН: ${metrics.requiredCount}`, tone: "required" },
+      { label: `Формирует ЗУН: ${metrics.formedCount}`, tone: "formed" },
     ],
     stats: [
       { label: "Входящие дуги", value: String(metrics.incomingCount) },
@@ -269,41 +269,41 @@ function buildTopicDetailCard(
 
 function topicLegend(): LegendItem[] {
   return [
-    {
-      label: "Тема",
-      hint: "Клик по карточке только выделяет тему.",
-      tone: "topic",
-    },
-    {
-      label: "Требуется",
-      hint: "Синяя стрелка показывает обязательную зависимость между темами.",
-      tone: "line",
-    },
-    {
-      label: "Возможен путь",
-      hint: "Зеленая стрелка показывает допустимый, но не обязательный переход.",
-      tone: "line",
-    },
+    // {
+    //   label: "Тема",
+    //   hint: "Клик по карточке только выделяет тему.",
+    //   tone: "topic",
+    // },
+    // {
+    //   label: "Требуется",
+    //   hint: "Синяя стрелка показывает обязательную зависимость между темами.",
+    //   tone: "line",
+    // },
+    // {
+    //   label: "Возможен путь",
+    //   hint: "Зеленая стрелка показывает допустимый, но не обязательный переход.",
+    //   tone: "line",
+    // },
   ];
 }
 
 function elementLegend(): LegendItem[] {
   return [
-    {
-      label: "Требуемый элемент",
-      hint: "Нужен, чтобы начать изучение темы. Линия направлена к теме.",
-      tone: "required",
-    },
-    {
-      label: "Формируемый элемент",
-      hint: "Появляется в результате изучения темы. Линия направлена от темы.",
-      tone: "formed",
-    },
-    {
-      label: "Связь элементов",
-      hint: "Дополнительная семантическая связь между элементами внутри темы.",
-      tone: "relation",
-    },
+    // {
+    //   label: "Требуемый элемент",
+    //   hint: "Нужен, чтобы начать изучение темы. Линия направлена к теме.",
+    //   tone: "required",
+    // },
+    // {
+    //   label: "Формируемый элемент",
+    //   hint: "Появляется в результате изучения темы. Линия направлена от темы.",
+    //   tone: "formed",
+    // },
+    // {
+    //   label: "Связь элементов",
+    //   hint: "Дополнительная семантическая связь между элементами внутри темы.",
+    //   tone: "relation",
+    // },
   ];
 }
 
@@ -326,7 +326,7 @@ function buildTopicNodeData(
       topic.description,
       "Открой тему, чтобы увидеть требуемые и формируемые элементы.",
     ),
-    metrics: [`Req ${metrics.requiredCount}`, `New ${metrics.formedCount}`],
+    metrics: [`Треб. ЗУН ${metrics.requiredCount}`, `Форм. ЗУН ${metrics.formedCount}`],
     hint: "Открыть элементы",
     topicId: topic.id,
   };
@@ -417,7 +417,7 @@ export function buildTopicScene(
     key: `topics:${graph.discipline.id}`,
     title: graph.discipline.name,
     subtitle:
-      "Граф тем показывает, какие темы подготавливают изучение следующих тем. Кнопка в карточке открывает второй уровень.",
+      "Граф знаний дисциплины включает 2 уровня: темы и элементы ЗУН.",
     rootId: defaultSelectedNodeId,
     nodes,
     lines,

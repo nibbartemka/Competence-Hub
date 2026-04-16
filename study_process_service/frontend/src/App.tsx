@@ -75,26 +75,26 @@ const TOPIC_LEGEND_SECTIONS: OverlayLegendSection[] = [
       },
     ],
   },
-  {
-    title: "Цвета",
-    items: [
-      {
-        markerClass: "graph-legend-overlay__marker--topic-color",
-        label: "Синий",
-        hint: "Темы и обязательные связи между темами.",
-      },
-      {
-        markerClass: "graph-legend-overlay__marker--required-color",
-        label: "Темный",
-        hint: "Требуемые элементы до начала темы.",
-      },
-      {
-        markerClass: "graph-legend-overlay__marker--formed-color",
-        label: "Зеленый",
-        hint: "Новые элементы и возможный путь между темами.",
-      },
-    ],
-  },
+  // {
+  //   title: "Цвета",
+  //   items: [
+  //     {
+  //       markerClass: "graph-legend-overlay__marker--topic-color",
+  //       label: "Синий",
+  //       hint: "Темы и обязательные связи между темами.",
+  //     },
+  //     {
+  //       markerClass: "graph-legend-overlay__marker--required-color",
+  //       label: "Темный",
+  //       hint: "Требуемые элементы до начала темы.",
+  //     },
+  //     {
+  //       markerClass: "graph-legend-overlay__marker--formed-color",
+  //       label: "Зеленый",
+  //       hint: "Новые элементы и возможный путь между темами.",
+  //     },
+  //   ],
+  // },
 ];
 
 const ELEMENT_LEGEND_SECTIONS: OverlayLegendSection[] = [
@@ -118,31 +118,26 @@ const ELEMENT_LEGEND_SECTIONS: OverlayLegendSection[] = [
       },
     ],
   },
-  {
-    title: "Цвета",
-    items: [
-      {
-        markerClass: "graph-legend-overlay__marker--know-color",
-        label: "Знать",
-        hint: "Теоретические и понятийные элементы.",
-      },
-      {
-        markerClass: "graph-legend-overlay__marker--can-color",
-        label: "Уметь",
-        hint: "Практические действия и умения.",
-      },
-      {
-        markerClass: "graph-legend-overlay__marker--master-color",
-        label: "Владеть",
-        hint: "Устойчивые навыки и владение.",
-      },
-      {
-        markerClass: "graph-legend-overlay__marker--relation-color",
-        label: "Оранжевый",
-        hint: "Подписи и связи между элементами.",
-      },
-    ],
-  },
+  // {
+  //   title: "Цвета",
+  //   items: [
+  //     {
+  //       markerClass: "graph-legend-overlay__marker--required-color",
+  //       label: "Темный",
+  //       hint: "Требуемые элементы.",
+  //     },
+  //     {
+  //       markerClass: "graph-legend-overlay__marker--formed-color",
+  //       label: "Зеленый",
+  //       hint: "Элементы, которые будут сформированы.",
+  //     },
+  //     {
+  //       markerClass: "graph-legend-overlay__marker--relation-color",
+  //       label: "Оранжевый",
+  //       hint: "Подписи и связи между элементами.",
+  //     },
+  //   ],
+  // },
 ];
 
 function buildSceneFromView(
@@ -233,22 +228,17 @@ export default function App() {
       ...baseScene,
       nodes: baseScene.nodes.map((node) => {
         const data = node.data as
-          | ({
-              entity?: string;
-              topicId?: string;
-              actionTopicId?: string;
-              onHintClick?: () => void;
-            } & Record<
+          | ({ entity?: string; topicId?: string; onHintClick?: () => void } & Record<
               string,
               unknown
             >)
           | undefined;
 
-        if (!data?.entity) {
+        if (!data?.entity || !data.topicId) {
           return node;
         }
 
-        if (data.entity === "topic" && data.topicId) {
+        if (data.entity === "topic") {
           return {
             ...node,
             data: {
@@ -260,28 +250,13 @@ export default function App() {
           };
         }
 
-        if (data.entity === "topic-focus" && data.topicId) {
+        if (data.entity === "topic-focus") {
           return {
             ...node,
             data: {
               ...data,
               onHintClick: () => {
                 void applyView({ level: "topics" }, `topic:${data.topicId}`);
-              },
-            },
-          };
-        }
-
-        if (data.entity === "element" && data.actionTopicId) {
-          return {
-            ...node,
-            data: {
-              ...data,
-              onHintClick: () => {
-                void applyView(
-                  { level: "elements", topicId: data.actionTopicId! },
-                  `topic-focus:${data.actionTopicId}`,
-                );
               },
             },
           };
@@ -538,11 +513,11 @@ export default function App() {
       <header className="hero">
         <div>
           <p className="hero__eyebrow">Competence Hub</p>
-          <h1>Визуализация графа знаний</h1>
-          <p className="hero__subtitle">
+          <h1>Граф знаний дисциплины</h1>
+          {/* <p className="hero__subtitle">
             Первый уровень показывает темы дисциплины, второй уровень раскрывает знания,
             умения и владения конкретной темы.
-          </p>
+          </p> */}
         </div>
 
         <div className="hero__controls">
@@ -561,11 +536,11 @@ export default function App() {
             </select>
           </label>
 
-          <div className="hero__chip">
+          {/* <div className="hero__chip">
             {view.level === "topics"
               ? "Режим тем"
               : `Элементы темы: ${detail?.title ?? ""}`}
-          </div>
+          </div> */}
         </div>
       </header>
 
@@ -587,15 +562,16 @@ export default function App() {
                 </button>
               ) : null}
 
-              <button
+              {/* <button
                 className="primary-button inspector-actions__editor"
                 onClick={() => setEditorOpen(true)}
                 type="button"
                 disabled={!activeDisciplineId}
               >
                 Редактор
-              </button>
+              </button> */}
             </div>
+
 
             <h2>{scene?.title ?? selectedDiscipline?.name ?? "Граф дисциплины"}</h2>
             <p className="card__text">
@@ -617,7 +593,14 @@ export default function App() {
               </div>
             ) : null}
           </section>
-
+          <button
+                className="primary-button inspector-actions__editor"
+                onClick={() => setEditorOpen(true)}
+                type="button"
+                disabled={!activeDisciplineId}
+              >
+                Редактор
+              </button>
           <section className="card card--soft">
             <div className="card__header">
               <span className="card__eyebrow">Непривязанные элементы</span>
@@ -726,7 +709,7 @@ export default function App() {
                   </div>
 
                   <aside className="graph-legend-overlay">
-                    <p className="graph-legend-overlay__eyebrow">Legend</p>
+                    <p className="graph-legend-overlay__eyebrow">Легенда</p>
                     {overlayLegendSections.map((section) => (
                       <section className="graph-legend-overlay__section" key={section.title}>
                         <h3>{section.title}</h3>
