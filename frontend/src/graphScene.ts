@@ -195,10 +195,10 @@ function topicMetrics(
   const requiredCount = topicLinks.filter((item) => item.role === "required").length;
   const formedCount = topicLinks.filter((item) => item.role === "formed").length;
   const incomingCount = dependencies.filter(
-    (item) => item.dependent_topic_id === topicId,
+    (item) => item.prerequisite_topic_id === topicId,
   ).length;
   const outgoingCount = dependencies.filter(
-    (item) => item.prerequisite_topic_id === topicId,
+    (item) => item.dependent_topic_id === topicId,
   ).length;
 
   return { requiredCount, formedCount, incomingCount, outgoingCount };
@@ -383,8 +383,8 @@ export function buildTopicScene(
     const visual = topicDependencyVisual(dependency.relation_type);
 
     return {
-      from: `topic:${dependency.prerequisite_topic_id}`,
-      to: `topic:${dependency.dependent_topic_id}`,
+      from: `topic:${dependency.dependent_topic_id}`,
+      to: `topic:${dependency.prerequisite_topic_id}`,
       color: visual.color,
       fontColor: visual.color,
       lineWidth: 2,
