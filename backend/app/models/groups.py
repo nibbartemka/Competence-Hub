@@ -67,3 +67,10 @@ class Subgroup(Base):
         back_populates="subgroup",
         lazy="selectin",
     )
+
+    teacher_links: Mapped[list["TeacherSubgroup"]] = relationship(
+        "TeacherSubgroup",
+        back_populates="subgroup",
+        cascade="all, delete-orphan",
+        lazy="selectin",
+    )

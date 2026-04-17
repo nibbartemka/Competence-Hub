@@ -37,8 +37,7 @@ class Teacher(Base):
 class TeacherSubgroup(Base):
     __tablename__ = "teacher_subgroups"
     __table_args__ = (
-        UniqueConstraint("teacher_id", "subgroup_num", name="uq_teacher_subgroup_num"),
-        CheckConstraint("subgroup_num > 0", name="ck_teacher_subgroup_num_positive"),
+        UniqueConstraint("teacher_id", "subgroup_id", name="uq_teacher_subgroup_num"),
     )
 
     id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
@@ -48,10 +47,19 @@ class TeacherSubgroup(Base):
         nullable=False,
     )
 
-    subgroup_num: Mapped[int] = mapped_column(Integer, nullable=False)
+    subgroup_id: Mapped[UUID | None] = mapped_column(
+        ForeignKey("subgroups.id", ondelete="CASCADE"),
+        nullable=False,
+    )
 
     teacher: Mapped["Teacher"] = relationship(
         "Teacher",
         back_populates="subgroup_links",
+        lazy="selectin",
+    )
+
+    subgroup: Mapped["Subgroup"] = relationship(
+        "Subgroup",
+        back_populates="teacher_links",
         lazy="selectin",
     )

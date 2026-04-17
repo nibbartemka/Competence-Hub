@@ -8,9 +8,6 @@ from app.core import Base
 
 class Student(Base):
     __tablename__ = "students"
-    __table_args__ = (
-        UniqueConstraint("name", "group_id", name="uq_student_name_group"),
-    )
 
     id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
     name: Mapped[str] = mapped_column(String(255), nullable=False)
@@ -23,12 +20,6 @@ class Student(Base):
     subgroup_id: Mapped[UUID | None] = mapped_column(
         ForeignKey("subgroups.id", ondelete="SET NULL"),
         nullable=True,
-    )
-
-    subgroup_num: Mapped[int] = mapped_column(
-        Integer,
-        nullable=False,
-        default=0,
     )
 
     group: Mapped["Group"] = relationship(
