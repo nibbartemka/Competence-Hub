@@ -4,15 +4,24 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.openapi.docs import get_swagger_ui_html, get_redoc_html
 from fastapi.openapi.utils import get_openapi
+from sqlalchemy import select
 
 from .api.routes import api_router
 from .core import init_db
-from .models import *
+from .core.db import get_async_session_maker
+from .models import Discipline
+from .models import *  # noqa: F401,F403 - ensure ORM models are registered
+from .services.topic_dependencies import sync_topic_dependencies_for_disciplines
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     await init_db()
+    async with get_async_session_maker()() as session:
+        result = await session.execute(select(Discipline.id).order_by(Discipline.name))
+        discipline_ids = list(result.scalars().all())
+        await sync_topic_dependencies_for_disciplines(session, discipline_ids)
+        await session.commit()
     yield
 
 

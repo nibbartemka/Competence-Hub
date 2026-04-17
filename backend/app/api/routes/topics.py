@@ -3,10 +3,11 @@ from uuid import UUID
 from fastapi import APIRouter, status
 from sqlalchemy import select
 
-from app.api.crud import commit_or_409, delete_and_commit, not_found
+from app.api.crud import commit_or_409, flush_or_409, not_found
 from app.api.deps import DbSession
 from app.models import Discipline, Topic
 from app.schemas import TopicCreate, TopicRead, TopicUpdate
+from app.services.topic_dependencies import sync_topic_dependencies_for_discipline
 
 
 router = APIRouter(prefix="/topics", tags=["Topics"])
@@ -36,6 +37,8 @@ async def create_topic(payload: TopicCreate, session: DbSession) -> Topic:
         discipline_id=payload.discipline_id,
     )
     session.add(topic)
+    await flush_or_409(session)
+    await sync_topic_dependencies_for_discipline(session, payload.discipline_id)
     await commit_or_409(session)
     await session.refresh(topic)
     return topic
@@ -61,6 +64,8 @@ async def update_topic(
 
     topic.name = payload.name
     topic.description = payload.description
+    await flush_or_409(session)
+    await sync_topic_dependencies_for_discipline(session, topic.discipline_id)
     await commit_or_409(session)
     await session.refresh(topic)
     return topic
@@ -71,4 +76,8 @@ async def delete_topic(topic_id: UUID, session: DbSession) -> None:
     topic = await session.get(Topic, topic_id)
     if topic is None:
         raise not_found("Topic", topic_id)
-    await delete_and_commit(session, topic)
+    discipline_id = topic.discipline_id
+    await session.delete(topic)
+    await flush_or_409(session)
+    await sync_topic_dependencies_for_discipline(session, discipline_id)
+    await commit_or_409(session)

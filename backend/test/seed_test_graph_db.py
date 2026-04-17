@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from pathlib import Path
 import sys
-from uuid import UUID
 
 from sqlalchemy import create_engine, select
 from sqlalchemy.orm import Session, sessionmaker
@@ -27,6 +26,7 @@ from app.models.enums import (
     TopicDependencyRelationType,
     TopicKnowledgeElementRole,
 )
+from app.services.topic_dependencies import calculate_topic_dependency_pairs
 
 
 DB_PATH = ROOT_DIR / "app.db"
@@ -857,43 +857,29 @@ def seed_knowledge_element_relations(
 
 def build_topic_dependencies(session: Session) -> None:
     topics = session.scalars(select(Topic)).all()
+    topic_links = session.scalars(select(TopicKnowledgeElement)).all()
+    topic_by_id = {topic.id: topic for topic in topics}
+    dependency_pairs = calculate_topic_dependency_pairs(topics, topic_links)
 
-    required_map: dict[UUID, set[str]] = {}
-    formed_map: dict[UUID, set[str]] = {}
-
-    for topic in topics:
-        required_map[topic.id] = set()
-        formed_map[topic.id] = set()
-
-        for link in topic.element_links:
-            element_name = link.element.name
-            if link.role == TopicKnowledgeElementRole.REQUIRED:
-                required_map[topic.id].add(element_name)
-            elif link.role == TopicKnowledgeElementRole.FORMED:
-                formed_map[topic.id].add(element_name)
-
-    dependencies_to_add: list[TopicDependency] = []
-
-    for source in topics:
-        for target in topics:
-            if source.id == target.id:
-                continue
-
-            covered = formed_map[source.id] & required_map[target.id]
-            if not covered:
-                continue
-
-            dependencies_to_add.append(
-                TopicDependency(
-                    prerequisite_topic_id=source.id,
-                    dependent_topic_id=target.id,
-                    relation_type=TopicDependencyRelationType.REQUIRES,
-                    description=(
-                        f"{source.name} -> {target.name}: covers required elements "
-                        f"{', '.join(sorted(covered))}"
-                    ),
-                )
-            )
+    dependencies_to_add = [
+        TopicDependency(
+            prerequisite_topic_id=prerequisite_topic_id,
+            dependent_topic_id=dependent_topic_id,
+            relation_type=TopicDependencyRelationType.REQUIRES,
+            description=(
+                f"Auto-built from formed elements of "
+                f"'{topic_by_id[prerequisite_topic_id].name}' and required elements of "
+                f"'{topic_by_id[dependent_topic_id].name}'"
+            ),
+        )
+        for prerequisite_topic_id, dependent_topic_id in sorted(
+            dependency_pairs,
+            key=lambda pair: (
+                topic_by_id[pair[0]].name,
+                topic_by_id[pair[1]].name,
+            ),
+        )
+    ]
 
     session.add_all(dependencies_to_add)
     session.flush()

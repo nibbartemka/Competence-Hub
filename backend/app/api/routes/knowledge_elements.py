@@ -3,14 +3,15 @@ from uuid import UUID
 from fastapi import APIRouter, status
 from sqlalchemy import select
 
-from app.api.crud import commit_or_409, delete_and_commit, not_found
+from app.api.crud import commit_or_409, flush_or_409, not_found
 from app.api.deps import DbSession
-from app.models import KnowledgeElement
+from app.models import KnowledgeElement, Topic, TopicKnowledgeElement
 from app.schemas import (
     KnowledgeElementCreate,
     KnowledgeElementRead,
     KnowledgeElementUpdate,
 )
+from app.services.topic_dependencies import sync_topic_dependencies_for_disciplines
 
 
 router = APIRouter(prefix="/knowledge-elements", tags=["Knowledge Elements"])
@@ -74,4 +75,16 @@ async def delete_knowledge_element(element_id: UUID, session: DbSession) -> None
     element = await session.get(KnowledgeElement, element_id)
     if element is None:
         raise not_found("Knowledge element", element_id)
-    await delete_and_commit(session, element)
+
+    affected_disciplines_result = await session.execute(
+        select(Topic.discipline_id)
+        .join(TopicKnowledgeElement, TopicKnowledgeElement.topic_id == Topic.id)
+        .where(TopicKnowledgeElement.element_id == element_id)
+        .distinct()
+    )
+    affected_discipline_ids = list(affected_disciplines_result.scalars().all())
+
+    await session.delete(element)
+    await flush_or_409(session)
+    await sync_topic_dependencies_for_disciplines(session, affected_discipline_ids)
+    await commit_or_409(session)
