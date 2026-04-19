@@ -2,9 +2,12 @@ import type {
   CompetenceType,
   Discipline,
   DisciplineKnowledgeGraph,
+  Group,
   KnowledgeElement,
   KnowledgeElementRelation,
   KnowledgeElementRelationType,
+  Student,
+  Teacher,
   Topic,
   TopicDependency,
   TopicDependencyRelationType,
@@ -74,6 +77,54 @@ async function request<T>(path: string, options: RequestOptions = {}): Promise<T
 
 export function fetchDisciplines(signal?: AbortSignal) {
   return request<Discipline[]>("/disciplines/", { signal });
+}
+
+export function createDiscipline(payload: {
+  name: string;
+  teacher_id?: string | null;
+  group_ids?: string[];
+}) {
+  return request<Discipline>("/disciplines/", {
+    method: "POST",
+    body: payload,
+  });
+}
+
+export function fetchGroups(signal?: AbortSignal) {
+  return request<Group[]>("/groups/", { signal });
+}
+
+export function createGroup(payload: { name: string }) {
+  return request<Group>("/groups/", {
+    method: "POST",
+    body: payload,
+  });
+}
+
+export function fetchStudents(signal?: AbortSignal) {
+  return request<Student[]>("/students/", { signal });
+}
+
+export function createStudent(payload: {
+  name: string;
+  group_id: string;
+  subgroup_id?: string | null;
+}) {
+  return request<Student>("/students/", {
+    method: "POST",
+    body: payload,
+  });
+}
+
+export function fetchTeachers(signal?: AbortSignal) {
+  return request<Teacher[]>("/teachers/", { signal });
+}
+
+export function createTeacher(payload: { name: string; group_ids?: string[] }) {
+  return request<Teacher>("/teachers/", {
+    method: "POST",
+    body: payload,
+  });
 }
 
 export function fetchDisciplineKnowledgeGraph(

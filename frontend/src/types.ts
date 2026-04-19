@@ -20,6 +20,27 @@ export type KnowledgeElementRelationType =
 export type Discipline = {
   id: string;
   name: string;
+  teacher_ids: string[];
+  group_ids: string[];
+};
+
+export type Group = {
+  id: string;
+  name: string;
+};
+
+export type Student = {
+  id: string;
+  name: string;
+  group_id: string;
+  subgroup_id: string | null;
+};
+
+export type Teacher = {
+  id: string;
+  name: string;
+  discipline_ids: string[];
+  group_ids: string[];
 };
 
 export type Topic = {

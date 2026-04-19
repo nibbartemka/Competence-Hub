@@ -1,4 +1,5 @@
 from .disciplines import DisciplineCreate, DisciplineRead
+from .groups import GroupCreate, GroupRead
 from .knowledge_element_relations import (
     KnowledgeElementRelationCreate,
     KnowledgeElementRelationRead,
@@ -15,10 +16,18 @@ from .topic_knowledge_elements import (
     TopicKnowledgeElementRead,
 )
 from .topics import TopicCreate, TopicRead, TopicUpdate
+from .students import StudentCreate, StudentRead
+from .teachers import TeacherCreate, TeacherRead
 
 __all__ = [
     "DisciplineCreate",
     "DisciplineRead",
+    "GroupCreate",
+    "GroupRead",
+    "StudentCreate",
+    "StudentRead",
+    "TeacherCreate",
+    "TeacherRead",
     "DisciplineKnowledgeGraphRead",
     "TopicCreate",
     "TopicRead",

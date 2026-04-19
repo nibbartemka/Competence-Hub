@@ -18,3 +18,25 @@ class Discipline(Base):
         cascade="all, delete-orphan",
         lazy="selectin",
     )
+
+    teacher_links: Mapped[list["TeacherDiscipline"]] = relationship(
+        "TeacherDiscipline",
+        back_populates="discipline",
+        cascade="all, delete-orphan",
+        lazy="selectin",
+    )
+
+    group_links: Mapped[list["GroupDiscipline"]] = relationship(
+        "GroupDiscipline",
+        back_populates="discipline",
+        cascade="all, delete-orphan",
+        lazy="selectin",
+    )
+
+    @property
+    def teacher_ids(self) -> list[UUID]:
+        return [link.teacher_id for link in self.teacher_links]
+
+    @property
+    def group_ids(self) -> list[UUID]:
+        return [link.group_id for link in self.group_links]

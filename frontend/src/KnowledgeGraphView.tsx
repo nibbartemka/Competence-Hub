@@ -419,6 +419,14 @@ export function KnowledgeGraphView({ disciplineId }: KnowledgeGraphViewProps) {
                 </div>
 
                 <div className="hero__controls">
+                    <button
+                        className="ghost-button hero__back-button"
+                        onClick={() => navigate("/")}
+                        type="button"
+                    >
+                        Назад на главную
+                    </button>
+
                     <label className="field">
                         <span>Дисциплина</span>
                         <select

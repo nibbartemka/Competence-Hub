@@ -60,6 +60,78 @@ def _sqlite_has_column(connection, table_name: str, column_name: str) -> bool:
     return any(row[1] == column_name for row in rows)
 
 
+def _sqlite_has_table(connection, table_name: str) -> bool:
+    row = connection.execute(
+        text(
+            "SELECT name FROM sqlite_master "
+            "WHERE type = 'table' AND name = :table_name"
+        ),
+        {"table_name": table_name},
+    ).fetchone()
+    return row is not None
+
+
+def _rebuild_students_table(connection) -> None:
+    connection.execute(
+        text(
+            """
+            CREATE TABLE students_new (
+                id CHAR(32) NOT NULL,
+                name VARCHAR(255) NOT NULL,
+                group_id CHAR(32) NOT NULL,
+                subgroup_id CHAR(32),
+                PRIMARY KEY (id),
+                FOREIGN KEY(group_id) REFERENCES groups (id) ON DELETE CASCADE,
+                FOREIGN KEY(subgroup_id) REFERENCES subgroups (id) ON DELETE SET NULL
+            )
+            """
+        )
+    )
+    connection.execute(
+        text(
+            """
+            INSERT INTO students_new (id, name, group_id, subgroup_id)
+            SELECT id, name, group_id, subgroup_id
+            FROM students
+            """
+        )
+    )
+    connection.execute(text("DROP TABLE students"))
+    connection.execute(text("ALTER TABLE students_new RENAME TO students"))
+
+
+def _rebuild_teacher_subgroups_table(connection) -> None:
+    connection.execute(
+        text(
+            """
+            CREATE TABLE teacher_subgroups_new (
+                id CHAR(32) NOT NULL,
+                teacher_id CHAR(32) NOT NULL,
+                subgroup_id CHAR(32) NOT NULL,
+                PRIMARY KEY (id),
+                CONSTRAINT uq_teacher_subgroup_num UNIQUE (teacher_id, subgroup_id),
+                FOREIGN KEY(teacher_id) REFERENCES teachers (id) ON DELETE CASCADE,
+                FOREIGN KEY(subgroup_id) REFERENCES subgroups (id) ON DELETE CASCADE
+            )
+            """
+        )
+    )
+    connection.execute(
+        text(
+            """
+            INSERT OR IGNORE INTO teacher_subgroups_new (id, teacher_id, subgroup_id)
+            SELECT teacher_subgroups.id, teacher_subgroups.teacher_id, subgroups.id
+            FROM teacher_subgroups
+            JOIN subgroups ON subgroups.subgroup_num = teacher_subgroups.subgroup_num
+            """
+        )
+    )
+    connection.execute(text("DROP TABLE teacher_subgroups"))
+    connection.execute(
+        text("ALTER TABLE teacher_subgroups_new RENAME TO teacher_subgroups")
+    )
+
+
 def _sync_sqlite_schema(connection) -> None:
     # Keep local SQLite schema compatible with the current SQLAlchemy models.
     if not _sqlite_has_column(connection, "topics", "description"):
@@ -71,6 +143,17 @@ def _sync_sqlite_schema(connection) -> None:
                 "ADD COLUMN role TEXT NOT NULL DEFAULT 'formed'"
             )
         )
+    if _sqlite_has_table(connection, "students") and _sqlite_has_column(
+        connection, "students", "subgroup_num"
+    ):
+        _rebuild_students_table(connection)
+    if _sqlite_has_table(connection, "teacher_subgroups"):
+        if _sqlite_has_column(connection, "teacher_subgroups", "subgroup_num"):
+            _rebuild_teacher_subgroups_table(connection)
+        elif not _sqlite_has_column(connection, "teacher_subgroups", "subgroup_id"):
+            connection.execute(
+                text("ALTER TABLE teacher_subgroups ADD COLUMN subgroup_id CHAR(32)")
+            )
 
 
 async def get_async_session() -> AsyncGenerator[AsyncSession, None]:

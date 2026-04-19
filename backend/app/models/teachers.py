@@ -33,6 +33,14 @@ class Teacher(Base):
         lazy="selectin",
     )
 
+    @property
+    def discipline_ids(self) -> list[UUID]:
+        return [link.discipline_id for link in self.discipline_links]
+
+    @property
+    def group_ids(self) -> list[UUID]:
+        return [link.group_id for link in self.group_links]
+
 
 class TeacherSubgroup(Base):
     __tablename__ = "teacher_subgroups"

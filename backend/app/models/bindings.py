@@ -31,6 +31,7 @@ class GroupDiscipline(Base):
 
     discipline: Mapped["Discipline"] = relationship(
         "Discipline",
+        back_populates="group_links",
         lazy="selectin",
     )
 
@@ -120,6 +121,7 @@ class TeacherDiscipline(Base):
 
     discipline: Mapped["Discipline"] = relationship(
         "Discipline",
+        back_populates="teacher_links",
         lazy="selectin",
     )
 
