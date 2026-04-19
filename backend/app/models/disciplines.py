@@ -19,6 +19,13 @@ class Discipline(Base):
         lazy="selectin",
     )
 
+    knowledge_elements: Mapped[list["KnowledgeElement"]] = relationship(
+        "KnowledgeElement",
+        back_populates="discipline",
+        cascade="all, delete-orphan",
+        lazy="selectin",
+    )
+
     teacher_links: Mapped[list["TeacherDiscipline"]] = relationship(
         "TeacherDiscipline",
         back_populates="discipline",

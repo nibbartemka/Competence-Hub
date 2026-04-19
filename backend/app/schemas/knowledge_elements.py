@@ -9,6 +9,7 @@ class KnowledgeElementCreate(BaseModel):
     name: str = Field(min_length=1, max_length=255)
     description: str | None = None
     competence_type: CompetenceType
+    discipline_id: UUID
 
 
 class KnowledgeElementUpdate(BaseModel):
@@ -24,3 +25,4 @@ class KnowledgeElementRead(BaseModel):
     name: str
     description: str | None
     competence_type: CompetenceType
+    discipline_id: UUID | None

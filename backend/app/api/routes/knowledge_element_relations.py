@@ -78,6 +78,12 @@ async def create_knowledge_element_relation(
     if target_element is None:
         raise not_found("Knowledge element", payload.target_element_id)
 
+    if source_element.discipline_id != target_element.discipline_id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Knowledge elements from different disciplines cannot be related.",
+        )
+
     if not _is_allowed_relation(
         source_element.competence_type,
         target_element.competence_type,

@@ -163,7 +163,12 @@ async def get_discipline_knowledge_graph(
         if element_ids:
             elements_result = await session.execute(
                 select(KnowledgeElement)
-                .where(KnowledgeElement.id.in_(element_ids))
+                .where(
+                    and_(
+                        KnowledgeElement.id.in_(element_ids),
+                        KnowledgeElement.discipline_id == discipline_id,
+                    )
+                )
                 .order_by(
                     KnowledgeElement.competence_type,
                     KnowledgeElement.name,

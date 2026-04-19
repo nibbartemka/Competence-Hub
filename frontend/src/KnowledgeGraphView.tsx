@@ -154,8 +154,11 @@ export function KnowledgeGraphView({ disciplineId }: KnowledgeGraphViewProps) {
 
     const unlinkedElements = useMemo(() => {
         const linkedElementIds = new Set(topicKnowledgeLinks.map((link) => link.element_id));
-        return allElements.filter((element) => !linkedElementIds.has(element.id));
-    }, [allElements, topicKnowledgeLinks]);
+        return allElements.filter(
+            (element) =>
+                element.discipline_id === disciplineId && !linkedElementIds.has(element.id),
+        );
+    }, [allElements, disciplineId, topicKnowledgeLinks]);
 
     const scene = useMemo(() => {
         if (!graphData) {
@@ -255,7 +258,7 @@ export function KnowledgeGraphView({ disciplineId }: KnowledgeGraphViewProps) {
                 setUnlinkedLoading(true);
                 setUnlinkedError("");
                 const [elements, links] = await Promise.all([
-                    fetchKnowledgeElements(),
+                    fetchKnowledgeElements(undefined, disciplineId),
                     fetchTopicKnowledgeElements(),
                 ]);
                 if (cancelled) return;
@@ -278,7 +281,7 @@ export function KnowledgeGraphView({ disciplineId }: KnowledgeGraphViewProps) {
         return () => {
             cancelled = true;
         };
-    }, []);
+    }, [disciplineId]);
 
     // Загрузка графа
     useEffect(() => {
@@ -394,7 +397,7 @@ export function KnowledgeGraphView({ disciplineId }: KnowledgeGraphViewProps) {
         try {
             setUnlinkedLoading(true);
             const [elements, links] = await Promise.all([
-                fetchKnowledgeElements(),
+                fetchKnowledgeElements(undefined, disciplineId),
                 fetchTopicKnowledgeElements(),
             ]);
             setAllElements(elements);
@@ -625,7 +628,7 @@ export function KnowledgeGraphView({ disciplineId }: KnowledgeGraphViewProps) {
                             <GraphEditor
                                 disciplineId={disciplineId}
                                 topics={graphData?.topics ?? []}
-                                disciplineElements={allElements}
+                                disciplineElements={graphData?.knowledge_elements ?? []}
                                 onDataChanged={refreshSelectedDisciplineGraph}
                             />
                         </div>

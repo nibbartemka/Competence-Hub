@@ -5,7 +5,7 @@ from sqlalchemy import select
 
 from app.api.crud import commit_or_409, flush_or_409, not_found
 from app.api.deps import DbSession
-from app.models import KnowledgeElement, Topic, TopicKnowledgeElement
+from app.models import Discipline, KnowledgeElement, Topic, TopicKnowledgeElement
 from app.schemas import (
     KnowledgeElementCreate,
     KnowledgeElementRead,
@@ -18,9 +18,16 @@ router = APIRouter(prefix="/knowledge-elements", tags=["Knowledge Elements"])
 
 
 @router.get("/", response_model=list[KnowledgeElementRead])
-async def list_knowledge_elements(session: DbSession) -> list[KnowledgeElement]:
+async def list_knowledge_elements(
+    session: DbSession,
+    discipline_id: UUID | None = None,
+) -> list[KnowledgeElement]:
+    query = select(KnowledgeElement)
+    if discipline_id is not None:
+        query = query.where(KnowledgeElement.discipline_id == discipline_id)
+
     result = await session.execute(
-        select(KnowledgeElement).order_by(
+        query.order_by(
             KnowledgeElement.competence_type,
             KnowledgeElement.name,
         )
@@ -33,10 +40,15 @@ async def create_knowledge_element(
     payload: KnowledgeElementCreate,
     session: DbSession,
 ) -> KnowledgeElement:
+    discipline = await session.get(Discipline, payload.discipline_id)
+    if discipline is None:
+        raise not_found("Discipline", payload.discipline_id)
+
     element = KnowledgeElement(
         name=payload.name,
         description=payload.description,
         competence_type=payload.competence_type,
+        discipline_id=payload.discipline_id,
     )
     session.add(element)
     await commit_or_409(session)

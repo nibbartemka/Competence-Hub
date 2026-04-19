@@ -137,8 +137,12 @@ export function fetchDisciplineKnowledgeGraph(
   );
 }
 
-export function fetchKnowledgeElements(signal?: AbortSignal) {
-  return request<KnowledgeElement[]>("/knowledge-elements/", { signal });
+export function fetchKnowledgeElements(
+  signal?: AbortSignal,
+  disciplineId?: string,
+) {
+  const query = disciplineId ? `?discipline_id=${encodeURIComponent(disciplineId)}` : "";
+  return request<KnowledgeElement[]>(`/knowledge-elements/${query}`, { signal });
 }
 
 export function fetchTopicKnowledgeElements(signal?: AbortSignal) {
@@ -179,6 +183,7 @@ export function createKnowledgeElement(payload: {
   name: string;
   description: string;
   competence_type: CompetenceType;
+  discipline_id: string;
 }) {
   return request<KnowledgeElement>("/knowledge-elements/", {
     method: "POST",

@@ -63,6 +63,7 @@ export type KnowledgeElement = {
   name: string;
   description: string | null;
   competence_type: CompetenceType;
+  discipline_id: string | null;
 };
 
 export type TopicKnowledgeElement = {

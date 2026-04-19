@@ -1,6 +1,6 @@
 from uuid import UUID
 
-from fastapi import APIRouter, status
+from fastapi import APIRouter, HTTPException, status
 from sqlalchemy import select
 
 from app.api.crud import commit_or_409, flush_or_409, not_found
@@ -50,6 +50,12 @@ async def create_topic_knowledge_element(
     element = await session.get(KnowledgeElement, payload.element_id)
     if element is None:
         raise not_found("Knowledge element", payload.element_id)
+
+    if element.discipline_id != topic.discipline_id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Knowledge element belongs to another discipline.",
+        )
 
     topic_element = TopicKnowledgeElement(
         topic_id=payload.topic_id,

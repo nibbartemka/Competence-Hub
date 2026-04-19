@@ -106,9 +106,10 @@ class KnowledgeElement(Base):
     __tablename__ = "knowledge_elements"
     __table_args__ = (
         UniqueConstraint(
+            "discipline_id",
             "name",
             "competence_type",
-            name="uq_knowledge_element_name_competence",
+            name="uq_knowledge_element_discipline_name_competence",
         ),
     )
 
@@ -119,6 +120,17 @@ class KnowledgeElement(Base):
     competence_type: Mapped[CompetenceType] = mapped_column(
         Enum(CompetenceType, name="competence_type_enum"),
         nullable=False,
+    )
+
+    discipline_id: Mapped[UUID | None] = mapped_column(
+        ForeignKey("disciplines.id", ondelete="CASCADE"),
+        nullable=True,
+    )
+
+    discipline: Mapped["Discipline | None"] = relationship(
+        "Discipline",
+        back_populates="knowledge_elements",
+        lazy="selectin",
     )
 
     topic_links: Mapped[list["TopicKnowledgeElement"]] = relationship(

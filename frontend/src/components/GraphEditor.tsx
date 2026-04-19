@@ -105,15 +105,19 @@ function nextDifferentValue(currentValue: string, items: Array<{ id: string }>) 
 function uniqueElements(
   disciplineElements: KnowledgeElement[],
   allElements: KnowledgeElement[],
+  disciplineId: string,
 ) {
   const byId = new Map<string, KnowledgeElement>();
 
+  // Elements coming from the discipline graph are already scoped by backend.
   for (const element of disciplineElements) {
     byId.set(element.id, element);
   }
 
   for (const element of allElements) {
-    byId.set(element.id, element);
+    if (element.discipline_id === disciplineId) {
+      byId.set(element.id, element);
+    }
   }
 
   return [...byId.values()].sort((left, right) => left.name.localeCompare(right.name, "ru"));
@@ -197,8 +201,8 @@ export function GraphEditor({
   );
 
   const sortedAllElements = useMemo(
-    () => uniqueElements(disciplineElements, allElements),
-    [allElements, disciplineElements],
+    () => uniqueElements(disciplineElements, allElements, disciplineId),
+    [allElements, disciplineElements, disciplineId],
   );
 
   const relationElements = sortedAllElements;
@@ -225,7 +229,7 @@ export function GraphEditor({
 
     async function loadAllElements() {
       try {
-        const items = await fetchKnowledgeElements(controller.signal);
+        const items = await fetchKnowledgeElements(controller.signal, disciplineId);
         if (controller.signal.aborted) {
           return;
         }
@@ -241,7 +245,7 @@ export function GraphEditor({
     void loadAllElements();
 
     return () => controller.abort();
-  }, []);
+  }, [disciplineId]);
 
   useEffect(() => {
     if (!sortedTopics.length) {
@@ -346,7 +350,7 @@ export function GraphEditor({
   }, [relationOptions, relationType]);
 
   async function reloadElements() {
-    const items = await fetchKnowledgeElements();
+    const items = await fetchKnowledgeElements(undefined, disciplineId);
     setAllElements(items);
   }
 
@@ -479,6 +483,7 @@ export function GraphEditor({
           name: draft.name.trim(),
           description: draft.description.trim(),
           competence_type: draft.competenceType,
+          discipline_id: disciplineId,
         });
 
         await createTopicKnowledgeElement({
@@ -547,6 +552,7 @@ export function GraphEditor({
         name: elementName.trim(),
         description: elementDescription.trim(),
         competence_type: elementCompetence,
+        discipline_id: disciplineId,
       });
 
       if (elementCreateTopicId) {

@@ -245,8 +245,11 @@ export default function App() {
 
   const unlinkedElements = useMemo(() => {
     const linkedElementIds = new Set(topicKnowledgeLinks.map((link) => link.element_id));
-    return allElements.filter((element) => !linkedElementIds.has(element.id));
-  }, [allElements, topicKnowledgeLinks]);
+    return allElements.filter(
+      (element) =>
+        element.discipline_id === activeDisciplineId && !linkedElementIds.has(element.id),
+    );
+  }, [activeDisciplineId, allElements, topicKnowledgeLinks]);
 
   const scene = useMemo(() => {
     if (!graphData) {
@@ -378,7 +381,7 @@ export default function App() {
         setUnlinkedLoading(true);
         setUnlinkedError("");
         const [elements, links] = await Promise.all([
-          fetchKnowledgeElements(),
+          fetchKnowledgeElements(undefined, activeDisciplineId),
           fetchTopicKnowledgeElements(),
         ]);
         if (cancelled) {
@@ -553,7 +556,7 @@ export default function App() {
     try {
       setUnlinkedLoading(true);
       const [elements, links] = await Promise.all([
-        fetchKnowledgeElements(),
+        fetchKnowledgeElements(undefined, activeDisciplineId),
         fetchTopicKnowledgeElements(),
       ]);
       setAllElements(elements);
@@ -825,7 +828,7 @@ export default function App() {
               <GraphEditor
                 disciplineId={activeDisciplineId}
                 topics={graphData?.topics ?? []}
-                disciplineElements={allElements}
+                disciplineElements={graphData?.knowledge_elements ?? []}
                 onDataChanged={refreshSelectedDisciplineGraph}
               />
             </div>
