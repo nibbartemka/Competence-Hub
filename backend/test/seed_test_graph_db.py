@@ -19,6 +19,15 @@ from app.models import (
     Topic,
     TopicDependency,
     TopicKnowledgeElement,
+    Group,
+    GroupDiscipline,
+    Teacher,
+    Subgroup,
+    Student,
+    TeacherGroup,
+    TeacherDiscipline,
+    TeacherSubgroup,
+    StudentDiscipline,
 )
 from app.models.enums import (
     CompetenceType,
@@ -627,6 +636,7 @@ def seed_data(session: Session) -> None:
 
     seed_knowledge_element_relations(session, elements)
     build_topic_dependencies(session)
+    build_people_and_group_data(session, discipline)
     print_seed_summary(session)
 
 
@@ -882,6 +892,54 @@ def build_topic_dependencies(session: Session) -> None:
     ]
 
     session.add_all(dependencies_to_add)
+    session.flush()
+
+
+def build_people_and_group_data(session: Session, discipline: Discipline) -> None:
+    group = Group(name="Б9124-09.03.04прогин")
+    session.add(group)
+    session.flush()
+
+    subgroup = Subgroup(group_id=group.id, subgroup_num=1)
+    session.add(subgroup)
+    session.flush()
+
+    teacher = Teacher(name="Крестникова О.А.")
+    session.add(teacher)
+    session.flush()
+
+    students = [
+        Student(
+            name="Гаффоров Тимур",
+            group_id=group.id,
+            subgroup_id=subgroup.id,
+        ),
+        Student(
+            name="Исихара Никита",
+            group_id=group.id,
+            subgroup_id=subgroup.id,
+        ),
+        Student(
+            name="Голомидов Никита",
+            group_id=group.id,
+            subgroup_id=subgroup.id,
+        ),
+    ]
+    session.add_all(students)
+    session.flush()
+
+    session.add(GroupDiscipline(group_id=group.id, discipline_id=discipline.id))
+    session.add(TeacherDiscipline(teacher_id=teacher.id, discipline_id=discipline.id))
+    session.add(TeacherGroup(teacher_id=teacher.id, group_id=group.id))
+    session.add(TeacherSubgroup(teacher_id=teacher.id, subgroup_id=subgroup.id))
+    
+    session.add_all(
+        [
+            StudentDiscipline(student_id=student.id, discipline_id=discipline.id)
+            for student in students
+        ]
+    )
+
     session.flush()
 
 
