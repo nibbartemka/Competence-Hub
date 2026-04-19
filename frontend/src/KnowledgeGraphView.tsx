@@ -474,6 +474,15 @@ export function KnowledgeGraphView({ disciplineId }: KnowledgeGraphViewProps) {
                             >
                                 Редактор
                             </button>
+
+                            <button
+                                className="secondary-button"
+                                onClick={() => navigate(`/disciplines/${disciplineId}/trajectory`)}
+                                type="button"
+                                disabled={!disciplineId}
+                            >
+                                Собрать траекторию
+                            </button>
                         </div>
 
                         <h2>{scene?.title ?? currentDiscipline?.name ?? "Граф дисциплины"}</h2>

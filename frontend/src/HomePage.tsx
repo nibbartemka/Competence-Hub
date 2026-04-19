@@ -342,12 +342,20 @@ export function HomePage() {
                     </small>
                     <small>Группы: {groups.length ? groups.join(", ") : "не назначены"}</small>
                   </div>
-                  <Link
-                    className="primary-button discipline-row__action"
-                    to={`/disciplines/${discipline.id}/knowledge`}
-                  >
-                    Открыть редактор
-                  </Link>
+                  <div className="discipline-row__actions">
+                    <Link
+                      className="primary-button discipline-row__action"
+                      to={`/disciplines/${discipline.id}/knowledge`}
+                    >
+                      Открыть редактор
+                    </Link>
+                    <Link
+                      className="secondary-button discipline-row__action"
+                      to={`/disciplines/${discipline.id}/trajectory`}
+                    >
+                      Собрать траекторию
+                    </Link>
+                  </div>
                 </article>
               );
             })}

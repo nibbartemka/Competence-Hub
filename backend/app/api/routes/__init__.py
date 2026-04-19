@@ -4,6 +4,7 @@ from .disciplines import router as disciplines_router
 from .groups import router as groups_router
 from .knowledge_element_relations import router as knowledge_element_relations_router
 from .knowledge_elements import router as knowledge_elements_router
+from .learning_trajectories import router as learning_trajectories_router
 from .students import router as students_router
 from .teachers import router as teachers_router
 from .topic_dependencies import router as topic_dependencies_router
@@ -21,3 +22,4 @@ api_router.include_router(topic_dependencies_router)
 api_router.include_router(knowledge_elements_router)
 api_router.include_router(topic_knowledge_elements_router)
 api_router.include_router(knowledge_element_relations_router)
+api_router.include_router(learning_trajectories_router)

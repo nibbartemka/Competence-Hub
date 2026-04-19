@@ -29,6 +29,12 @@ export type Group = {
   name: string;
 };
 
+export type Subgroup = {
+  id: string;
+  group_id: string;
+  subgroup_num: number;
+};
+
 export type Student = {
   id: string;
   name: string;
@@ -91,6 +97,32 @@ export type DisciplineKnowledgeGraph = {
   knowledge_element_relations: KnowledgeElementRelation[];
 };
 
+export type LearningTrajectoryElement = {
+  id: string;
+  trajectory_topic_id: string;
+  element_id: string;
+  threshold: number;
+};
+
+export type LearningTrajectoryTopic = {
+  id: string;
+  trajectory_id: string;
+  topic_id: string;
+  position: number;
+  threshold: number;
+  elements: LearningTrajectoryElement[];
+};
+
+export type LearningTrajectory = {
+  id: string;
+  name: string;
+  discipline_id: string;
+  teacher_id: string;
+  group_id: string | null;
+  subgroup_id: string | null;
+  topics: LearningTrajectoryTopic[];
+};
+
 export type ViewMode =
   | {
       level: "topics";
@@ -146,6 +178,8 @@ export type SceneNodeData = {
   hint?: string;
   topicId?: string;
   actionTopicId?: string;
+  isSelected?: boolean;
+  isDisabled?: boolean;
 };
 
 export type GraphScene = {

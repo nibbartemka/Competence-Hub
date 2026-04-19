@@ -1,5 +1,5 @@
 from .disciplines import DisciplineCreate, DisciplineRead
-from .groups import GroupCreate, GroupRead
+from .groups import GroupCreate, GroupRead, SubgroupCreate, SubgroupRead
 from .knowledge_element_relations import (
     KnowledgeElementRelationCreate,
     KnowledgeElementRelationRead,
@@ -9,6 +9,14 @@ from .knowledge_elements import (
     KnowledgeElementCreate,
     KnowledgeElementRead,
     KnowledgeElementUpdate,
+)
+from .learning_trajectories import (
+    LearningTrajectoryCreate,
+    LearningTrajectoryRead,
+    LearningTrajectoryTopicCreate,
+    LearningTrajectoryTopicRead,
+    LearningTrajectoryElementCreate,
+    LearningTrajectoryElementRead,
 )
 from .topic_dependencies import TopicDependencyCreate, TopicDependencyRead
 from .topic_knowledge_elements import (
@@ -24,6 +32,8 @@ __all__ = [
     "DisciplineRead",
     "GroupCreate",
     "GroupRead",
+    "SubgroupCreate",
+    "SubgroupRead",
     "StudentCreate",
     "StudentRead",
     "TeacherCreate",
@@ -37,6 +47,12 @@ __all__ = [
     "KnowledgeElementCreate",
     "KnowledgeElementRead",
     "KnowledgeElementUpdate",
+    "LearningTrajectoryCreate",
+    "LearningTrajectoryRead",
+    "LearningTrajectoryTopicCreate",
+    "LearningTrajectoryTopicRead",
+    "LearningTrajectoryElementCreate",
+    "LearningTrajectoryElementRead",
     "TopicKnowledgeElementCreate",
     "TopicKnowledgeElementRead",
     "KnowledgeElementRelationCreate",

@@ -34,6 +34,8 @@ export function GraphNode({ node }: RGNodeSlotProps) {
     <div
       className={`graph-node graph-node--${data.entity} graph-node--${data.tone} graph-node--accent-${
         data.accentTone ?? data.tone
+      }${data.isSelected ? " graph-node--selected" : ""}${
+        data.isDisabled ? " graph-node--disabled" : ""
       }`}
       title={data.description ?? data.title}
     >

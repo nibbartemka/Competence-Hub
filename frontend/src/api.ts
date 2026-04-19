@@ -6,7 +6,9 @@ import type {
   KnowledgeElement,
   KnowledgeElementRelation,
   KnowledgeElementRelationType,
+  LearningTrajectory,
   Student,
+  Subgroup,
   Teacher,
   Topic,
   TopicDependency,
@@ -96,6 +98,17 @@ export function fetchGroups(signal?: AbortSignal) {
 
 export function createGroup(payload: { name: string }) {
   return request<Group>("/groups/", {
+    method: "POST",
+    body: payload,
+  });
+}
+
+export function fetchSubgroups(groupId: string, signal?: AbortSignal) {
+  return request<Subgroup[]>(`/groups/${groupId}/subgroups`, { signal });
+}
+
+export function createSubgroup(payload: { group_id: string; subgroup_num: number }) {
+  return request<Subgroup>(`/groups/${payload.group_id}/subgroups`, {
     method: "POST",
     body: payload,
   });
@@ -242,6 +255,44 @@ export function createKnowledgeElementRelation(payload: {
   description: string;
 }) {
   return request<KnowledgeElementRelation>("/knowledge-element-relations/", {
+    method: "POST",
+    body: payload,
+  });
+}
+
+export function fetchLearningTrajectories(
+  params: {
+    discipline_id?: string;
+    teacher_id?: string;
+    group_id?: string;
+  } = {},
+  signal?: AbortSignal,
+) {
+  const query = new URLSearchParams();
+  if (params.discipline_id) query.set("discipline_id", params.discipline_id);
+  if (params.teacher_id) query.set("teacher_id", params.teacher_id);
+  if (params.group_id) query.set("group_id", params.group_id);
+  const suffix = query.toString() ? `?${query.toString()}` : "";
+  return request<LearningTrajectory[]>(`/learning-trajectories/${suffix}`, { signal });
+}
+
+export function createLearningTrajectory(payload: {
+  name: string;
+  discipline_id: string;
+  teacher_id: string;
+  group_id?: string | null;
+  subgroup_id?: string | null;
+  topics: Array<{
+    topic_id: string;
+    position: number;
+    threshold: number;
+    elements: Array<{
+      element_id: string;
+      threshold: number;
+    }>;
+  }>;
+}) {
+  return request<LearningTrajectory>("/learning-trajectories/", {
     method: "POST",
     body: payload,
   });
