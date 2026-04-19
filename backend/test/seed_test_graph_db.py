@@ -395,6 +395,7 @@ def seed_data(session: Session) -> None:
             name=name,
             description=description,
             competence_type=competence_type,
+            discipline_id=discipline.id,
         )
         session.add(element)
         elements[name] = element
