@@ -21,16 +21,13 @@ from app.models import (
     TeacherGroup,
     TeacherSubgroup,
     Topic,
-    TopicDependency,
     TopicKnowledgeElement,
 )
 from app.models.enums import (
     CompetenceType,
-    TopicDependencyRelationType,
     TopicKnowledgeElementRole,
 )
 from app.schemas import LearningTrajectoryCreate, LearningTrajectoryRead
-from app.services.topic_dependencies import sync_topic_dependencies_for_discipline
 
 
 router = APIRouter(prefix="/learning-trajectories", tags=["Learning Trajectories"])
@@ -177,54 +174,35 @@ async def _validate_topics_and_elements(
     if len(topics_by_id) != len(topic_ids):
         raise _bad_request("Trajectory contains a topic from another discipline.")
 
-    await sync_topic_dependencies_for_discipline(session, payload.discipline_id)
-
-    position_by_topic_id = {
-        item.topic_id: item.position
-        for item in payload.topics
-    }
-    dependencies_result = await session.execute(
-        select(TopicDependency).where(
-            and_(
-                TopicDependency.dependent_topic_id.in_(topic_ids),
-                TopicDependency.relation_type == TopicDependencyRelationType.REQUIRES,
-            )
-        )
-    )
-    for dependency in dependencies_result.scalars().all():
-        if dependency.prerequisite_topic_id not in position_by_topic_id:
-            dependent_topic = topics_by_id[dependency.dependent_topic_id]
-            prerequisite = await session.get(Topic, dependency.prerequisite_topic_id)
-            prerequisite_name = prerequisite.name if prerequisite else str(dependency.prerequisite_topic_id)
-            raise _bad_request(
-                f"Topic '{dependent_topic.name}' requires topic "
-                f"'{prerequisite_name}', but it is not in the trajectory."
-            )
-
-        if (
-            position_by_topic_id[dependency.prerequisite_topic_id]
-            >= position_by_topic_id[dependency.dependent_topic_id]
-        ):
-            dependent_topic = topics_by_id[dependency.dependent_topic_id]
-            prerequisite_topic = topics_by_id[dependency.prerequisite_topic_id]
-            raise _bad_request(
-                f"Topic '{prerequisite_topic.name}' must be placed before "
-                f"topic '{dependent_topic.name}'."
-            )
-
     links_result = await session.execute(
         select(TopicKnowledgeElement)
         .options(selectinload(TopicKnowledgeElement.element))
-        .where(
-            and_(
-                TopicKnowledgeElement.topic_id.in_(topic_ids),
-                TopicKnowledgeElement.role == TopicKnowledgeElementRole.FORMED,
-            )
-        )
+        .where(TopicKnowledgeElement.topic_id.in_(topic_ids))
     )
     formed_by_topic: dict[UUID, dict[UUID, KnowledgeElement]] = defaultdict(dict)
+    required_by_topic: dict[UUID, dict[UUID, KnowledgeElement]] = defaultdict(dict)
     for link in links_result.scalars().all():
-        formed_by_topic[link.topic_id][link.element_id] = link.element
+        if link.role == TopicKnowledgeElementRole.FORMED:
+            formed_by_topic[link.topic_id][link.element_id] = link.element
+        elif link.role == TopicKnowledgeElementRole.REQUIRED:
+            required_by_topic[link.topic_id][link.element_id] = link.element
+
+    formed_before_topic: set[UUID] = set()
+    for topic_payload in sorted(payload.topics, key=lambda item: item.position):
+        missing_elements = [
+            element
+            for element_id, element in required_by_topic.get(topic_payload.topic_id, {}).items()
+            if element_id not in formed_before_topic
+        ]
+        if missing_elements:
+            topic = topics_by_id[topic_payload.topic_id]
+            missing_names = ", ".join(element.name for element in missing_elements)
+            raise _bad_request(
+                f"Topic '{topic.name}' cannot be placed here because required "
+                f"elements are not formed yet: {missing_names}."
+            )
+
+        formed_before_topic.update(formed_by_topic.get(topic_payload.topic_id, {}).keys())
 
     available_competence_types: set[CompetenceType] = set()
     for topic_payload in payload.topics:

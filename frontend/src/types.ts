@@ -176,10 +176,13 @@ export type SceneNodeData = {
   description?: string;
   metrics: string[];
   hint?: string;
+  secondaryHint?: string;
   topicId?: string;
   actionTopicId?: string;
   isSelected?: boolean;
   isDisabled?: boolean;
+  lockState?: "locked" | "open";
+  onSecondaryHintClick?: () => void;
 };
 
 export type GraphScene = {

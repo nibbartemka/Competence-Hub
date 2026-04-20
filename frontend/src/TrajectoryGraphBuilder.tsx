@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import RelationGraph, {
-  type RGNode,
+  type RelationGraphInstance,
   type RGOptions,
   type RelationGraphComponent,
 } from "relation-graph-react";
@@ -16,7 +16,11 @@ import {
   fetchTeachers,
   isAbortError,
 } from "./api";
-import { GraphNode } from "./components/GraphNode";
+import {
+  GraphNode,
+  GraphNodeRuntimeStateProvider,
+  type GraphNodeRuntimeState,
+} from "./components/GraphNode";
 import { buildElementScene, buildTopicScene } from "./graphScene";
 import type {
   CompetenceType,
@@ -24,6 +28,7 @@ import type {
   DisciplineKnowledgeGraph,
   Group,
   KnowledgeElement,
+  KnowledgeElementRelationType,
   LearningTrajectory,
   SceneNodeData,
   Subgroup,
@@ -62,6 +67,26 @@ const COMPETENCE_LABELS: Record<CompetenceType, string> = {
   master: "Владеть",
 };
 
+const ELEMENT_PREREQUISITE_RELATIONS = new Set<KnowledgeElementRelationType>([
+  "requires",
+  "builds_on",
+]);
+
+const ELEMENT_RELATION_LABELS: Record<KnowledgeElementRelationType, string> = {
+  requires: "требует",
+  builds_on: "строится на",
+  contains: "содержит",
+  part_of: "является частью",
+  property_of: "свойство объекта",
+  refines: "уточняет",
+  generalizes: "обобщает",
+  similar: "родственно",
+  contrasts_with: "противопоставляется",
+  used_with: "используется вместе",
+  implements: "реализует",
+  automates: "переходит во владение",
+};
+
 type Feedback = {
   kind: "error" | "success";
   text: string;
@@ -97,6 +122,7 @@ export default function TrajectoryGraphBuilder() {
   const { disciplineId } = useParams<{ disciplineId: string }>();
   const navigate = useNavigate();
   const graphRef = useRef<RelationGraphComponent>();
+  const previousSceneKeyRef = useRef("");
 
   const [disciplines, setDisciplines] = useState<Discipline[]>([]);
   const [groups, setGroups] = useState<Group[]>([]);
@@ -198,6 +224,20 @@ export default function TrajectoryGraphBuilder() {
     return result;
   }, [elementById, graph]);
 
+  const requiredElementsByTopic = useMemo(() => {
+    const result = new Map<string, KnowledgeElement[]>();
+    if (!graph) return result;
+
+    for (const link of graph.topic_knowledge_elements) {
+      if (link.role !== "required") continue;
+      const element = elementById.get(link.element_id);
+      if (!element) continue;
+      result.set(link.topic_id, [...(result.get(link.topic_id) ?? []), element]);
+    }
+
+    return result;
+  }, [elementById, graph]);
+
   const selectedTopicSet = useMemo(
     () => new Set(selectedTopicIds),
     [selectedTopicIds],
@@ -229,6 +269,14 @@ export default function TrajectoryGraphBuilder() {
       const positionByTopicId = new Map(
         selectedTopicIds.map((topicId, index) => [topicId, index]),
       );
+
+      for (const [index, topicId] of selectedTopicIds.entries()) {
+        const previousTopicIds = selectedTopicIds.slice(0, index);
+        const missingElements = getMissingRequiredElementsForTopic(topicId, previousTopicIds);
+        if (missingElements.length) {
+          errors.push(buildMissingElementsMessage(topicId, missingElements));
+        }
+      }
 
       for (const dependency of graph.topic_dependencies) {
         if (dependency.relation_type !== "requires") continue;
@@ -302,6 +350,7 @@ export default function TrajectoryGraphBuilder() {
     elementThresholds,
     formedElementsByTopic,
     graph,
+    requiredElementsByTopic,
     selectedElementsByTopic,
     selectedGroupId,
     selectedSubgroupId,
@@ -332,19 +381,28 @@ export default function TrajectoryGraphBuilder() {
           const topicId = data.topicId;
           const selectedIndex = selectedTopicIds.indexOf(topicId);
           const isSelected = selectedIndex >= 0;
+          const missingElements = isSelected
+            ? []
+            : getMissingRequiredElementsForTopic(topicId);
+          const isBlocked = missingElements.length > 0;
 
           return {
             ...node,
             data: {
               ...data,
               isSelected,
+              isDisabled: isBlocked,
+              lockState: isBlocked ? "locked" : "open",
               subtitle: isSelected
                 ? `Шаг ${selectedIndex + 1} в траектории`
+                : isBlocked
+                  ? `Сначала нужно: ${missingElements.map((item) => item.name).join(", ")}`
                 : data.subtitle,
               metrics: isSelected
                 ? [...data.metrics, `Порог ${topicThresholds[topicId] ?? 100}`]
                 : data.metrics,
-              onHintClick: () => setView({ level: "elements", topicId }),
+              hint: isSelected ? "Убрать" : "Выбрать",
+              secondaryHint: "Элементы",
             },
           };
         }
@@ -355,53 +413,208 @@ export default function TrajectoryGraphBuilder() {
             data: {
               ...data,
               isSelected: selectedTopicSet.has(data.topicId),
-              onHintClick: () => setView({ level: "topics" }),
+              lockState: "open",
+              hint: "К темам",
             },
           };
         }
 
         if (data.entity === "element") {
-          const parsed = parseElementNodeId(node.id);
-          if (!parsed) return node;
           const isFormed = data.tone === "formed";
-          const isSelected = Boolean(
-            selectedElementsByTopic[parsed.topicId]?.includes(parsed.elementId),
-          );
 
           return {
             ...node,
             data: {
               ...data,
-              isSelected,
+              isSelected: false,
               isDisabled: !isFormed,
-              hint: isFormed ? (isSelected ? "Убрать" : "Выбрать") : "Предпосылка",
-              metrics: isSelected
-                ? [
-                    ...data.metrics,
-                    `Порог ${
-                      elementThresholds[buildElementKey(parsed.topicId, parsed.elementId)] ??
-                      100
-                    }`,
-                  ]
-                : data.metrics,
-              onHintClick: isFormed
-                ? () => toggleElement(parsed.topicId, parsed.elementId)
-                : undefined,
+              lockState: isFormed ? "open" : "locked",
+              hint: isFormed ? "Выбрать" : "Предпосылка",
             },
           };
         }
 
         return node;
       }),
+      lines:
+        view.level === "topics"
+          ? baseScene.lines.map((line) => {
+              const activeLine = isTrajectoryLineActive(line.from, line.to);
+
+              return {
+                ...line,
+                color: activeLine ? "#178364" : "#9aa3ad",
+                fontColor: activeLine ? "#146c53" : "#7f8894",
+                animation: activeLine ? line.animation : 0,
+              };
+            })
+          : baseScene.lines,
     };
   }, [
-    elementThresholds,
     graph,
-    selectedElementsByTopic,
+    requiredElementsByTopic,
     selectedNodeId,
     selectedTopicIds,
     selectedTopicSet,
     topicThresholds,
+    view,
+  ]);
+
+  const graphNodeRuntimeState = useMemo<GraphNodeRuntimeState>(() => {
+    const selectedNodeIds = new Set<string>();
+    const disabledNodeIds = new Set<string>();
+    const lockStateByNodeId = new Map<string, "locked" | "open">();
+    const hintByNodeId = new Map<string, string | undefined>();
+    const secondaryHintByNodeId = new Map<string, string | undefined>();
+    const metricsByNodeId = new Map<string, string[]>();
+    const cardActionByNodeId = new Map<string, () => void>();
+    const hintActionByNodeId = new Map<string, () => void>();
+    const secondaryHintActionByNodeId = new Map<string, () => void>();
+
+    const showElementBlockedMessage = (
+      elementName: string,
+      missingPrerequisites: string[],
+      isFormed: boolean,
+    ) => {
+      const reason = !isFormed
+        ? "он является предпосылкой этой темы, а в траекторию добавляются только формируемые элементы."
+        : `сначала выбери ${missingPrerequisites.join(", ")}.`;
+
+      setFeedback({
+        kind: "error",
+        text: `Элемент "${elementName}" пока нельзя выбрать: ${reason}`,
+      });
+    };
+
+    if (graph) {
+      if (view.level === "topics") {
+        for (const topic of graph.topics) {
+          const nodeId = `topic:${topic.id}`;
+          const selectedIndex = selectedTopicIds.indexOf(topic.id);
+          const isSelected = selectedIndex >= 0;
+          const missingElements = isSelected
+            ? []
+            : getMissingRequiredElementsForTopic(topic.id);
+          const isBlocked = missingElements.length > 0;
+
+          if (isSelected) {
+            selectedNodeIds.add(nodeId);
+          }
+          if (isBlocked) {
+            disabledNodeIds.add(nodeId);
+          }
+
+          lockStateByNodeId.set(nodeId, isBlocked ? "locked" : "open");
+          hintByNodeId.set(nodeId, isBlocked ? "Почему закрыто" : isSelected ? "Убрать" : "Выбрать");
+          hintActionByNodeId.set(nodeId, () => {
+            if (isBlocked) {
+              setFeedback({
+                kind: "error",
+                text: buildMissingElementsMessage(topic.id, missingElements),
+              });
+              return;
+            }
+
+            setSelectedNodeId(nodeId);
+            toggleTopic(topic.id);
+          });
+          secondaryHintByNodeId.set(nodeId, "Элементы");
+          secondaryHintActionByNodeId.set(nodeId, () =>
+            setView({ level: "elements", topicId: topic.id }),
+          );
+        }
+      } else {
+        const topicId = view.topicId;
+        const focusNodeId = `topic-focus:${topicId}`;
+        const selectedElementIds = new Set(selectedElementsByTopic[topicId] ?? []);
+        const formedElementIdsInTopic = new Set(
+          graph.topic_knowledge_elements
+            .filter((link) => link.topic_id === topicId && link.role === "formed")
+            .map((link) => link.element_id),
+        );
+
+        if (selectedTopicSet.has(topicId)) {
+          selectedNodeIds.add(focusNodeId);
+        }
+
+        lockStateByNodeId.set(focusNodeId, "open");
+        hintByNodeId.set(focusNodeId, "К темам");
+        hintActionByNodeId.set(focusNodeId, () => setView({ level: "topics" }));
+
+        for (const link of graph.topic_knowledge_elements) {
+          if (link.topic_id !== topicId) continue;
+
+          const nodeId = `element:${topicId}:${link.element_id}`;
+          const element = elementById.get(link.element_id);
+          const isFormed = link.role === "formed";
+          const missingPrerequisites = graph.knowledge_element_relations
+            .filter(
+              (relation) =>
+                relation.source_element_id === link.element_id &&
+                ELEMENT_PREREQUISITE_RELATIONS.has(relation.relation_type) &&
+                formedElementIdsInTopic.has(relation.target_element_id) &&
+                !selectedElementIds.has(relation.target_element_id),
+            )
+            .map((relation) => {
+              const prerequisiteName =
+                elementById.get(relation.target_element_id)?.name ?? relation.target_element_id;
+              return `"${prerequisiteName}" (${ELEMENT_RELATION_LABELS[relation.relation_type]})`;
+            });
+          const isSelected = selectedElementIds.has(link.element_id);
+          const isBlocked = !isSelected && (!isFormed || missingPrerequisites.length > 0);
+          const toggleCurrentElement = () => toggleElement(topicId, link.element_id);
+
+          if (isSelected) {
+            selectedNodeIds.add(nodeId);
+            metricsByNodeId.set(nodeId, [
+              `Порог ${elementThresholds[buildElementKey(topicId, link.element_id)] ?? 100}`,
+            ]);
+          }
+          if (isBlocked) {
+            disabledNodeIds.add(nodeId);
+          }
+
+          lockStateByNodeId.set(nodeId, isBlocked ? "locked" : "open");
+          hintByNodeId.set(
+            nodeId,
+            isBlocked ? "Почему закрыто" : isSelected ? "Убрать" : "Выбрать",
+          );
+          if (isBlocked) {
+            const showBlockedReason = () =>
+              showElementBlockedMessage(
+                element?.name ?? link.element_id,
+                missingPrerequisites,
+                isFormed,
+              );
+            cardActionByNodeId.set(nodeId, showBlockedReason);
+            hintActionByNodeId.set(nodeId, showBlockedReason);
+          } else {
+            hintActionByNodeId.set(nodeId, toggleCurrentElement);
+          }
+        }
+      }
+    }
+
+    return {
+      selectedNodeIds,
+      disabledNodeIds,
+      lockStateByNodeId,
+      hintByNodeId,
+      secondaryHintByNodeId,
+      metricsByNodeId,
+      cardActionByNodeId,
+      hintActionByNodeId,
+      secondaryHintActionByNodeId,
+    };
+  }, [
+    elementThresholds,
+    elementById,
+    formedElementsByTopic,
+    graph,
+    requiredElementsByTopic,
+    selectedElementsByTopic,
+    selectedTopicIds,
+    selectedTopicSet,
     view,
   ]);
 
@@ -529,18 +742,52 @@ export default function TrajectoryGraphBuilder() {
   useEffect(() => {
     if (!scene || !graphRef.current) return;
 
-    graphRef.current.setJsonData(
-      {
-        rootId: scene.rootId,
-        nodes: scene.nodes,
-        lines: scene.lines,
-      },
-      (graphInstance) => {
-        if (scene.defaultSelectedNodeId) {
-          graphInstance.setCheckedNode(scene.defaultSelectedNodeId);
+    const graphComponent = graphRef.current;
+    const graphInstance = graphComponent.getInstance();
+    const sameScene = previousSceneKeyRef.current === scene.key;
+    const previousPositions = new Map<string, { x: number; y: number }>();
+    const previousOffset = sameScene ? graphInstance.getGraphOffet() : null;
+    const previousZoom = sameScene ? graphInstance.options.canvasZoom : undefined;
+
+    if (sameScene) {
+      for (const node of graphInstance.getNodes()) {
+        previousPositions.set(node.id, { x: node.x, y: node.y });
+      }
+    }
+
+    const nodes = sameScene
+      ? scene.nodes.map((node) => {
+          const position = previousPositions.get(node.id);
+          return position ? { ...node, x: position.x, y: position.y } : node;
+        })
+      : scene.nodes;
+
+    const afterRefresh = (nextGraphInstance: RelationGraphInstance) => {
+      if (sameScene && previousOffset) {
+        nextGraphInstance.setCanvasOffset(previousOffset.offset_x, previousOffset.offset_y);
+        if (previousZoom) {
+          nextGraphInstance.setZoom(previousZoom);
         }
-      },
-    );
+      }
+
+      if (scene.defaultSelectedNodeId) {
+        nextGraphInstance.setCheckedNode(scene.defaultSelectedNodeId);
+      }
+    };
+
+    const graphData = {
+      rootId: scene.rootId,
+      nodes,
+      lines: scene.lines,
+    };
+
+    if (sameScene) {
+      graphComponent.setJsonData(graphData, false, afterRefresh);
+    } else {
+      graphComponent.setJsonData(graphData, afterRefresh);
+    }
+
+    previousSceneKeyRef.current = scene.key;
   }, [scene]);
 
   function hasSelectedElementForCompetence(competenceType: CompetenceType) {
@@ -556,6 +803,66 @@ export default function TrajectoryGraphBuilder() {
     return false;
   }
 
+  function getFormedElementIdsForTopics(topicIds: string[]) {
+    const result = new Set<string>();
+
+    for (const topicId of topicIds) {
+      for (const element of formedElementsByTopic.get(topicId) ?? []) {
+        result.add(element.id);
+      }
+    }
+
+    return result;
+  }
+
+  function getMissingRequiredElementsForTopic(
+    topicId: string,
+    previousTopicIds = selectedTopicIds,
+  ) {
+    const formedElementIds = getFormedElementIdsForTopics(previousTopicIds);
+
+    return (requiredElementsByTopic.get(topicId) ?? []).filter(
+      (element) => !formedElementIds.has(element.id),
+    );
+  }
+
+  function buildMissingElementsMessage(topicId: string, elements: KnowledgeElement[]) {
+    return `Тему "${topicName(topicById, topicId)}" пока нельзя выбрать: не сформированы элементы ${elements
+      .map((element) => `"${element.name}"`)
+      .join(", ")}.`;
+  }
+
+  function isTopicNodeSelected(nodeId: string) {
+    if (!nodeId.startsWith("topic:")) return false;
+    return selectedTopicSet.has(nodeId.replace("topic:", ""));
+  }
+
+  function isElementNodeSelected(nodeId: string) {
+    const parsed = parseElementNodeId(nodeId);
+    if (!parsed) return false;
+    return Boolean(selectedElementsByTopic[parsed.topicId]?.includes(parsed.elementId));
+  }
+
+  function isTrajectoryLineActive(from: string, to: string) {
+    if (from.startsWith("topic:") && to.startsWith("topic:")) {
+      return isTopicNodeSelected(from) && isTopicNodeSelected(to);
+    }
+
+    if (from.startsWith("topic-focus:") && to.startsWith("element:")) {
+      return isElementNodeSelected(to);
+    }
+
+    if (from.startsWith("element:") && to.startsWith("topic-focus:")) {
+      return false;
+    }
+
+    if (from.startsWith("element:") && to.startsWith("element:")) {
+      return isElementNodeSelected(from) && isElementNodeSelected(to);
+    }
+
+    return false;
+  }
+
   function toggleTopic(topicId: string) {
     const isAlreadySelected = selectedTopicIds.includes(topicId);
 
@@ -565,6 +872,15 @@ export default function TrajectoryGraphBuilder() {
         const next = { ...current };
         delete next[topicId];
         return next;
+      });
+      return;
+    }
+
+    const missingElements = getMissingRequiredElementsForTopic(topicId);
+    if (missingElements.length) {
+      setFeedback({
+        kind: "error",
+        text: buildMissingElementsMessage(topicId, missingElements),
       });
       return;
     }
@@ -595,11 +911,11 @@ export default function TrajectoryGraphBuilder() {
     if (!element) return;
 
     if (!selectedTopicIds.includes(topicId)) {
-      setSelectedTopicIds((current) => (current.includes(topicId) ? current : [...current, topicId]));
-      setTopicThresholds((current) => ({
-        ...current,
-        [topicId]: current[topicId] ?? (selectedTopicIds.length === 0 ? 0 : 100),
-      }));
+      setFeedback({
+        kind: "error",
+        text: `Сначала выбери тему "${topicName(topicById, topicId)}" на уровне тем, потом добавляй ее элементы.`,
+      });
+      return;
     }
 
     setSelectedElementsByTopic((current) => {
@@ -637,32 +953,6 @@ export default function TrajectoryGraphBuilder() {
       ...current,
       [buildElementKey(topicId, elementId)]: clampThreshold(value),
     }));
-  }
-
-  function handleNodeClick(node: RGNode) {
-    setSelectedNodeId(node.id);
-    const data = node.data as SceneNodeData | undefined;
-
-    if (data?.entity === "topic" && data.topicId) {
-      toggleTopic(data.topicId);
-    }
-
-    if (data?.entity === "element") {
-      const parsed = parseElementNodeId(node.id);
-      if (!parsed) return false;
-
-      if (data.tone !== "formed") {
-        setFeedback({
-          kind: "error",
-          text: "В траекторию можно добавлять только формируемые элементы темы.",
-        });
-        return false;
-      }
-
-      toggleElement(parsed.topicId, parsed.elementId);
-    }
-
-    return false;
   }
 
   async function refreshTrajectories() {
@@ -1010,14 +1300,33 @@ export default function TrajectoryGraphBuilder() {
                 </div>
               ) : (
                 <div className="graph-frame">
-                  <RelationGraph
-                    ref={graphRef}
-                    options={GRAPH_OPTIONS}
-                    nodeSlot={GraphNode}
-                    onNodeClick={handleNodeClick}
-                  />
+                  <GraphNodeRuntimeStateProvider value={graphNodeRuntimeState}>
+                    <RelationGraph
+                      ref={graphRef}
+                      options={GRAPH_OPTIONS}
+                      nodeSlot={GraphNode}
+                    />
+                  </GraphNodeRuntimeStateProvider>
                 </div>
               )}
+
+              {scene ? (
+                <aside className="trajectory-state-legend" aria-label="Состояния вершин">
+                  <strong>Состояния</strong>
+                  <span>
+                    <i className="trajectory-state-dot trajectory-state-dot--blocked" />
+                    Заблокировано
+                  </span>
+                  <span>
+                    <i className="trajectory-state-dot trajectory-state-dot--selected" />
+                    Выбрано
+                  </span>
+                  <span>
+                    <i className="trajectory-state-dot trajectory-state-dot--available" />
+                    Можно выбрать
+                  </span>
+                </aside>
+              ) : null}
 
               {scene ? (
                 <aside className="trajectory-floating-summary">
