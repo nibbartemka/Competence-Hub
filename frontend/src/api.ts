@@ -260,6 +260,27 @@ export function createKnowledgeElementRelation(payload: {
   });
 }
 
+export function updateKnowledgeElementRelation(
+  relationId: string,
+  payload: {
+    source_element_id: string;
+    target_element_id: string;
+    relation_type: KnowledgeElementRelationType;
+    description: string;
+  },
+) {
+  return request<KnowledgeElementRelation>(`/knowledge-element-relations/${relationId}`, {
+    method: "PUT",
+    body: payload,
+  });
+}
+
+export function deleteKnowledgeElementRelation(relationId: string) {
+  return request<void>(`/knowledge-element-relations/${relationId}`, {
+    method: "DELETE",
+  });
+}
+
 export function fetchLearningTrajectories(
   params: {
     discipline_id?: string;

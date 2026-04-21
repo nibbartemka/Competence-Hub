@@ -7,7 +7,11 @@ from app.api.crud import commit_or_409, delete_and_commit, not_found
 from app.api.deps import DbSession
 from app.models import KnowledgeElement, KnowledgeElementRelation
 from app.models.enums import CompetenceType, KnowledgeElementRelationType
-from app.schemas import KnowledgeElementRelationCreate, KnowledgeElementRelationRead
+from app.schemas import (
+    KnowledgeElementRelationCreate,
+    KnowledgeElementRelationRead,
+    KnowledgeElementRelationUpdate,
+)
 
 
 router = APIRouter(
@@ -105,6 +109,59 @@ async def create_knowledge_element_relation(
         description=payload.description,
     )
     session.add(relation)
+    await commit_or_409(session)
+    await session.refresh(relation)
+    return relation
+
+
+@router.put("/{relation_id}", response_model=KnowledgeElementRelationRead)
+async def update_knowledge_element_relation(
+    relation_id: UUID,
+    payload: KnowledgeElementRelationUpdate,
+    session: DbSession,
+) -> KnowledgeElementRelation:
+    relation = await session.get(KnowledgeElementRelation, relation_id)
+    if relation is None:
+        raise not_found("Knowledge element relation", relation_id)
+
+    source_element = await session.get(KnowledgeElement, payload.source_element_id)
+    if source_element is None:
+        raise not_found("Knowledge element", payload.source_element_id)
+
+    target_element = await session.get(KnowledgeElement, payload.target_element_id)
+    if target_element is None:
+        raise not_found("Knowledge element", payload.target_element_id)
+
+    if source_element.id == target_element.id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Knowledge element relation cannot point to itself.",
+        )
+
+    if source_element.discipline_id != target_element.discipline_id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Knowledge elements from different disciplines cannot be related.",
+        )
+
+    if not _is_allowed_relation(
+        source_element.competence_type,
+        target_element.competence_type,
+        payload.relation_type,
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=(
+                "Unsupported relation for the selected element pair. "
+                "Allowed combinations: know->know, know->can (implements), "
+                "can->master (automates)."
+            ),
+        )
+
+    relation.source_element_id = payload.source_element_id
+    relation.target_element_id = payload.target_element_id
+    relation.relation_type = payload.relation_type
+    relation.description = payload.description
     await commit_or_409(session)
     await session.refresh(relation)
     return relation

@@ -14,10 +14,13 @@ import { GraphEditor } from "./components/GraphEditor";
 import { GraphNode } from "./components/GraphNode";
 import { buildElementScene, buildTopicScene } from "./graphScene";
 import type {
+    CompetenceType,
     DetailCard,
     Discipline,
     DisciplineKnowledgeGraph,
+    GraphScene,
     KnowledgeElement,
+    SceneNodeData,
     TopicKnowledgeElement,
     ViewMode,
 } from "./types";
@@ -84,6 +87,18 @@ const ELEMENT_LEGEND_SECTIONS = [
     },
 ];
 
+const COMPETENCE_FILTER_OPTIONS: Array<{ label: string; value: CompetenceType }> = [
+    { label: "Знать", value: "know" },
+    { label: "Уметь", value: "can" },
+    { label: "Владеть", value: "master" },
+];
+
+const DEFAULT_COMPETENCE_FILTERS: Record<CompetenceType, boolean> = {
+    know: true,
+    can: true,
+    master: true,
+};
+
 function buildSceneFromView(
     graphData: DisciplineKnowledgeGraph,
     view: ViewMode,
@@ -100,6 +115,50 @@ function extractErrorMessage(error: unknown) {
         return error.message;
     }
     return "Не удалось загрузить данные графа.";
+}
+
+function waitForPaint() {
+    return new Promise<void>((resolve) => {
+        requestAnimationFrame(() => requestAnimationFrame(() => resolve()));
+    });
+}
+
+function isCompetenceType(value: unknown): value is CompetenceType {
+    return value === "know" || value === "can" || value === "master";
+}
+
+function filterElementSceneByCompetence(
+    scene: GraphScene,
+    filters: Record<CompetenceType, boolean>,
+) {
+    const nodes = scene.nodes.filter((node) => {
+        const data = node.data as SceneNodeData | undefined;
+        if (data?.entity !== "element") {
+            return true;
+        }
+
+        return isCompetenceType(data.badgeTone) ? filters[data.badgeTone] : true;
+    });
+    const visibleNodeIds = new Set(nodes.map((node) => node.id));
+    const detailsByNodeId = Object.fromEntries(
+        Object.entries(scene.detailsByNodeId).filter(([nodeId]) => visibleNodeIds.has(nodeId)),
+    );
+    const defaultSelectedNodeId = visibleNodeIds.has(scene.defaultSelectedNodeId)
+        ? scene.defaultSelectedNodeId
+        : visibleNodeIds.has(scene.rootId)
+            ? scene.rootId
+            : nodes[0]?.id ?? "";
+
+    return {
+        ...scene,
+        rootId: visibleNodeIds.has(scene.rootId) ? scene.rootId : defaultSelectedNodeId,
+        nodes,
+        lines: scene.lines.filter(
+            (line) => visibleNodeIds.has(line.from) && visibleNodeIds.has(line.to),
+        ),
+        defaultSelectedNodeId,
+        detailsByNodeId,
+    };
 }
 
 async function fetchKnowledgeGraphDirect(
@@ -149,6 +208,8 @@ export function KnowledgeGraphView({ disciplineId }: KnowledgeGraphViewProps) {
     const [topicKnowledgeLinks, setTopicKnowledgeLinks] = useState<TopicKnowledgeElement[]>([]);
     const [unlinkedLoading, setUnlinkedLoading] = useState(true);
     const [unlinkedError, setUnlinkedError] = useState("");
+    const [exportingImage, setExportingImage] = useState(false);
+    const [competenceFilters, setCompetenceFilters] = useState(DEFAULT_COMPETENCE_FILTERS);
 
     const currentDiscipline = disciplines.find((d) => d.id === disciplineId);
 
@@ -167,7 +228,7 @@ export function KnowledgeGraphView({ disciplineId }: KnowledgeGraphViewProps) {
 
         const baseScene = buildSceneFromView(graphData, view, selectedNodeId || undefined);
 
-        return {
+        const nextScene = {
             ...baseScene,
             nodes: baseScene.nodes.map((node) => {
                 const data = node.data as any;
@@ -218,7 +279,11 @@ export function KnowledgeGraphView({ disciplineId }: KnowledgeGraphViewProps) {
                 return node;
             }),
         };
-    }, [graphData, selectedNodeId, view]);
+
+        return view.level === "elements"
+            ? filterElementSceneByCompetence(nextScene, competenceFilters)
+            : nextScene;
+    }, [competenceFilters, graphData, selectedNodeId, view]);
 
     // Загрузка списка дисциплин
     useEffect(() => {
@@ -377,6 +442,31 @@ export function KnowledgeGraphView({ disciplineId }: KnowledgeGraphViewProps) {
     function handleNodeClick(node: RGNode) {
         setSelectedNodeId(node.id);
         return false;
+    }
+
+    function toggleCompetenceFilter(competenceType: CompetenceType) {
+        setCompetenceFilters((current) => ({
+            ...current,
+            [competenceType]: !current[competenceType],
+        }));
+    }
+
+    async function handleDownloadGraphImage() {
+        if (!graphRef.current || !scene) return;
+
+        try {
+            setExportingImage(true);
+            setError("");
+            const graphInstance = graphRef.current.getInstance();
+            await graphInstance.zoomToFit();
+            await waitForPaint();
+            const filePrefix = view.level === "topics" ? "knowledge-topics" : "knowledge-elements";
+            await graphInstance.downloadAsImage("png", `${filePrefix}-${Date.now()}`);
+        } catch (downloadError) {
+            setError(extractErrorMessage(downloadError));
+        } finally {
+            setExportingImage(false);
+        }
     }
 
     async function refreshSelectedDisciplineGraph() {
@@ -557,11 +647,36 @@ export function KnowledgeGraphView({ disciplineId }: KnowledgeGraphViewProps) {
                                 <span className="graph-toolbar__eyebrow">Текущий срез</span>
                                 <h2>{scene?.title ?? "Построение графа"}</h2>
                             </div>
-                            <p className="graph-toolbar__hint">
-                                {view.level === "topics"
-                                    ? "Кнопка внутри карточки темы открывает ее внутренний граф элементов."
-                                    : "Кнопка в центральной теме возвращает на уровень тем."}
-                            </p>
+                            <div className="graph-toolbar__actions">
+                                <div className="competence-filter" aria-label="Фильтр элементов по типу компетенции">
+                                    {COMPETENCE_FILTER_OPTIONS.map((option) => (
+                                        <label
+                                            className={`competence-filter__item competence-filter__item--${option.value}`}
+                                            key={option.value}
+                                        >
+                                            <input
+                                                checked={competenceFilters[option.value]}
+                                                onChange={() => toggleCompetenceFilter(option.value)}
+                                                type="checkbox"
+                                            />
+                                            <span>{option.label}</span>
+                                        </label>
+                                    ))}
+                                </div>
+                                <button
+                                    className="secondary-button graph-export-button"
+                                    disabled={!scene || loading || exportingImage}
+                                    onClick={() => void handleDownloadGraphImage()}
+                                    type="button"
+                                >
+                                    {exportingImage ? "Сохраняю..." : "Сохранить PNG"}
+                                </button>
+                                <p className="graph-toolbar__hint">
+                                    {view.level === "topics"
+                                        ? "Кнопка внутри карточки темы открывает ее внутренний граф элементов."
+                                        : "Кнопка в центральной теме возвращает на уровень тем."}
+                                </p>
+                            </div>
                         </div>
 
                         <div className="graph-surface">
@@ -638,6 +753,9 @@ export function KnowledgeGraphView({ disciplineId }: KnowledgeGraphViewProps) {
                                 disciplineId={disciplineId}
                                 topics={graphData?.topics ?? []}
                                 disciplineElements={graphData?.knowledge_elements ?? []}
+                                knowledgeElementRelations={
+                                    graphData?.knowledge_element_relations ?? []
+                                }
                                 onDataChanged={refreshSelectedDisciplineGraph}
                             />
                         </div>

@@ -141,6 +141,12 @@ export function GraphNode({ node }: RGNodeSlotProps) {
       tabIndex={isCardClickable ? 0 : undefined}
       title={data.description ?? data.title}
     >
+      {data.sequenceNumber ? (
+        <span className="graph-node__sequence" title={`Шаг ${data.sequenceNumber}`}>
+          {data.sequenceNumber}
+        </span>
+      ) : null}
+
       {lockState ? (
         <span
           aria-label={lockState === "locked" ? "Заблокировано" : "Доступно"}

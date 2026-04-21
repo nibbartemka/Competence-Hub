@@ -6,15 +6,18 @@ import {
   createTopic,
   createTopicKnowledgeElement,
   deleteKnowledgeElement,
+  deleteKnowledgeElementRelation,
   deleteTopic,
   fetchKnowledgeElements,
   isAbortError,
   updateKnowledgeElement,
+  updateKnowledgeElementRelation,
   updateTopic,
 } from "../api";
 import type {
   CompetenceType,
   KnowledgeElement,
+  KnowledgeElementRelation,
   KnowledgeElementRelationType,
   Topic,
   TopicKnowledgeElementRole,
@@ -23,6 +26,7 @@ import type {
 type GraphEditorProps = {
   disciplineId: string;
   disciplineElements: KnowledgeElement[];
+  knowledgeElementRelations: KnowledgeElementRelation[];
   onDataChanged: () => Promise<void>;
   topics: Topic[];
 };
@@ -38,7 +42,7 @@ type ConfirmDeleteState =
   | {
       entityId: string;
       entityName: string;
-      entityType: "topic" | "element";
+      entityType: "topic" | "element" | "element-relation";
     }
   | null;
 
@@ -88,6 +92,16 @@ const CAN_TO_MASTER_RELATION_OPTIONS: Array<{
 
 function competenceLabel(value: CompetenceType) {
   return COMPETENCE_OPTIONS.find((option) => option.value === value)?.label ?? value;
+}
+
+function relationTypeLabel(value: KnowledgeElementRelationType) {
+  return (
+    [
+      ...KNOW_TO_KNOW_RELATION_OPTIONS,
+      ...KNOW_TO_CAN_RELATION_OPTIONS,
+      ...CAN_TO_MASTER_RELATION_OPTIONS,
+    ].find((option) => option.value === value)?.label ?? value
+  );
 }
 
 function extractErrorMessage(error: unknown) {
@@ -154,6 +168,7 @@ function getRelationOptions(
 export function GraphEditor({
   disciplineId,
   disciplineElements,
+  knowledgeElementRelations,
   onDataChanged,
   topics,
 }: GraphEditorProps) {
@@ -191,6 +206,14 @@ export function GraphEditor({
   const [relationTargetElementId, setRelationTargetElementId] = useState("");
   const [relationType, setRelationType] = useState<KnowledgeElementRelationType | "">("");
   const [relationDescription, setRelationDescription] = useState("");
+  const [editRelationId, setEditRelationId] = useState("");
+  const [editRelationSourceElementId, setEditRelationSourceElementId] = useState("");
+  const [editRelationTargetElementId, setEditRelationTargetElementId] = useState("");
+  const [editRelationType, setEditRelationType] = useState<KnowledgeElementRelationType | "">(
+    "",
+  );
+  const [editRelationDescription, setEditRelationDescription] = useState("");
+  const [deleteRelationId, setDeleteRelationId] = useState("");
   const [confirmDelete, setConfirmDelete] = useState<ConfirmDeleteState>(null);
 
   const sortedTopics = useMemo(
@@ -203,7 +226,36 @@ export function GraphEditor({
     [allElements, disciplineElements, disciplineId],
   );
 
+  const elementById = useMemo(
+    () => new Map(sortedAllElements.map((element) => [element.id, element])),
+    [sortedAllElements],
+  );
+
   const relationElements = sortedAllElements;
+
+  const sortedElementRelations = useMemo(
+    () =>
+      knowledgeElementRelations
+        .filter(
+          (relation) =>
+            elementById.has(relation.source_element_id) &&
+            elementById.has(relation.target_element_id),
+        )
+        .slice()
+        .sort((left, right) => {
+          const leftSource = elementById.get(left.source_element_id)?.name ?? "";
+          const rightSource = elementById.get(right.source_element_id)?.name ?? "";
+          const sourceCompare = leftSource.localeCompare(rightSource, "ru");
+          if (sourceCompare !== 0) {
+            return sourceCompare;
+          }
+
+          const leftTarget = elementById.get(left.target_element_id)?.name ?? "";
+          const rightTarget = elementById.get(right.target_element_id)?.name ?? "";
+          return leftTarget.localeCompare(rightTarget, "ru");
+        }),
+    [elementById, knowledgeElementRelations],
+  );
 
   const relationSourceElement = useMemo(
     () => relationElements.find((element) => element.id === relationSourceElementId),
@@ -220,6 +272,23 @@ export function GraphEditor({
         relationTargetElement?.competence_type,
       ),
     [relationSourceElement?.competence_type, relationTargetElement?.competence_type],
+  );
+
+  const editRelationSourceElement = useMemo(
+    () => relationElements.find((element) => element.id === editRelationSourceElementId),
+    [editRelationSourceElementId, relationElements],
+  );
+  const editRelationTargetElement = useMemo(
+    () => relationElements.find((element) => element.id === editRelationTargetElementId),
+    [editRelationTargetElementId, relationElements],
+  );
+  const editRelationOptions = useMemo(
+    () =>
+      getRelationOptions(
+        editRelationSourceElement?.competence_type,
+        editRelationTargetElement?.competence_type,
+      ),
+    [editRelationSourceElement?.competence_type, editRelationTargetElement?.competence_type],
   );
 
   useEffect(() => {
@@ -347,6 +416,43 @@ export function GraphEditor({
     }
   }, [relationOptions, relationType]);
 
+  useEffect(() => {
+    if (!sortedElementRelations.length) {
+      setEditRelationId("");
+      setDeleteRelationId("");
+      return;
+    }
+
+    if (!sortedElementRelations.some((relation) => relation.id === editRelationId)) {
+      setEditRelationId(sortedElementRelations[0].id);
+    }
+
+    if (!sortedElementRelations.some((relation) => relation.id === deleteRelationId)) {
+      setDeleteRelationId(sortedElementRelations[0].id);
+    }
+  }, [deleteRelationId, editRelationId, sortedElementRelations]);
+
+  useEffect(() => {
+    const selectedRelation = sortedElementRelations.find(
+      (relation) => relation.id === editRelationId,
+    );
+    setEditRelationSourceElementId(selectedRelation?.source_element_id ?? "");
+    setEditRelationTargetElementId(selectedRelation?.target_element_id ?? "");
+    setEditRelationType(selectedRelation?.relation_type ?? "");
+    setEditRelationDescription(selectedRelation?.description ?? "");
+  }, [editRelationId, sortedElementRelations]);
+
+  useEffect(() => {
+    if (!editRelationOptions.length) {
+      setEditRelationType("");
+      return;
+    }
+
+    if (!editRelationOptions.some((option) => option.value === editRelationType)) {
+      setEditRelationType(editRelationOptions[0].value);
+    }
+  }, [editRelationOptions, editRelationType]);
+
   async function reloadElements() {
     const items = await fetchKnowledgeElements(undefined, disciplineId);
     setAllElements(items);
@@ -359,7 +465,16 @@ export function GraphEditor({
     await onDataChanged();
   }
 
-  function openDeleteConfirmation(entityType: "topic" | "element", entityId: string) {
+  function getElementRelationName(relation: KnowledgeElementRelation) {
+    const sourceName = elementById.get(relation.source_element_id)?.name ?? "Элемент 1";
+    const targetName = elementById.get(relation.target_element_id)?.name ?? "Элемент 2";
+    return `${sourceName} -> ${targetName} (${relationTypeLabel(relation.relation_type)})`;
+  }
+
+  function openDeleteConfirmation(
+    entityType: "topic" | "element" | "element-relation",
+    entityId: string,
+  ) {
     if (entityType === "topic") {
       const selectedTopic = sortedTopics.find((topic) => topic.id === entityId);
       if (!selectedTopic) {
@@ -369,6 +484,20 @@ export function GraphEditor({
       setConfirmDelete({
         entityId,
         entityName: selectedTopic.name,
+        entityType,
+      });
+      return;
+    }
+
+    if (entityType === "element-relation") {
+      const selectedRelation = sortedElementRelations.find((relation) => relation.id === entityId);
+      if (!selectedRelation) {
+        return;
+      }
+
+      setConfirmDelete({
+        entityId,
+        entityName: getElementRelationName(selectedRelation),
         entityType,
       });
       return;
@@ -387,7 +516,11 @@ export function GraphEditor({
   }
 
   function closeDeleteConfirmation() {
-    if (busyAction === "topic-delete" || busyAction === "element-delete") {
+    if (
+      busyAction === "topic-delete" ||
+      busyAction === "element-delete" ||
+      busyAction === "element-relation-delete"
+    ) {
       return;
     }
 
@@ -401,7 +534,11 @@ export function GraphEditor({
 
     try {
       setBusyAction(
-        confirmDelete.entityType === "topic" ? "topic-delete" : "element-delete",
+        confirmDelete.entityType === "topic"
+          ? "topic-delete"
+          : confirmDelete.entityType === "element-relation"
+            ? "element-relation-delete"
+            : "element-delete",
       );
       setFeedback(null);
 
@@ -409,6 +546,10 @@ export function GraphEditor({
         await deleteTopic(confirmDelete.entityId);
         await syncAfterChange();
         setFeedback({ kind: "success", text: "Тема удалена." });
+      } else if (confirmDelete.entityType === "element-relation") {
+        await deleteKnowledgeElementRelation(confirmDelete.entityId);
+        await syncAfterChange();
+        setFeedback({ kind: "success", text: "Связь между элементами удалена." });
       } else {
         await deleteKnowledgeElement(confirmDelete.entityId);
         await syncAfterChange(true);
@@ -656,13 +797,15 @@ export function GraphEditor({
     try {
       setBusyAction("element-relation");
       setFeedback(null);
-      await createKnowledgeElementRelation({
+      const createdRelation = await createKnowledgeElementRelation({
         source_element_id: relationSourceElementId,
         target_element_id: relationTargetElementId,
         relation_type: relationType,
         description: relationDescription.trim(),
       });
       setRelationDescription("");
+      setEditRelationId(createdRelation.id);
+      setDeleteRelationId(createdRelation.id);
       await syncAfterChange();
       setFeedback({ kind: "success", text: "Связь между элементами создана." });
     } catch (error) {
@@ -670,6 +813,50 @@ export function GraphEditor({
     } finally {
       setBusyAction("");
     }
+  }
+
+  async function handleUpdateElementRelation(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+
+    if (editRelationSourceElementId === editRelationTargetElementId) {
+      setFeedback({ kind: "error", text: "Выбери два разных элемента." });
+      return;
+    }
+
+    if (!editRelationId || !editRelationType) {
+      setFeedback({
+        kind: "error",
+        text: "Выбери связь и допустимый тип связи для выбранной пары элементов.",
+      });
+      return;
+    }
+
+    try {
+      setBusyAction("element-relation-update");
+      setFeedback(null);
+      await updateKnowledgeElementRelation(editRelationId, {
+        source_element_id: editRelationSourceElementId,
+        target_element_id: editRelationTargetElementId,
+        relation_type: editRelationType,
+        description: editRelationDescription.trim(),
+      });
+      await syncAfterChange();
+      setFeedback({ kind: "success", text: "Связь между элементами обновлена." });
+    } catch (error) {
+      setFeedback({ kind: "error", text: extractErrorMessage(error) });
+    } finally {
+      setBusyAction("");
+    }
+  }
+
+  function handleDeleteElementRelation(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+
+    if (!deleteRelationId) {
+      return;
+    }
+
+    openDeleteConfirmation("element-relation", deleteRelationId);
   }
 
   function renderTopicTab() {
@@ -901,6 +1088,7 @@ export function GraphEditor({
             </button>
           </form>
         </details>
+
       </div>
     );
   }
@@ -1159,6 +1347,7 @@ export function GraphEditor({
             </button>
           </form>
         </details>
+
       </div>
     );
   }
@@ -1253,6 +1442,142 @@ export function GraphEditor({
             </button>
           </form>
         </details>
+
+        <details className="editor-block">
+          <summary>Редактировать связь между элементами</summary>
+          <form className="editor-form" onSubmit={handleUpdateElementRelation}>
+            {!sortedElementRelations.length ? (
+              <p className="editor-empty">Пока нет связей между элементами для редактирования.</p>
+            ) : null}
+
+            <label className="field">
+              <span>Связь</span>
+              <select
+                value={editRelationId}
+                onChange={(event) => setEditRelationId(event.target.value)}
+                disabled={!sortedElementRelations.length}
+              >
+                {sortedElementRelations.map((relation) => (
+                  <option key={relation.id} value={relation.id}>
+                    {getElementRelationName(relation)}
+                  </option>
+                ))}
+              </select>
+            </label>
+
+            <div className="editor-form__grid">
+              <label className="field">
+                <span>Элемент 1</span>
+                <select
+                  value={editRelationSourceElementId}
+                  onChange={(event) => setEditRelationSourceElementId(event.target.value)}
+                  disabled={!sortedElementRelations.length || !relationElements.length}
+                >
+                  {relationElements.map((element) => (
+                    <option key={element.id} value={element.id}>
+                      {element.name} ({competenceLabel(element.competence_type)})
+                    </option>
+                  ))}
+                </select>
+              </label>
+
+              <label className="field">
+                <span>Элемент 2</span>
+                <select
+                  value={editRelationTargetElementId}
+                  onChange={(event) => setEditRelationTargetElementId(event.target.value)}
+                  disabled={!sortedElementRelations.length || !relationElements.length}
+                >
+                  {relationElements.map((element) => (
+                    <option key={element.id} value={element.id}>
+                      {element.name} ({competenceLabel(element.competence_type)})
+                    </option>
+                  ))}
+                </select>
+              </label>
+            </div>
+
+            <div className="editor-form__grid">
+              <label className="field">
+                <span>Тип связи</span>
+                <select
+                  value={editRelationType}
+                  onChange={(event) =>
+                    setEditRelationType(event.target.value as KnowledgeElementRelationType)
+                  }
+                  disabled={!sortedElementRelations.length || !editRelationOptions.length}
+                >
+                  {editRelationOptions.map((option) => (
+                    <option key={option.value} value={option.value}>
+                      {option.label}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            </div>
+
+            {sortedElementRelations.length && !editRelationOptions.length ? (
+              <p className="editor-empty">
+                Для выбранной пары элементов связь сейчас не поддерживается.
+              </p>
+            ) : null}
+
+            <label className="field">
+              <span>Описание</span>
+              <textarea
+                rows={2}
+                value={editRelationDescription}
+                onChange={(event) => setEditRelationDescription(event.target.value)}
+                placeholder="Необязательное описание связи между элементами"
+                disabled={!sortedElementRelations.length}
+              />
+            </label>
+
+            <button
+              className="primary-button"
+              disabled={
+                !editRelationId ||
+                !editRelationSourceElementId ||
+                !editRelationTargetElementId ||
+                !editRelationType ||
+                !!busyAction
+              }
+            >
+              {busyAction === "element-relation-update" ? "Сохраняю..." : "Сохранить связь"}
+            </button>
+          </form>
+        </details>
+
+        <details className="editor-block">
+          <summary>Удалить связь между элементами</summary>
+          <form className="editor-form" onSubmit={handleDeleteElementRelation}>
+            {!sortedElementRelations.length ? (
+              <p className="editor-empty">Пока нет связей между элементами для удаления.</p>
+            ) : null}
+
+            <label className="field">
+              <span>Связь</span>
+              <select
+                value={deleteRelationId}
+                onChange={(event) => setDeleteRelationId(event.target.value)}
+                disabled={!sortedElementRelations.length}
+              >
+                {sortedElementRelations.map((relation) => (
+                  <option key={relation.id} value={relation.id}>
+                    {getElementRelationName(relation)}
+                  </option>
+                ))}
+              </select>
+            </label>
+
+            <button
+              className="secondary-button secondary-button--danger"
+              disabled={!deleteRelationId || !!busyAction}
+            >
+              Удалить связь
+            </button>
+          </form>
+        </details>
       </div>
     );
   }
@@ -1314,14 +1639,20 @@ export function GraphEditor({
             <div className="editor-confirm-dialog__header">
               <p className="card__eyebrow">Подтверждение</p>
               <h4>
-                {confirmDelete.entityType === "topic" ? "Удалить тему?" : "Удалить элемент?"}
+                {confirmDelete.entityType === "topic"
+                  ? "Удалить тему?"
+                  : confirmDelete.entityType === "element-relation"
+                    ? "Удалить связь?"
+                    : "Удалить элемент?"}
               </h4>
             </div>
 
             <p className="editor-confirm-dialog__text">
               {confirmDelete.entityType === "topic"
                 ? `Тема "${confirmDelete.entityName}" будет удалена вместе со связанными зависимостями и привязками.`
-                : `Элемент "${confirmDelete.entityName}" будет удален вместе со связями и привязками к темам.`}
+                : confirmDelete.entityType === "element-relation"
+                  ? `Связь "${confirmDelete.entityName}" будет удалена из графа элементов.`
+                  : `Элемент "${confirmDelete.entityName}" будет удален вместе со связями и привязками к темам.`}
             </p>
 
             <div className="editor-confirm-dialog__actions">
@@ -1329,7 +1660,11 @@ export function GraphEditor({
                 className="ghost-button"
                 onClick={closeDeleteConfirmation}
                 type="button"
-                disabled={busyAction === "topic-delete" || busyAction === "element-delete"}
+                disabled={
+                  busyAction === "topic-delete" ||
+                  busyAction === "element-delete" ||
+                  busyAction === "element-relation-delete"
+                }
               >
                 Отмена
               </button>
@@ -1337,9 +1672,15 @@ export function GraphEditor({
                 className="secondary-button secondary-button--danger"
                 onClick={() => void handleConfirmDelete()}
                 type="button"
-                disabled={busyAction === "topic-delete" || busyAction === "element-delete"}
+                disabled={
+                  busyAction === "topic-delete" ||
+                  busyAction === "element-delete" ||
+                  busyAction === "element-relation-delete"
+                }
               >
-                {busyAction === "topic-delete" || busyAction === "element-delete"
+                {busyAction === "topic-delete" ||
+                busyAction === "element-delete" ||
+                busyAction === "element-relation-delete"
                   ? "Удаляю..."
                   : "Удалить"}
               </button>

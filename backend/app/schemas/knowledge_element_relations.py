@@ -12,6 +12,13 @@ class KnowledgeElementRelationCreate(BaseModel):
     description: str | None = None
 
 
+class KnowledgeElementRelationUpdate(BaseModel):
+    source_element_id: UUID
+    target_element_id: UUID
+    relation_type: KnowledgeElementRelationType
+    description: str | None = None
+
+
 class KnowledgeElementRelationRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 

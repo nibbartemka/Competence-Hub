@@ -26,6 +26,7 @@ import type {
   CompetenceType,
   Discipline,
   DisciplineKnowledgeGraph,
+  GraphScene,
   Group,
   KnowledgeElement,
   KnowledgeElementRelationType,
@@ -118,6 +119,75 @@ function topicName(topicById: Map<string, Topic>, topicId: string) {
   return topicById.get(topicId)?.name ?? topicId.slice(0, 8);
 }
 
+function estimateTextLines(value: string | undefined, charsPerLine: number) {
+  if (!value?.trim()) return 0;
+  return Math.max(1, Math.ceil(value.trim().length / charsPerLine));
+}
+
+function estimateTrajectoryNodeHeight(data: SceneNodeData, width: number) {
+  const charsPerLine = Math.max(16, Math.floor(width / 8.6));
+  const titleLines = estimateTextLines(data.title, charsPerLine);
+  const subtitleLines = estimateTextLines(data.subtitle, charsPerLine);
+  const descriptionLines = estimateTextLines(data.description, charsPerLine + 2);
+  const metricRows = Math.ceil((data.metrics?.length ?? 0) / 2);
+
+  const headerHeight = 46;
+  const paddingAndGaps = 82;
+  const contentHeight =
+    headerHeight +
+    titleLines * 24 +
+    subtitleLines * 19 +
+    descriptionLines * 19 +
+    metricRows * 42 +
+    paddingAndGaps;
+
+  return Math.max(214, Math.min(560, contentHeight));
+}
+
+function waitForPaint() {
+  return new Promise<void>((resolve) => {
+    requestAnimationFrame(() => requestAnimationFrame(() => resolve()));
+  });
+}
+
+function isCompetenceType(value: unknown): value is CompetenceType {
+  return value === "know" || value === "can" || value === "master";
+}
+
+function filterElementSceneByCompetence(
+  scene: GraphScene,
+  filters: Record<CompetenceType, boolean>,
+) {
+  const nodes = scene.nodes.filter((node) => {
+    const data = node.data as SceneNodeData | undefined;
+    if (data?.entity !== "element") {
+      return true;
+    }
+
+    return isCompetenceType(data.badgeTone) ? filters[data.badgeTone] : true;
+  });
+  const visibleNodeIds = new Set(nodes.map((node) => node.id));
+  const detailsByNodeId = Object.fromEntries(
+    Object.entries(scene.detailsByNodeId).filter(([nodeId]) => visibleNodeIds.has(nodeId)),
+  );
+  const defaultSelectedNodeId = visibleNodeIds.has(scene.defaultSelectedNodeId)
+    ? scene.defaultSelectedNodeId
+    : visibleNodeIds.has(scene.rootId)
+      ? scene.rootId
+      : nodes[0]?.id ?? "";
+
+  return {
+    ...scene,
+    rootId: visibleNodeIds.has(scene.rootId) ? scene.rootId : defaultSelectedNodeId,
+    nodes,
+    lines: scene.lines.filter(
+      (line) => visibleNodeIds.has(line.from) && visibleNodeIds.has(line.to),
+    ),
+    defaultSelectedNodeId,
+    detailsByNodeId,
+  };
+}
+
 export default function TrajectoryGraphBuilder() {
   const { disciplineId } = useParams<{ disciplineId: string }>();
   const navigate = useNavigate();
@@ -146,6 +216,12 @@ export default function TrajectoryGraphBuilder() {
   const [selectedNodeId, setSelectedNodeId] = useState("");
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [exportingImage, setExportingImage] = useState(false);
+  const [competenceFilters, setCompetenceFilters] = useState<Record<CompetenceType, boolean>>({
+    know: true,
+    can: true,
+    master: true,
+  });
   const [feedback, setFeedback] = useState<Feedback | null>(null);
 
   const activeDiscipline = useMemo(
@@ -371,89 +447,114 @@ export default function TrajectoryGraphBuilder() {
         ? buildTopicScene(graph, selectedNodeId || undefined)
         : buildElementScene(graph, view.topicId, selectedNodeId || undefined);
 
-    return {
+    const nextNodes = baseScene.nodes.map((node) => {
+      const data = node.data as SceneNodeData | undefined;
+      if (!data?.entity) return node;
+
+      if (data.entity === "topic" && data.topicId) {
+        const topicId = data.topicId;
+        const selectedIndex = selectedTopicIds.indexOf(topicId);
+        const isSelected = selectedIndex >= 0;
+        const missingElements = isSelected
+          ? []
+          : getMissingRequiredElementsForTopic(topicId);
+        const isBlocked = missingElements.length > 0;
+        const nextData: SceneNodeData = {
+          ...data,
+          isSelected,
+          isDisabled: isBlocked,
+          lockState: isBlocked ? "locked" : "open",
+          sequenceNumber: isSelected ? selectedIndex + 1 : undefined,
+          subtitle: isSelected
+            ? `Шаг ${selectedIndex + 1} в траектории`
+            : isBlocked
+              ? `Сначала нужно: ${missingElements.map((item) => item.name).join(", ")}`
+              : data.subtitle,
+          metrics: isSelected
+            ? [...data.metrics, `Порог ${topicThresholds[topicId] ?? 100}`]
+            : data.metrics,
+          hint: isSelected ? "Убрать" : "Выбрать",
+          secondaryHint: "Элементы",
+        };
+
+        return {
+          ...node,
+          height: estimateTrajectoryNodeHeight(nextData, node.width ?? 260),
+          data: nextData,
+        };
+      }
+
+      if (data.entity === "topic-focus" && data.topicId) {
+        const nextData: SceneNodeData = {
+          ...data,
+          isSelected: selectedTopicSet.has(data.topicId),
+          sequenceNumber: selectedTopicSet.has(data.topicId)
+            ? selectedTopicIds.indexOf(data.topicId) + 1
+            : undefined,
+          lockState: "open",
+          hint: "К темам",
+        };
+
+        return {
+          ...node,
+          height: estimateTrajectoryNodeHeight(nextData, node.width ?? 286),
+          data: nextData,
+        };
+      }
+
+      if (data.entity === "element") {
+        const isFormed = data.tone === "formed";
+        const parsed = parseElementNodeId(node.id);
+        const isElementSelected = parsed
+          ? Boolean(selectedElementsByTopic[parsed.topicId]?.includes(parsed.elementId))
+          : false;
+        const nextData: SceneNodeData = {
+          ...data,
+          isSelected: isElementSelected,
+          isDisabled: !isFormed,
+          lockState: isFormed ? "open" : "locked",
+          hint: isFormed ? (isElementSelected ? "Убрать" : "Выбрать") : "Предпосылка",
+        };
+
+        return {
+          ...node,
+          height: estimateTrajectoryNodeHeight(nextData, node.width ?? 210),
+          data: nextData,
+        };
+      }
+
+      return node;
+    });
+
+    const nextLines =
+      view.level === "topics"
+        ? baseScene.lines.map((line) => {
+            const activeLine = isTrajectoryLineActive(line.from, line.to);
+
+            return {
+              ...line,
+              color: activeLine ? "#178364" : "#9aa3ad",
+              fontColor: activeLine ? "#146c53" : "#7f8894",
+              animation: activeLine ? line.animation : 0,
+            };
+          })
+        : baseScene.lines;
+
+    const nextScene = {
       ...baseScene,
-      nodes: baseScene.nodes.map((node) => {
-        const data = node.data as SceneNodeData | undefined;
-        if (!data?.entity) return node;
-
-        if (data.entity === "topic" && data.topicId) {
-          const topicId = data.topicId;
-          const selectedIndex = selectedTopicIds.indexOf(topicId);
-          const isSelected = selectedIndex >= 0;
-          const missingElements = isSelected
-            ? []
-            : getMissingRequiredElementsForTopic(topicId);
-          const isBlocked = missingElements.length > 0;
-
-          return {
-            ...node,
-            data: {
-              ...data,
-              isSelected,
-              isDisabled: isBlocked,
-              lockState: isBlocked ? "locked" : "open",
-              subtitle: isSelected
-                ? `Шаг ${selectedIndex + 1} в траектории`
-                : isBlocked
-                  ? `Сначала нужно: ${missingElements.map((item) => item.name).join(", ")}`
-                : data.subtitle,
-              metrics: isSelected
-                ? [...data.metrics, `Порог ${topicThresholds[topicId] ?? 100}`]
-                : data.metrics,
-              hint: isSelected ? "Убрать" : "Выбрать",
-              secondaryHint: "Элементы",
-            },
-          };
-        }
-
-        if (data.entity === "topic-focus" && data.topicId) {
-          return {
-            ...node,
-            data: {
-              ...data,
-              isSelected: selectedTopicSet.has(data.topicId),
-              lockState: "open",
-              hint: "К темам",
-            },
-          };
-        }
-
-        if (data.entity === "element") {
-          const isFormed = data.tone === "formed";
-
-          return {
-            ...node,
-            data: {
-              ...data,
-              isSelected: false,
-              isDisabled: !isFormed,
-              lockState: isFormed ? "open" : "locked",
-              hint: isFormed ? "Выбрать" : "Предпосылка",
-            },
-          };
-        }
-
-        return node;
-      }),
-      lines:
-        view.level === "topics"
-          ? baseScene.lines.map((line) => {
-              const activeLine = isTrajectoryLineActive(line.from, line.to);
-
-              return {
-                ...line,
-                color: activeLine ? "#178364" : "#9aa3ad",
-                fontColor: activeLine ? "#146c53" : "#7f8894",
-                animation: activeLine ? line.animation : 0,
-              };
-            })
-          : baseScene.lines,
+      nodes: nextNodes,
+      lines: nextLines,
     };
+
+    return view.level === "elements"
+      ? filterElementSceneByCompetence(nextScene, competenceFilters)
+      : nextScene;
   }, [
+    competenceFilters,
     graph,
     requiredElementsByTopic,
     selectedNodeId,
+    selectedElementsByTopic,
     selectedTopicIds,
     selectedTopicSet,
     topicThresholds,
@@ -803,6 +904,13 @@ export default function TrajectoryGraphBuilder() {
     return false;
   }
 
+  function toggleCompetenceFilter(competenceType: CompetenceType) {
+    setCompetenceFilters((current) => ({
+      ...current,
+      [competenceType]: !current[competenceType],
+    }));
+  }
+
   function getFormedElementIdsForTopics(topicIds: string[]) {
     const result = new Set<string>();
 
@@ -1005,6 +1113,25 @@ export default function TrajectoryGraphBuilder() {
       setFeedback({ kind: "error", text: extractErrorMessage(error) });
     } finally {
       setSaving(false);
+    }
+  }
+
+  async function handleDownloadGraphImage() {
+    if (!graphRef.current || !scene) return;
+
+    try {
+      setExportingImage(true);
+      setFeedback(null);
+      const graphInstance = graphRef.current.getInstance();
+      await graphInstance.zoomToFit();
+      await waitForPaint();
+      const filePrefix = view.level === "topics" ? "trajectory-topics" : "trajectory-elements";
+      await graphInstance.downloadAsImage("png", `${filePrefix}-${Date.now()}`);
+      setFeedback({ kind: "success", text: "Картинка графа сохранена." });
+    } catch (error) {
+      setFeedback({ kind: "error", text: extractErrorMessage(error) });
+    } finally {
+      setExportingImage(false);
     }
   }
 
@@ -1269,6 +1396,29 @@ export default function TrajectoryGraphBuilder() {
                 <h2>{scene?.title ?? "Граф знаний"}</h2>
               </div>
               <div className="trajectory-toolbar-actions">
+                <div className="competence-filter" aria-label="Фильтр элементов по типу компетенции">
+                  {COMPETENCE_ORDER.map((competenceType) => (
+                    <label
+                      className={`competence-filter__item competence-filter__item--${competenceType}`}
+                      key={competenceType}
+                    >
+                      <input
+                        checked={competenceFilters[competenceType]}
+                        onChange={() => toggleCompetenceFilter(competenceType)}
+                        type="checkbox"
+                      />
+                      <span>{COMPETENCE_LABELS[competenceType]}</span>
+                    </label>
+                  ))}
+                </div>
+                <button
+                  className="secondary-button graph-export-button"
+                  disabled={!scene || exportingImage}
+                  onClick={() => void handleDownloadGraphImage()}
+                  type="button"
+                >
+                  {exportingImage ? "Сохраняю..." : "Сохранить PNG"}
+                </button>
                 {view.level === "elements" ? (
                   <button
                     className="ghost-button"

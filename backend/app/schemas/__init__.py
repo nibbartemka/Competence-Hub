@@ -3,6 +3,7 @@ from .groups import GroupCreate, GroupRead, SubgroupCreate, SubgroupRead
 from .knowledge_element_relations import (
     KnowledgeElementRelationCreate,
     KnowledgeElementRelationRead,
+    KnowledgeElementRelationUpdate,
 )
 from .knowledge_graph_view import DisciplineKnowledgeGraphRead
 from .knowledge_elements import (
@@ -57,4 +58,5 @@ __all__ = [
     "TopicKnowledgeElementRead",
     "KnowledgeElementRelationCreate",
     "KnowledgeElementRelationRead",
+    "KnowledgeElementRelationUpdate",
 ]

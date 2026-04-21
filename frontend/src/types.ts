@@ -182,6 +182,7 @@ export type SceneNodeData = {
   isSelected?: boolean;
   isDisabled?: boolean;
   lockState?: "locked" | "open";
+  sequenceNumber?: number;
   onSecondaryHintClick?: () => void;
 };
 
