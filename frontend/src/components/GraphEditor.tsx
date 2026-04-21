@@ -175,8 +175,6 @@ export function GraphEditor({
   const [elementDescription, setElementDescription] = useState("");
   const [elementCompetence, setElementCompetence] = useState<CompetenceType>("know");
   const [elementCreateTopicId, setElementCreateTopicId] = useState("");
-  const [elementCreateRole, setElementCreateRole] =
-    useState<TopicKnowledgeElementRole>("formed");
   const [topicElementTopicId, setTopicElementTopicId] = useState("");
   const [topicElementElementId, setTopicElementElementId] = useState("");
   const [topicElementRole, setTopicElementRole] =
@@ -559,7 +557,7 @@ export function GraphEditor({
         await createTopicKnowledgeElement({
           topic_id: elementCreateTopicId,
           element_id: createdElement.id,
-          role: elementCreateRole,
+          role: "formed",
           note: "",
         });
       }
@@ -953,39 +951,21 @@ export function GraphEditor({
                 Пока нет тем. Элемент будет создан без привязки и появится в списке непривязанных.
               </p>
             ) : (
-              <div className="editor-form__grid">
-                <label className="field">
-                  <span>Сразу привязать к теме</span>
-                  <select
-                    value={elementCreateTopicId}
-                    onChange={(event) => setElementCreateTopicId(event.target.value)}
-                  >
-                    <option value="">Не привязывать</option>
-                    {sortedTopics.map((topic) => (
-                      <option key={topic.id} value={topic.id}>
-                        {topic.name}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-
-                <label className="field">
-                  <span>Роль в теме</span>
-                  <select
-                    value={elementCreateRole}
-                    onChange={(event) =>
-                      setElementCreateRole(event.target.value as TopicKnowledgeElementRole)
-                    }
-                    disabled={!elementCreateTopicId}
-                  >
-                    {TOPIC_LINK_ROLE_OPTIONS.map((option) => (
-                      <option key={option.value} value={option.value}>
-                        {option.label}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-              </div>
+              <label className="field">
+                <span>Сразу привязать к теме</span>
+                <select
+                  value={elementCreateTopicId}
+                  onChange={(event) => setElementCreateTopicId(event.target.value)}
+                >
+                  <option value="">Не привязывать</option>
+                  {sortedTopics.map((topic) => (
+                    <option key={topic.id} value={topic.id}>
+                      {topic.name}
+                    </option>
+                  ))}
+                </select>
+                <small>Новый элемент будет добавлен в тему как формируемый.</small>
+              </label>
             )}
 
             {sortedTopics.length > 0 && !elementCreateTopicId ? (

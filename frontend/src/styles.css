@@ -487,6 +487,12 @@ textarea {
   color: var(--muted);
 }
 
+.field small {
+  color: var(--muted);
+  font-size: 0.82rem;
+  line-height: 1.35;
+}
+
 .editor-drafts {
   display: grid;
   gap: 12px;
