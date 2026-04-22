@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { type DragEvent, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import RelationGraph, {
   type RelationGraphInstance,
@@ -91,6 +91,10 @@ const ELEMENT_RELATION_LABELS: Record<KnowledgeElementRelationType, string> = {
 type Feedback = {
   kind: "error" | "success";
   text: string;
+};
+
+type ToastMessage = Feedback & {
+  id: string;
 };
 
 function extractErrorMessage(error: unknown) {
@@ -222,7 +226,18 @@ export default function TrajectoryGraphBuilder() {
     can: true,
     master: true,
   });
-  const [feedback, setFeedback] = useState<Feedback | null>(null);
+  const [draggedTopicId, setDraggedTopicId] = useState("");
+  const [dragOverTopicId, setDragOverTopicId] = useState("");
+  const [notifications, setNotifications] = useState<ToastMessage[]>([]);
+
+  function pushNotification(message: Feedback) {
+    const id = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+    setNotifications((current) => [...current, { ...message, id }]);
+  }
+
+  function dismissNotification(id: string) {
+    setNotifications((current) => current.filter((notification) => notification.id !== id));
+  }
 
   const activeDiscipline = useMemo(
     () =>
@@ -581,7 +596,7 @@ export default function TrajectoryGraphBuilder() {
         ? "он является предпосылкой этой темы, а в траекторию добавляются только формируемые элементы."
         : `сначала выбери ${missingPrerequisites.join(", ")}.`;
 
-      setFeedback({
+      pushNotification({
         kind: "error",
         text: `Элемент "${elementName}" пока нельзя выбрать: ${reason}`,
       });
@@ -609,7 +624,7 @@ export default function TrajectoryGraphBuilder() {
           hintByNodeId.set(nodeId, isBlocked ? "Почему закрыто" : isSelected ? "Убрать" : "Выбрать");
           hintActionByNodeId.set(nodeId, () => {
             if (isBlocked) {
-              setFeedback({
+              pushNotification({
                 kind: "error",
                 text: buildMissingElementsMessage(topic.id, missingElements),
               });
@@ -730,7 +745,6 @@ export default function TrajectoryGraphBuilder() {
     async function load() {
       try {
         setLoading(true);
-        setFeedback(null);
         const [nextGraph, nextDisciplines, nextGroups, nextTeachers] = await Promise.all([
           fetchDisciplineKnowledgeGraph(disciplineId!, controller.signal),
           fetchDisciplines(controller.signal),
@@ -745,7 +759,7 @@ export default function TrajectoryGraphBuilder() {
         setSelectedNodeId(buildTopicScene(nextGraph).defaultSelectedNodeId);
       } catch (error) {
         if (!isAbortError(error)) {
-          setFeedback({ kind: "error", text: extractErrorMessage(error) });
+          pushNotification({ kind: "error", text: extractErrorMessage(error) });
           setGraph(null);
         }
       } finally {
@@ -830,7 +844,7 @@ export default function TrajectoryGraphBuilder() {
         setTrajectories(items);
       } catch (error) {
         if (!isAbortError(error)) {
-          setFeedback({ kind: "error", text: extractErrorMessage(error) });
+          pushNotification({ kind: "error", text: extractErrorMessage(error) });
         }
       }
     }
@@ -940,6 +954,44 @@ export default function TrajectoryGraphBuilder() {
       .join(", ")}.`;
   }
 
+  function validateTopicOrder(topicIds: string[]) {
+    if (!graph) return "";
+
+    const topicSet = new Set(topicIds);
+    const positionByTopicId = new Map(topicIds.map((topicId, index) => [topicId, index]));
+
+    for (const [index, topicId] of topicIds.entries()) {
+      const previousTopicIds = topicIds.slice(0, index);
+      const missingElements = getMissingRequiredElementsForTopic(topicId, previousTopicIds);
+      if (missingElements.length) {
+        return buildMissingElementsMessage(topicId, missingElements);
+      }
+    }
+
+    for (const dependency of graph.topic_dependencies) {
+      if (dependency.relation_type !== "requires") continue;
+      if (!topicSet.has(dependency.dependent_topic_id)) continue;
+
+      if (!topicSet.has(dependency.prerequisite_topic_id)) {
+        return `Тема "${topicName(topicById, dependency.dependent_topic_id)}" требует тему "${topicName(
+          topicById,
+          dependency.prerequisite_topic_id,
+        )}", но она не выбрана.`;
+      }
+
+      const prerequisitePosition = positionByTopicId.get(dependency.prerequisite_topic_id) ?? 0;
+      const dependentPosition = positionByTopicId.get(dependency.dependent_topic_id) ?? 0;
+      if (prerequisitePosition >= dependentPosition) {
+        return `Тема "${topicName(topicById, dependency.prerequisite_topic_id)}" должна стоять раньше темы "${topicName(
+          topicById,
+          dependency.dependent_topic_id,
+        )}".`;
+      }
+    }
+
+    return "";
+  }
+
   function isTopicNodeSelected(nodeId: string) {
     if (!nodeId.startsWith("topic:")) return false;
     return selectedTopicSet.has(nodeId.replace("topic:", ""));
@@ -986,7 +1038,7 @@ export default function TrajectoryGraphBuilder() {
 
     const missingElements = getMissingRequiredElementsForTopic(topicId);
     if (missingElements.length) {
-      setFeedback({
+      pushNotification({
         kind: "error",
         text: buildMissingElementsMessage(topicId, missingElements),
       });
@@ -1001,17 +1053,69 @@ export default function TrajectoryGraphBuilder() {
   }
 
   function moveTopic(topicId: string, direction: -1 | 1) {
-    setSelectedTopicIds((current) => {
-      const index = current.indexOf(topicId);
-      const nextIndex = index + direction;
-      if (index < 0 || nextIndex < 0 || nextIndex >= current.length) {
-        return current;
-      }
+    const index = selectedTopicIds.indexOf(topicId);
+    const nextIndex = index + direction;
+    if (index < 0 || nextIndex < 0 || nextIndex >= selectedTopicIds.length) return;
 
-      const next = current.slice();
-      [next[index], next[nextIndex]] = [next[nextIndex], next[index]];
-      return next;
-    });
+    const next = selectedTopicIds.slice();
+    [next[index], next[nextIndex]] = [next[nextIndex], next[index]];
+
+    const error = validateTopicOrder(next);
+    if (error) {
+      pushNotification({ kind: "error", text: `Такой порядок невозможен. ${error}` });
+      return;
+    }
+
+    setSelectedTopicIds(next);
+  }
+
+  function reorderTopic(sourceTopicId: string, targetTopicId: string) {
+    if (!sourceTopicId || sourceTopicId === targetTopicId) return;
+
+    const sourceIndex = selectedTopicIds.indexOf(sourceTopicId);
+    const targetIndex = selectedTopicIds.indexOf(targetTopicId);
+    if (sourceIndex < 0 || targetIndex < 0) return;
+
+    const next = selectedTopicIds.slice();
+    const [movedTopicId] = next.splice(sourceIndex, 1);
+    next.splice(targetIndex, 0, movedTopicId);
+
+    const error = validateTopicOrder(next);
+    if (error) {
+      pushNotification({ kind: "error", text: `Такой порядок невозможен. ${error}` });
+      return;
+    }
+
+    setSelectedTopicIds(next);
+    setSelectedNodeId(`topic:${sourceTopicId}`);
+  }
+
+  function handleTopicDragStart(event: DragEvent<HTMLButtonElement>, topicId: string) {
+    setDraggedTopicId(topicId);
+    setDragOverTopicId("");
+    event.dataTransfer.effectAllowed = "move";
+    event.dataTransfer.setData("text/plain", topicId);
+  }
+
+  function handleTopicDragOver(event: DragEvent<HTMLElement>, topicId: string) {
+    event.preventDefault();
+    event.dataTransfer.dropEffect = "move";
+    if (draggedTopicId && draggedTopicId !== topicId) {
+      setDragOverTopicId(topicId);
+    }
+  }
+
+  function handleTopicDrop(event: DragEvent<HTMLElement>, targetTopicId: string) {
+    event.preventDefault();
+    const sourceTopicId = draggedTopicId || event.dataTransfer.getData("text/plain");
+    setDraggedTopicId("");
+    setDragOverTopicId("");
+    reorderTopic(sourceTopicId, targetTopicId);
+  }
+
+  function handleTopicDragEnd() {
+    setDraggedTopicId("");
+    setDragOverTopicId("");
   }
 
   function toggleElement(topicId: string, elementId: string) {
@@ -1019,7 +1123,7 @@ export default function TrajectoryGraphBuilder() {
     if (!element) return;
 
     if (!selectedTopicIds.includes(topicId)) {
-      setFeedback({
+      pushNotification({
         kind: "error",
         text: `Сначала выбери тему "${topicName(topicById, topicId)}" на уровне тем, потом добавляй ее элементы.`,
       });
@@ -1078,13 +1182,12 @@ export default function TrajectoryGraphBuilder() {
     if (!disciplineId) return;
 
     if (validationErrors.length) {
-      setFeedback({ kind: "error", text: validationErrors[0] });
+      pushNotification({ kind: "error", text: validationErrors[0] });
       return;
     }
 
     try {
       setSaving(true);
-      setFeedback(null);
       await createLearningTrajectory({
         name: trajectoryName.trim(),
         discipline_id: disciplineId,
@@ -1108,9 +1211,9 @@ export default function TrajectoryGraphBuilder() {
       setSelectedElementsByTopic({});
       setElementThresholds({});
       await refreshTrajectories();
-      setFeedback({ kind: "success", text: "Траектория изучения создана." });
+      pushNotification({ kind: "success", text: "Траектория изучения создана." });
     } catch (error) {
-      setFeedback({ kind: "error", text: extractErrorMessage(error) });
+      pushNotification({ kind: "error", text: extractErrorMessage(error) });
     } finally {
       setSaving(false);
     }
@@ -1121,18 +1224,138 @@ export default function TrajectoryGraphBuilder() {
 
     try {
       setExportingImage(true);
-      setFeedback(null);
       const graphInstance = graphRef.current.getInstance();
       await graphInstance.zoomToFit();
       await waitForPaint();
       const filePrefix = view.level === "topics" ? "trajectory-topics" : "trajectory-elements";
       await graphInstance.downloadAsImage("png", `${filePrefix}-${Date.now()}`);
-      setFeedback({ kind: "success", text: "Картинка графа сохранена." });
+      pushNotification({ kind: "success", text: "Картинка графа сохранена." });
     } catch (error) {
-      setFeedback({ kind: "error", text: extractErrorMessage(error) });
+      pushNotification({ kind: "error", text: extractErrorMessage(error) });
     } finally {
       setExportingImage(false);
     }
+  }
+
+  function renderSelectedTopicsPanel() {
+    return (
+      <section className="card card--soft trajectory-selected-panel">
+        <div className="card__header">
+          <p className="card__eyebrow">Выбрано</p>
+          <span className="hero__chip">{selectedTopicIds.length} тем</span>
+        </div>
+
+        {selectedTopicIds.length ? (
+          <div className="trajectory-selected-list">
+            {selectedTopicIds.map((topicId, index) => {
+              const selectedElementIds = selectedElementsByTopic[topicId] ?? [];
+              const selectedTopicClassName = [
+                "trajectory-selected-topic",
+                draggedTopicId === topicId ? "trajectory-selected-topic--dragging" : "",
+                dragOverTopicId === topicId ? "trajectory-selected-topic--drop-target" : "",
+              ]
+                .filter(Boolean)
+                .join(" ");
+
+              return (
+                <article
+                  className={selectedTopicClassName}
+                  key={topicId}
+                  onDragOver={(event) => handleTopicDragOver(event, topicId)}
+                  onDrop={(event) => handleTopicDrop(event, topicId)}
+                >
+                  <div className="trajectory-selected-topic__head">
+                    <div className="trajectory-selected-topic__title">
+                      <strong>
+                        {index + 1}. {topicName(topicById, topicId)}
+                      </strong>
+                      <span>{selectedElementIds.length} элементов</span>
+                    </div>
+                    <button
+                      aria-label={`Перетащить тему ${topicName(topicById, topicId)}`}
+                      className="trajectory-drag-handle"
+                      disabled={selectedTopicIds.length < 2}
+                      draggable={selectedTopicIds.length > 1}
+                      onDragEnd={handleTopicDragEnd}
+                      onDragStart={(event) => handleTopicDragStart(event, topicId)}
+                      title="Перетащить тему"
+                      type="button"
+                    >
+                      Перетащить
+                    </button>
+                  </div>
+
+                  <div className="trajectory-topic-actions">
+                    <button
+                      className="secondary-button"
+                      disabled={index === 0}
+                      onClick={() => moveTopic(topicId, -1)}
+                      type="button"
+                    >
+                      Выше
+                    </button>
+                    <button
+                      className="secondary-button"
+                      disabled={index === selectedTopicIds.length - 1}
+                      onClick={() => moveTopic(topicId, 1)}
+                      type="button"
+                    >
+                      Ниже
+                    </button>
+                  </div>
+
+                  <label className="trajectory-threshold-field">
+                    Порог темы
+                    <input
+                      max={100}
+                      min={0}
+                      onChange={(event) => updateTopicThreshold(topicId, Number(event.target.value))}
+                      type="number"
+                      value={topicThresholds[topicId] ?? 100}
+                    />
+                  </label>
+
+                  {selectedElementIds.length ? (
+                    <div className="trajectory-selected-elements">
+                      {selectedElementIds.map((elementId) => {
+                        const element = elementById.get(elementId);
+                        if (!element) return null;
+                        const key = buildElementKey(topicId, elementId);
+
+                        return (
+                          <label key={elementId} className="trajectory-selected-element">
+                            <span>
+                              {COMPETENCE_LABELS[element.competence_type]} · {element.name}
+                            </span>
+                            <input
+                              max={100}
+                              min={0}
+                              onChange={(event) =>
+                                updateElementThreshold(topicId, elementId, Number(event.target.value))
+                              }
+                              type="number"
+                              value={elementThresholds[key] ?? 100}
+                            />
+                          </label>
+                        );
+                      })}
+                    </div>
+                  ) : (
+                    <p className="home-hint">
+                      Открой элементы темы и выбери формируемые элементы.
+                    </p>
+                  )}
+                </article>
+              );
+            })}
+          </div>
+        ) : (
+          <p className="card__text">
+            Клик по теме на графе добавит ее сюда в конец траектории.
+          </p>
+        )}
+      </section>
+    );
   }
 
   if (!disciplineId) {
@@ -1165,9 +1388,23 @@ export default function TrajectoryGraphBuilder() {
         </div>
       </header>
 
-      {feedback ? (
-        <div className={`home-feedback home-feedback--${feedback.kind}`}>
-          {feedback.text}
+      {notifications.length ? (
+        <div className="toast-stack" aria-live="polite" aria-label="Уведомления">
+          {notifications.map((notification) => (
+            <article
+              className={`toast-message toast-message--${notification.kind}`}
+              key={notification.id}
+            >
+              <p>{notification.text}</p>
+              <button
+                aria-label="Закрыть уведомление"
+                onClick={() => dismissNotification(notification.id)}
+                type="button"
+              >
+                ×
+              </button>
+            </article>
+          ))}
         </div>
       ) : null}
 
@@ -1249,103 +1486,6 @@ export default function TrajectoryGraphBuilder() {
           </section>
 
           <section className="card card--soft">
-            <div className="card__header">
-              <p className="card__eyebrow">Выбрано</p>
-              <span className="hero__chip">{selectedTopicIds.length} тем</span>
-            </div>
-
-            {selectedTopicIds.length ? (
-              <div className="trajectory-selected-list">
-                {selectedTopicIds.map((topicId, index) => {
-                  const selectedElementIds = selectedElementsByTopic[topicId] ?? [];
-
-                  return (
-                    <article className="trajectory-selected-topic" key={topicId}>
-                      <div>
-                        <strong>
-                          {index + 1}. {topicName(topicById, topicId)}
-                        </strong>
-                        <span>{selectedElementIds.length} элементов</span>
-                      </div>
-
-                      <div className="trajectory-topic-actions">
-                        <button
-                          className="secondary-button"
-                          disabled={index === 0}
-                          onClick={() => moveTopic(topicId, -1)}
-                          type="button"
-                        >
-                          Выше
-                        </button>
-                        <button
-                          className="secondary-button"
-                          disabled={index === selectedTopicIds.length - 1}
-                          onClick={() => moveTopic(topicId, 1)}
-                          type="button"
-                        >
-                          Ниже
-                        </button>
-                      </div>
-
-                      <label className="trajectory-threshold-field">
-                        Порог темы
-                        <input
-                          max={100}
-                          min={0}
-                          onChange={(event) =>
-                            updateTopicThreshold(topicId, Number(event.target.value))
-                          }
-                          type="number"
-                          value={topicThresholds[topicId] ?? 100}
-                        />
-                      </label>
-
-                      {selectedElementIds.length ? (
-                        <div className="trajectory-selected-elements">
-                          {selectedElementIds.map((elementId) => {
-                            const element = elementById.get(elementId);
-                            if (!element) return null;
-                            const key = buildElementKey(topicId, elementId);
-
-                            return (
-                              <label key={elementId} className="trajectory-selected-element">
-                                <span>
-                                  {COMPETENCE_LABELS[element.competence_type]} · {element.name}
-                                </span>
-                                <input
-                                  max={100}
-                                  min={0}
-                                  onChange={(event) =>
-                                    updateElementThreshold(
-                                      topicId,
-                                      elementId,
-                                      Number(event.target.value),
-                                    )
-                                  }
-                                  type="number"
-                                  value={elementThresholds[key] ?? 100}
-                                />
-                              </label>
-                            );
-                          })}
-                        </div>
-                      ) : (
-                        <p className="home-hint">
-                          Открой элементы темы и выбери формируемые элементы.
-                        </p>
-                      )}
-                    </article>
-                  );
-                })}
-              </div>
-            ) : (
-              <p className="card__text">
-                Клик по теме на графе добавит ее сюда в конец траектории.
-              </p>
-            )}
-          </section>
-
-          <section className="card card--soft">
             <p className="card__eyebrow">Проверка</p>
             <div className="trajectory-validation trajectory-validation--compact">
               {validationErrors.length ? (
@@ -1396,21 +1536,6 @@ export default function TrajectoryGraphBuilder() {
                 <h2>{scene?.title ?? "Граф знаний"}</h2>
               </div>
               <div className="trajectory-toolbar-actions">
-                <div className="competence-filter" aria-label="Фильтр элементов по типу компетенции">
-                  {COMPETENCE_ORDER.map((competenceType) => (
-                    <label
-                      className={`competence-filter__item competence-filter__item--${competenceType}`}
-                      key={competenceType}
-                    >
-                      <input
-                        checked={competenceFilters[competenceType]}
-                        onChange={() => toggleCompetenceFilter(competenceType)}
-                        type="checkbox"
-                      />
-                      <span>{COMPETENCE_LABELS[competenceType]}</span>
-                    </label>
-                  ))}
-                </div>
                 <button
                   className="secondary-button graph-export-button"
                   disabled={!scene || exportingImage}
@@ -1485,8 +1610,31 @@ export default function TrajectoryGraphBuilder() {
                   <span>{selectedElementCount} элементов</span>
                 </aside>
               ) : null}
+
+              {scene && view.level === "elements" ? (
+                <aside
+                  className="graph-filter-overlay graph-filter-overlay--trajectory"
+                  aria-label="Фильтр элементов по типу компетенции"
+                >
+                  {COMPETENCE_ORDER.map((competenceType) => (
+                    <label
+                      className={`competence-filter__item competence-filter__item--${competenceType}`}
+                      key={competenceType}
+                    >
+                      <input
+                        checked={competenceFilters[competenceType]}
+                        onChange={() => toggleCompetenceFilter(competenceType)}
+                        type="checkbox"
+                      />
+                      <span>{COMPETENCE_LABELS[competenceType]}</span>
+                    </label>
+                  ))}
+                </aside>
+              ) : null}
             </div>
           </section>
+
+          {renderSelectedTopicsPanel()}
         </main>
       </div>
     </div>

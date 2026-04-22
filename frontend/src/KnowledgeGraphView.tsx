@@ -648,21 +648,6 @@ export function KnowledgeGraphView({ disciplineId }: KnowledgeGraphViewProps) {
                                 <h2>{scene?.title ?? "Построение графа"}</h2>
                             </div>
                             <div className="graph-toolbar__actions">
-                                <div className="competence-filter" aria-label="Фильтр элементов по типу компетенции">
-                                    {COMPETENCE_FILTER_OPTIONS.map((option) => (
-                                        <label
-                                            className={`competence-filter__item competence-filter__item--${option.value}`}
-                                            key={option.value}
-                                        >
-                                            <input
-                                                checked={competenceFilters[option.value]}
-                                                onChange={() => toggleCompetenceFilter(option.value)}
-                                                type="checkbox"
-                                            />
-                                            <span>{option.label}</span>
-                                        </label>
-                                    ))}
-                                </div>
                                 <button
                                     className="secondary-button graph-export-button"
                                     disabled={!scene || loading || exportingImage}
@@ -728,6 +713,27 @@ export function KnowledgeGraphView({ disciplineId }: KnowledgeGraphViewProps) {
                                             </section>
                                         ))}
                                     </aside>
+
+                                    {view.level === "elements" ? (
+                                        <aside
+                                            className="graph-filter-overlay"
+                                            aria-label="Фильтр элементов по типу компетенции"
+                                        >
+                                            {COMPETENCE_FILTER_OPTIONS.map((option) => (
+                                                <label
+                                                    className={`competence-filter__item competence-filter__item--${option.value}`}
+                                                    key={option.value}
+                                                >
+                                                    <input
+                                                        checked={competenceFilters[option.value]}
+                                                        onChange={() => toggleCompetenceFilter(option.value)}
+                                                        type="checkbox"
+                                                    />
+                                                    <span>{option.label}</span>
+                                                </label>
+                                            ))}
+                                        </aside>
+                                    ) : null}
                                 </>
                             )}
                         </div>
