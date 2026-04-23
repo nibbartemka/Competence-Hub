@@ -1510,14 +1510,21 @@ export default function TrajectoryGraphBuilder() {
             {trajectories.length ? (
               <div className="trajectory-saved-list">
                 {trajectories.map((trajectory) => (
-                  <article key={trajectory.id}>
+                  <button
+                    className="trajectory-saved-card"
+                    key={trajectory.id}
+                    onClick={() =>
+                      navigate(`/disciplines/${disciplineId}/trajectories/${trajectory.id}`)
+                    }
+                    type="button"
+                  >
                     <strong>{trajectory.name}</strong>
                     <span>
                       {trajectory.topics.length} тем · {trajectory.group_id
                         ? groupById.get(trajectory.group_id)?.name
                         : "без группы"}
                     </span>
-                  </article>
+                  </button>
                 ))}
               </div>
             ) : (

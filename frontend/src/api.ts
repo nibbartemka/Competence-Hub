@@ -297,6 +297,10 @@ export function fetchLearningTrajectories(
   return request<LearningTrajectory[]>(`/learning-trajectories/${suffix}`, { signal });
 }
 
+export function fetchLearningTrajectory(trajectoryId: string, signal?: AbortSignal) {
+  return request<LearningTrajectory>(`/learning-trajectories/${trajectoryId}`, { signal });
+}
+
 export function createLearningTrajectory(payload: {
   name: string;
   discipline_id: string;
@@ -316,5 +320,15 @@ export function createLearningTrajectory(payload: {
   return request<LearningTrajectory>("/learning-trajectories/", {
     method: "POST",
     body: payload,
+  });
+}
+
+export function updateLearningTrajectoryTopicOrder(
+  trajectoryId: string,
+  topicIds: string[],
+) {
+  return request<LearningTrajectory>(`/learning-trajectories/${trajectoryId}/topics/order`, {
+    method: "PUT",
+    body: { topic_ids: topicIds },
   });
 }

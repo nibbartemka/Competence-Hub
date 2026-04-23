@@ -27,7 +27,13 @@ from app.models.enums import (
     CompetenceType,
     TopicKnowledgeElementRole,
 )
-from app.schemas import LearningTrajectoryCreate, LearningTrajectoryRead
+from app.schemas import (
+    LearningTrajectoryCreate,
+    LearningTrajectoryElementCreate,
+    LearningTrajectoryRead,
+    LearningTrajectoryTopicCreate,
+    LearningTrajectoryTopicOrderUpdate,
+)
 
 
 router = APIRouter(prefix="/learning-trajectories", tags=["Learning Trajectories"])
@@ -317,4 +323,55 @@ async def get_learning_trajectory(
     trajectory_id: UUID,
     session: DbSession,
 ) -> LearningTrajectory:
+    return await get_learning_trajectory_for_read(trajectory_id, session)
+
+
+@router.put("/{trajectory_id}/topics/order", response_model=LearningTrajectoryRead)
+async def update_learning_trajectory_topic_order(
+    trajectory_id: UUID,
+    payload: LearningTrajectoryTopicOrderUpdate,
+    session: DbSession,
+) -> LearningTrajectory:
+    trajectory = await get_learning_trajectory_for_read(trajectory_id, session)
+    topics_by_id = {trajectory_topic.topic_id: trajectory_topic for trajectory_topic in trajectory.topics}
+
+    if len(payload.topic_ids) != len(set(payload.topic_ids)):
+        raise _bad_request("Each topic can appear in the trajectory order only once.")
+    if set(payload.topic_ids) != set(topics_by_id):
+        raise _bad_request("Topic order must contain exactly the trajectory topics.")
+
+    validation_payload = LearningTrajectoryCreate(
+        name=trajectory.name,
+        discipline_id=trajectory.discipline_id,
+        teacher_id=trajectory.teacher_id,
+        group_id=trajectory.group_id,
+        subgroup_id=trajectory.subgroup_id,
+        topics=[
+            LearningTrajectoryTopicCreate(
+                topic_id=topic_id,
+                position=index + 1,
+                threshold=topics_by_id[topic_id].threshold,
+                elements=[
+                    LearningTrajectoryElementCreate(
+                        element_id=element.element_id,
+                        threshold=element.threshold,
+                    )
+                    for element in topics_by_id[topic_id].elements
+                ],
+            )
+            for index, topic_id in enumerate(payload.topic_ids)
+        ],
+    )
+    await _validate_topics_and_elements(validation_payload, session)
+
+    offset = len(trajectory.topics) + 1
+    for index, trajectory_topic in enumerate(trajectory.topics):
+        trajectory_topic.position = offset + index
+    await flush_or_409(session)
+
+    for index, topic_id in enumerate(payload.topic_ids):
+        topics_by_id[topic_id].position = index + 1
+
+    await flush_or_409(session)
+    await commit_or_409(session)
     return await get_learning_trajectory_for_read(trajectory_id, session)

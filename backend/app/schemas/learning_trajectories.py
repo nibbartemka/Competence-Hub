@@ -24,6 +24,10 @@ class LearningTrajectoryCreate(BaseModel):
     topics: list[LearningTrajectoryTopicCreate] = Field(min_length=1)
 
 
+class LearningTrajectoryTopicOrderUpdate(BaseModel):
+    topic_ids: list[UUID] = Field(min_length=1)
+
+
 class LearningTrajectoryElementRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 

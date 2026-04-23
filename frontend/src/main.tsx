@@ -5,12 +5,17 @@ import { createBrowserRouter, RouterProvider } from "react-router-dom";
 import { HomePage } from "./HomePage";
 import KnowledgeGraph from "./KnowledgeGraph";
 import TrajectoryGraphBuilder from "./TrajectoryGraphBuilder";
+import TrajectoryDetailPage from "./TrajectoryDetailPage";
 import "./styles.css";
 
 const router = createBrowserRouter([
   { path: "/", element: <HomePage /> },
   { path: "/disciplines/:disciplineId/knowledge", element: <KnowledgeGraph /> },
   { path: "/disciplines/:disciplineId/trajectory", element: <TrajectoryGraphBuilder /> },
+  {
+    path: "/disciplines/:disciplineId/trajectories/:trajectoryId",
+    element: <TrajectoryDetailPage />,
+  },
 ]);
 
 ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(

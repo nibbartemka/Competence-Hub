@@ -2041,25 +2041,46 @@ textarea {
 }
 
 .trajectory-sequence li,
-.trajectory-saved-list article {
+.trajectory-saved-list article,
+.trajectory-saved-card {
   display: grid;
   gap: 5px;
+  width: 100%;
+  border: 0;
   border-radius: 18px;
   padding: 12px;
+  text-align: left;
   background: rgba(255, 255, 255, 0.78);
   border: 1px solid rgba(31, 55, 84, 0.1);
 }
 
 .trajectory-sequence strong,
-.trajectory-saved-list strong {
+.trajectory-saved-list strong,
+.trajectory-saved-card strong {
   color: #244d95;
 }
 
 .trajectory-sequence span,
-.trajectory-saved-list span {
+.trajectory-saved-list span,
+.trajectory-saved-card span {
   color: var(--muted);
   font-size: 0.82rem;
   line-height: 1.35;
+}
+
+.trajectory-saved-card {
+  cursor: pointer;
+  font: inherit;
+  transition:
+    border-color 0.18s ease,
+    box-shadow 0.18s ease,
+    transform 0.18s ease;
+}
+
+.trajectory-saved-card:hover {
+  border-color: rgba(36, 80, 184, 0.3);
+  box-shadow: 0 14px 28px rgba(31, 55, 84, 0.1);
+  transform: translateY(-1px);
 }
 
 .trajectory-saved-list {
@@ -2254,6 +2275,36 @@ textarea {
   position: relative;
   z-index: 1;
   overflow: hidden;
+}
+
+.trajectory-detail-layout {
+  display: grid;
+  gap: 18px;
+  margin-top: 22px;
+}
+
+.trajectory-detail-page .trajectory-graph-stage {
+  min-height: 680px;
+}
+
+.trajectory-detail-page .trajectory-graph-stage .graph-surface {
+  min-height: 560px;
+}
+
+.trajectory-detail-elements {
+  display: grid;
+  gap: 7px;
+  padding: 10px;
+  border-radius: 16px;
+  background: rgba(235, 244, 255, 0.62);
+}
+
+.trajectory-detail-elements span {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.8rem;
+  font-weight: 800;
+  line-height: 1.35;
 }
 
 .trajectory-graph-stage {
