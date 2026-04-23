@@ -344,6 +344,12 @@ export function HomePage() {
                   </div>
                   <div className="discipline-row__actions">
                     <Link
+                      className="secondary-button discipline-row__action"
+                      to={`/disciplines/${discipline.id}`}
+                    >
+                      Паспорт
+                    </Link>
+                    <Link
                       className="primary-button discipline-row__action"
                       to={`/disciplines/${discipline.id}/knowledge`}
                     >
@@ -478,9 +484,9 @@ export function HomePage() {
               <h3>Студенты</h3>
               {data.students.length ? (
                 data.students.map((student) => (
-                  <span key={student.id}>
+                  <Link className="overview-row" key={student.id} to={`/students/${student.id}`}>
                     {student.name} · {groupById.get(student.group_id)?.name ?? "без группы"}
-                  </span>
+                  </Link>
                 ))
               ) : (
                 <p className="home-hint">Нет студентов.</p>
@@ -496,7 +502,10 @@ export function HomePage() {
 
                   return (
                     <article className="teacher-card" key={teacher.id}>
-                      <strong>{teacher.name}</strong>
+                      <Link className="overview-row" to={`/teachers/${teacher.id}`}>
+                        <strong>{teacher.name}</strong>
+                        <span>Открыть кабинет преподавателя</span>
+                      </Link>
                       {groups.length ? (
                         groups.map((group) => {
                           const students = studentsByGroupId.get(group.id) ?? [];

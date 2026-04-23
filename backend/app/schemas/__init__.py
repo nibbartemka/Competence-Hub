@@ -14,6 +14,7 @@ from .knowledge_elements import (
 from .learning_trajectories import (
     LearningTrajectoryCreate,
     LearningTrajectoryRead,
+    LearningTrajectoryStatusUpdate,
     LearningTrajectoryTopicOrderUpdate,
     LearningTrajectoryTopicCreate,
     LearningTrajectoryTopicRead,
@@ -51,6 +52,7 @@ __all__ = [
     "KnowledgeElementUpdate",
     "LearningTrajectoryCreate",
     "LearningTrajectoryRead",
+    "LearningTrajectoryStatusUpdate",
     "LearningTrajectoryTopicOrderUpdate",
     "LearningTrajectoryTopicCreate",
     "LearningTrajectoryTopicRead",

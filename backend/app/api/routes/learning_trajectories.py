@@ -2,7 +2,7 @@ from collections import defaultdict
 from uuid import UUID
 
 from fastapi import APIRouter, HTTPException, status
-from sqlalchemy import and_, select
+from sqlalchemy import and_, or_, select
 from sqlalchemy.orm import selectinload
 
 from app.api.crud import commit_or_409, flush_or_409, not_found
@@ -25,12 +25,14 @@ from app.models import (
 )
 from app.models.enums import (
     CompetenceType,
+    LearningTrajectoryStatus,
     TopicKnowledgeElementRole,
 )
 from app.schemas import (
     LearningTrajectoryCreate,
     LearningTrajectoryElementCreate,
     LearningTrajectoryRead,
+    LearningTrajectoryStatusUpdate,
     LearningTrajectoryTopicCreate,
     LearningTrajectoryTopicOrderUpdate,
 )
@@ -45,6 +47,7 @@ def _bad_request(detail: str) -> HTTPException:
 
 def _trajectory_read_options():
     return (
+        selectinload(LearningTrajectory.discipline),
         selectinload(LearningTrajectory.topics).selectinload(
             LearningTrajectoryTopic.elements
         ),
@@ -64,6 +67,22 @@ async def get_learning_trajectory_for_read(
     if trajectory is None:
         raise not_found("Learning trajectory", trajectory_id)
     return trajectory
+
+
+def ensure_trajectory_editable(trajectory: LearningTrajectory) -> None:
+    if trajectory.status != LearningTrajectoryStatus.DRAFT:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Only draft learning trajectories can be edited.",
+        )
+    if not trajectory.is_actual:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=(
+                "Learning trajectory was created for an older knowledge graph version. "
+                "Rebuild or archive it before editing."
+            ),
+        )
 
 
 async def _exists(session: DbSession, query) -> bool:
@@ -239,13 +258,26 @@ async def _validate_topics_and_elements(
     if selected_elements_count == 0:
         raise _bad_request("Select at least one formed knowledge element.")
 
-    for competence_type in available_competence_types:
-        thresholds = selected_competence_thresholds.get(competence_type, [])
-        if not thresholds or 0 not in thresholds:
-            raise _bad_request(
-                f"For competence type '{competence_type.value}', select at least one "
-                "required element with threshold 0."
-            )
+    missing_competence_types = _missing_required_competence_types(
+        available_competence_types,
+        selected_competence_thresholds,
+    )
+    for competence_type in missing_competence_types:
+        raise _bad_request(
+            f"For competence type '{competence_type.value}', select at least one "
+            "required element with threshold 0."
+        )
+
+
+def _missing_required_competence_types(
+    available_competence_types: set[CompetenceType],
+    selected_competence_thresholds: dict[CompetenceType, list[int]],
+) -> set[CompetenceType]:
+    return {
+        competence_type
+        for competence_type in available_competence_types
+        if 0 not in selected_competence_thresholds.get(competence_type, [])
+    }
 
 
 async def validate_learning_trajectory(
@@ -262,6 +294,8 @@ async def list_learning_trajectories(
     discipline_id: UUID | None = None,
     teacher_id: UUID | None = None,
     group_id: UUID | None = None,
+    subgroup_id: UUID | None = None,
+    status_filter: LearningTrajectoryStatus | None = None,
 ) -> list[LearningTrajectory]:
     query = select(LearningTrajectory).options(*_trajectory_read_options())
     if discipline_id is not None:
@@ -270,8 +304,47 @@ async def list_learning_trajectories(
         query = query.where(LearningTrajectory.teacher_id == teacher_id)
     if group_id is not None:
         query = query.where(LearningTrajectory.group_id == group_id)
+    if subgroup_id is not None:
+        query = query.where(LearningTrajectory.subgroup_id == subgroup_id)
+    if status_filter is not None:
+        query = query.where(LearningTrajectory.status == status_filter)
 
     result = await session.execute(query.order_by(LearningTrajectory.name))
+    return list(result.scalars().all())
+
+
+@router.get("/students/{student_id}", response_model=list[LearningTrajectoryRead])
+async def list_student_learning_trajectories(
+    student_id: UUID,
+    session: DbSession,
+) -> list[LearningTrajectory]:
+    from app.models import Student
+
+    student = await session.get(Student, student_id)
+    if student is None:
+        raise not_found("Student", student_id)
+
+    target_filter = LearningTrajectory.group_id == student.group_id
+    if student.subgroup_id is None:
+        target_filter = and_(target_filter, LearningTrajectory.subgroup_id.is_(None))
+    else:
+        target_filter = and_(
+            target_filter,
+            or_(
+                LearningTrajectory.subgroup_id.is_(None),
+                LearningTrajectory.subgroup_id == student.subgroup_id,
+            ),
+        )
+
+    result = await session.execute(
+        select(LearningTrajectory)
+        .options(*_trajectory_read_options())
+        .where(
+            target_filter,
+            LearningTrajectory.status == LearningTrajectoryStatus.ACTIVE,
+        )
+        .order_by(LearningTrajectory.name)
+    )
     return list(result.scalars().all())
 
 
@@ -285,6 +358,9 @@ async def create_learning_trajectory(
     session: DbSession,
 ) -> LearningTrajectory:
     await validate_learning_trajectory(payload, session)
+    discipline = await session.get(Discipline, payload.discipline_id)
+    if discipline is None:
+        raise not_found("Discipline", payload.discipline_id)
 
     trajectory = LearningTrajectory(
         name=payload.name,
@@ -292,6 +368,8 @@ async def create_learning_trajectory(
         teacher_id=payload.teacher_id,
         group_id=payload.group_id,
         subgroup_id=payload.subgroup_id,
+        status=LearningTrajectoryStatus.DRAFT,
+        graph_version=discipline.knowledge_graph_version,
     )
     session.add(trajectory)
 
@@ -333,6 +411,7 @@ async def update_learning_trajectory_topic_order(
     session: DbSession,
 ) -> LearningTrajectory:
     trajectory = await get_learning_trajectory_for_read(trajectory_id, session)
+    ensure_trajectory_editable(trajectory)
     topics_by_id = {trajectory_topic.topic_id: trajectory_topic for trajectory_topic in trajectory.topics}
 
     if len(payload.topic_ids) != len(set(payload.topic_ids)):
@@ -373,5 +452,47 @@ async def update_learning_trajectory_topic_order(
         topics_by_id[topic_id].position = index + 1
 
     await flush_or_409(session)
+    await commit_or_409(session)
+    return await get_learning_trajectory_for_read(trajectory_id, session)
+
+
+@router.put("/{trajectory_id}/status", response_model=LearningTrajectoryRead)
+async def update_learning_trajectory_status(
+    trajectory_id: UUID,
+    payload: LearningTrajectoryStatusUpdate,
+    session: DbSession,
+) -> LearningTrajectory:
+    trajectory = await get_learning_trajectory_for_read(trajectory_id, session)
+
+    if payload.status == LearningTrajectoryStatus.ACTIVE:
+        if not trajectory.is_actual:
+            raise _bad_request(
+                "Learning trajectory cannot be activated because its knowledge graph version is outdated."
+            )
+        validation_payload = LearningTrajectoryCreate(
+            name=trajectory.name,
+            discipline_id=trajectory.discipline_id,
+            teacher_id=trajectory.teacher_id,
+            group_id=trajectory.group_id,
+            subgroup_id=trajectory.subgroup_id,
+            topics=[
+                LearningTrajectoryTopicCreate(
+                    topic_id=trajectory_topic.topic_id,
+                    position=trajectory_topic.position,
+                    threshold=trajectory_topic.threshold,
+                    elements=[
+                        LearningTrajectoryElementCreate(
+                            element_id=element.element_id,
+                            threshold=element.threshold,
+                        )
+                        for element in trajectory_topic.elements
+                    ],
+                )
+                for trajectory_topic in trajectory.topics
+            ],
+        )
+        await validate_learning_trajectory(validation_payload, session)
+
+    trajectory.status = payload.status
     await commit_or_409(session)
     return await get_learning_trajectory_for_read(trajectory_id, session)

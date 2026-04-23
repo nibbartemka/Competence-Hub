@@ -1,9 +1,10 @@
 from uuid import UUID, uuid4
 
-from sqlalchemy import CheckConstraint, ForeignKey, Integer, String, UniqueConstraint
+from sqlalchemy import CheckConstraint, Enum, ForeignKey, Integer, String, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core import Base
+from .enums import LearningTrajectoryStatus
 
 
 class LearningTrajectory(Base):
@@ -23,6 +24,16 @@ class LearningTrajectory(Base):
 
     id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
     name: Mapped[str] = mapped_column(String(255), nullable=False)
+    status: Mapped[LearningTrajectoryStatus] = mapped_column(
+        Enum(
+            LearningTrajectoryStatus,
+            name="learning_trajectory_status_enum",
+            values_callable=lambda enum_cls: [item.value for item in enum_cls],
+        ),
+        nullable=False,
+        default=LearningTrajectoryStatus.DRAFT,
+    )
+    graph_version: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
 
     discipline_id: Mapped[UUID] = mapped_column(
         ForeignKey("disciplines.id", ondelete="CASCADE"),
@@ -53,6 +64,10 @@ class LearningTrajectory(Base):
         lazy="selectin",
         order_by="LearningTrajectoryTopic.position",
     )
+
+    @property
+    def is_actual(self) -> bool:
+        return self.graph_version == self.discipline.knowledge_graph_version
 
 
 class LearningTrajectoryTopic(Base):

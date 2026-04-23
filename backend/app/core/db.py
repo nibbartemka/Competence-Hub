@@ -334,6 +334,39 @@ def _sync_sqlite_schema(connection) -> None:
         connection, "knowledge_elements", "discipline_id"
     ):
         _rebuild_knowledge_elements_table(connection)
+    if _sqlite_has_table(connection, "disciplines") and not _sqlite_has_column(
+        connection, "disciplines", "knowledge_graph_version"
+    ):
+        connection.execute(
+            text(
+                "ALTER TABLE disciplines "
+                "ADD COLUMN knowledge_graph_version INTEGER NOT NULL DEFAULT 1"
+            )
+        )
+    if _sqlite_has_table(connection, "topic_dependencies") and not _sqlite_has_column(
+        connection, "topic_dependencies", "source"
+    ):
+        connection.execute(
+            text(
+                "ALTER TABLE topic_dependencies "
+                "ADD COLUMN source TEXT NOT NULL DEFAULT 'computed'"
+            )
+        )
+    if _sqlite_has_table(connection, "learning_trajectories"):
+        if not _sqlite_has_column(connection, "learning_trajectories", "status"):
+            connection.execute(
+                text(
+                    "ALTER TABLE learning_trajectories "
+                    "ADD COLUMN status TEXT NOT NULL DEFAULT 'draft'"
+                )
+            )
+        if not _sqlite_has_column(connection, "learning_trajectories", "graph_version"):
+            connection.execute(
+                text(
+                    "ALTER TABLE learning_trajectories "
+                    "ADD COLUMN graph_version INTEGER NOT NULL DEFAULT 1"
+                )
+            )
 
 
 async def get_async_session() -> AsyncGenerator[AsyncSession, None]:

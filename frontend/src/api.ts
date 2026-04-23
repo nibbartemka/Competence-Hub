@@ -286,6 +286,8 @@ export function fetchLearningTrajectories(
     discipline_id?: string;
     teacher_id?: string;
     group_id?: string;
+    subgroup_id?: string;
+    status_filter?: LearningTrajectory["status"];
   } = {},
   signal?: AbortSignal,
 ) {
@@ -293,8 +295,14 @@ export function fetchLearningTrajectories(
   if (params.discipline_id) query.set("discipline_id", params.discipline_id);
   if (params.teacher_id) query.set("teacher_id", params.teacher_id);
   if (params.group_id) query.set("group_id", params.group_id);
+  if (params.subgroup_id) query.set("subgroup_id", params.subgroup_id);
+  if (params.status_filter) query.set("status_filter", params.status_filter);
   const suffix = query.toString() ? `?${query.toString()}` : "";
   return request<LearningTrajectory[]>(`/learning-trajectories/${suffix}`, { signal });
+}
+
+export function fetchStudentLearningTrajectories(studentId: string, signal?: AbortSignal) {
+  return request<LearningTrajectory[]>(`/learning-trajectories/students/${studentId}`, { signal });
 }
 
 export function fetchLearningTrajectory(trajectoryId: string, signal?: AbortSignal) {
@@ -330,5 +338,15 @@ export function updateLearningTrajectoryTopicOrder(
   return request<LearningTrajectory>(`/learning-trajectories/${trajectoryId}/topics/order`, {
     method: "PUT",
     body: { topic_ids: topicIds },
+  });
+}
+
+export function updateLearningTrajectoryStatus(
+  trajectoryId: string,
+  status: LearningTrajectory["status"],
+) {
+  return request<LearningTrajectory>(`/learning-trajectories/${trajectoryId}/status`, {
+    method: "PUT",
+    body: { status },
   });
 }

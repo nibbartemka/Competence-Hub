@@ -32,6 +32,17 @@ class TopicDependencyRelationType(StrEnum):
     POSSIBLE_FLOW = "possible_flow"
 
 
+class TopicDependencySource(StrEnum):
+    COMPUTED = "computed"
+    MANUAL = "manual"
+
+
+class LearningTrajectoryStatus(StrEnum):
+    DRAFT = "draft"
+    ACTIVE = "active"
+    ARCHIVED = "archived"
+
+
 # Backward-compatible alias for older code that still uses the previous name.
 TopicElementRelationType = KnowledgeElementRelationType
 

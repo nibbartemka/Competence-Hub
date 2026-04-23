@@ -3,7 +3,7 @@ from uuid import UUID
 from fastapi import APIRouter, HTTPException, status
 from sqlalchemy import or_, select
 
-from app.api.crud import commit_or_409, delete_and_commit, not_found
+from app.api.crud import commit_or_409, flush_or_409, not_found
 from app.api.deps import DbSession
 from app.models import KnowledgeElement, KnowledgeElementRelation
 from app.models.enums import CompetenceType, KnowledgeElementRelationType
@@ -12,6 +12,7 @@ from app.schemas import (
     KnowledgeElementRelationRead,
     KnowledgeElementRelationUpdate,
 )
+from app.services.knowledge_graph_integrity import bump_knowledge_graph_version
 
 
 router = APIRouter(
@@ -109,6 +110,9 @@ async def create_knowledge_element_relation(
         description=payload.description,
     )
     session.add(relation)
+    await flush_or_409(session)
+    if source_element.discipline_id is not None:
+        await bump_knowledge_graph_version(session, [source_element.discipline_id])
     await commit_or_409(session)
     await session.refresh(relation)
     return relation
@@ -162,6 +166,8 @@ async def update_knowledge_element_relation(
     relation.target_element_id = payload.target_element_id
     relation.relation_type = payload.relation_type
     relation.description = payload.description
+    if source_element.discipline_id is not None:
+        await bump_knowledge_graph_version(session, [source_element.discipline_id])
     await commit_or_409(session)
     await session.refresh(relation)
     return relation
@@ -172,4 +178,10 @@ async def delete_knowledge_element_relation(relation_id: UUID, session: DbSessio
     relation = await session.get(KnowledgeElementRelation, relation_id)
     if relation is None:
         raise not_found("Knowledge element relation", relation_id)
-    await delete_and_commit(session, relation)
+    source_element = await session.get(KnowledgeElement, relation.source_element_id)
+    discipline_id = source_element.discipline_id if source_element is not None else None
+    await session.delete(relation)
+    await flush_or_409(session)
+    if discipline_id is not None:
+        await bump_knowledge_graph_version(session, [discipline_id])
+    await commit_or_409(session)

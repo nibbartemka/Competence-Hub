@@ -11,6 +11,10 @@ from app.schemas import (
     KnowledgeElementRead,
     KnowledgeElementUpdate,
 )
+from app.services.knowledge_graph_integrity import (
+    bump_knowledge_graph_version,
+    ensure_element_can_be_removed,
+)
 from app.services.topic_dependencies import sync_topic_dependencies_for_disciplines
 
 
@@ -51,6 +55,8 @@ async def create_knowledge_element(
         discipline_id=payload.discipline_id,
     )
     session.add(element)
+    await flush_or_409(session)
+    await bump_knowledge_graph_version(session, [payload.discipline_id])
     await commit_or_409(session)
     await session.refresh(element)
     return element
@@ -77,6 +83,8 @@ async def update_knowledge_element(
     element.name = payload.name
     element.description = payload.description
     element.competence_type = payload.competence_type
+    if element.discipline_id is not None:
+        await bump_knowledge_graph_version(session, [element.discipline_id])
     await commit_or_409(session)
     await session.refresh(element)
     return element
@@ -87,6 +95,7 @@ async def delete_knowledge_element(element_id: UUID, session: DbSession) -> None
     element = await session.get(KnowledgeElement, element_id)
     if element is None:
         raise not_found("Knowledge element", element_id)
+    await ensure_element_can_be_removed(session, element_id)
 
     affected_disciplines_result = await session.execute(
         select(Topic.discipline_id)
@@ -95,8 +104,11 @@ async def delete_knowledge_element(element_id: UUID, session: DbSession) -> None
         .distinct()
     )
     affected_discipline_ids = list(affected_disciplines_result.scalars().all())
+    if element.discipline_id is not None and element.discipline_id not in affected_discipline_ids:
+        affected_discipline_ids.append(element.discipline_id)
 
     await session.delete(element)
     await flush_or_409(session)
     await sync_topic_dependencies_for_disciplines(session, affected_discipline_ids)
+    await bump_knowledge_graph_version(session, affected_discipline_ids)
     await commit_or_409(session)

@@ -9,6 +9,7 @@ from .enums import (
     KnowledgeElementRelationType,
     TopicKnowledgeElementRole,
     TopicDependencyRelationType,
+    TopicDependencySource,
 )
 
 
@@ -58,6 +59,8 @@ class Topic(Base):
 
 
 class TopicDependency(Base):
+    """Canonical direction: dependent_topic_id requires prerequisite_topic_id."""
+
     __tablename__ = "topic_dependencies"
     __table_args__ = (
         UniqueConstraint(
@@ -76,6 +79,15 @@ class TopicDependency(Base):
     relation_type: Mapped[TopicDependencyRelationType] = mapped_column(
         Enum(TopicDependencyRelationType, name="relation_type_enum"),
         nullable=False,
+    )
+    source: Mapped[TopicDependencySource] = mapped_column(
+        Enum(
+            TopicDependencySource,
+            name="topic_dependency_source_enum",
+            values_callable=lambda enum_cls: [item.value for item in enum_cls],
+        ),
+        nullable=False,
+        default=TopicDependencySource.COMPUTED,
     )
 
     prerequisite_topic_id: Mapped[UUID] = mapped_column(

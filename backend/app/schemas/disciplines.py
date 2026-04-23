@@ -14,5 +14,6 @@ class DisciplineRead(BaseModel):
 
     id: UUID
     name: str
+    knowledge_graph_version: int = 1
     teacher_ids: list[UUID] = Field(default_factory=list)
     group_ids: list[UUID] = Field(default_factory=list)

@@ -2,6 +2,8 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from app.models.enums import LearningTrajectoryStatus
+
 
 class LearningTrajectoryElementCreate(BaseModel):
     element_id: UUID
@@ -26,6 +28,10 @@ class LearningTrajectoryCreate(BaseModel):
 
 class LearningTrajectoryTopicOrderUpdate(BaseModel):
     topic_ids: list[UUID] = Field(min_length=1)
+
+
+class LearningTrajectoryStatusUpdate(BaseModel):
+    status: LearningTrajectoryStatus
 
 
 class LearningTrajectoryElementRead(BaseModel):
@@ -53,6 +59,9 @@ class LearningTrajectoryRead(BaseModel):
 
     id: UUID
     name: str
+    status: LearningTrajectoryStatus
+    graph_version: int
+    is_actual: bool
     discipline_id: UUID
     teacher_id: UUID
     group_id: UUID | None

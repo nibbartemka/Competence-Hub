@@ -20,6 +20,7 @@ export type KnowledgeElementRelationType =
 export type Discipline = {
   id: string;
   name: string;
+  knowledge_graph_version: number;
   teacher_ids: string[];
   group_ids: string[];
 };
@@ -61,6 +62,7 @@ export type TopicDependency = {
   prerequisite_topic_id: string;
   dependent_topic_id: string;
   relation_type: TopicDependencyRelationType;
+  source: "computed" | "manual";
   description: string | null;
 };
 
@@ -116,6 +118,9 @@ export type LearningTrajectoryTopic = {
 export type LearningTrajectory = {
   id: string;
   name: string;
+  status: "draft" | "active" | "archived";
+  graph_version: number;
+  is_actual: boolean;
   discipline_id: string;
   teacher_id: string;
   group_id: string | null;

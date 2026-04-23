@@ -2,7 +2,7 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict
 
-from app.models.enums import TopicDependencyRelationType
+from app.models.enums import TopicDependencyRelationType, TopicDependencySource
 
 
 class TopicDependencyCreate(BaseModel):
@@ -19,4 +19,5 @@ class TopicDependencyRead(BaseModel):
     prerequisite_topic_id: UUID
     dependent_topic_id: UUID
     relation_type: TopicDependencyRelationType
+    source: TopicDependencySource = TopicDependencySource.COMPUTED
     description: str | None

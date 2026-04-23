@@ -7,6 +7,11 @@ from app.api.crud import commit_or_409, flush_or_409, not_found
 from app.api.deps import DbSession
 from app.models import Discipline, Topic
 from app.schemas import TopicCreate, TopicRead, TopicUpdate
+from app.services.knowledge_graph_integrity import (
+    assert_no_topic_dependency_cycle,
+    bump_knowledge_graph_version,
+    ensure_topic_can_be_removed,
+)
 from app.services.topic_dependencies import sync_topic_dependencies_for_discipline
 
 
@@ -39,6 +44,8 @@ async def create_topic(payload: TopicCreate, session: DbSession) -> Topic:
     session.add(topic)
     await flush_or_409(session)
     await sync_topic_dependencies_for_discipline(session, payload.discipline_id)
+    await assert_no_topic_dependency_cycle(session, payload.discipline_id)
+    await bump_knowledge_graph_version(session, [payload.discipline_id])
     await commit_or_409(session)
     await session.refresh(topic)
     return topic
@@ -66,6 +73,8 @@ async def update_topic(
     topic.description = payload.description
     await flush_or_409(session)
     await sync_topic_dependencies_for_discipline(session, topic.discipline_id)
+    await assert_no_topic_dependency_cycle(session, topic.discipline_id)
+    await bump_knowledge_graph_version(session, [topic.discipline_id])
     await commit_or_409(session)
     await session.refresh(topic)
     return topic
@@ -76,8 +85,10 @@ async def delete_topic(topic_id: UUID, session: DbSession) -> None:
     topic = await session.get(Topic, topic_id)
     if topic is None:
         raise not_found("Topic", topic_id)
+    await ensure_topic_can_be_removed(session, topic_id)
     discipline_id = topic.discipline_id
     await session.delete(topic)
     await flush_or_409(session)
     await sync_topic_dependencies_for_discipline(session, discipline_id)
+    await bump_knowledge_graph_version(session, [discipline_id])
     await commit_or_409(session)

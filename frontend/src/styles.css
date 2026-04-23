@@ -1666,6 +1666,239 @@ textarea {
   font-weight: 800;
 }
 
+.overview-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 18px;
+  margin-top: 22px;
+}
+
+.overview-card {
+  display: grid;
+  align-content: start;
+  gap: 14px;
+}
+
+.overview-card--wide {
+  grid-column: 1 / -1;
+}
+
+.overview-stats {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 10px;
+  margin-top: 4px;
+}
+
+.overview-stats span,
+.overview-row {
+  border: 1px solid rgba(31, 55, 84, 0.1);
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.78);
+  box-shadow: 0 14px 30px rgba(31, 55, 84, 0.08);
+}
+
+.overview-stats span {
+  padding: 14px;
+  color: #244d95;
+  font-weight: 900;
+}
+
+.overview-row {
+  display: grid;
+  gap: 5px;
+  padding: 12px 14px;
+  color: inherit;
+  text-decoration: none;
+  transition:
+    border-color 0.18s ease,
+    box-shadow 0.18s ease,
+    transform 0.18s ease;
+}
+
+.overview-row:hover {
+  border-color: rgba(36, 80, 184, 0.28);
+  box-shadow: 0 18px 34px rgba(31, 55, 84, 0.12);
+  transform: translateY(-1px);
+}
+
+.overview-row strong {
+  color: #244d95;
+}
+
+.overview-row span {
+  color: var(--muted);
+  font-size: 0.84rem;
+  line-height: 1.35;
+}
+
+.role-page > .hero,
+.role-page > .home-feedback,
+.role-page > .overview-grid,
+.role-page > .status-view {
+  width: min(1080px, 100%);
+  margin-left: auto;
+  margin-right: auto;
+}
+
+.role-page > .overview-grid {
+  grid-template-columns: minmax(280px, 360px) minmax(0, 1fr);
+  align-items: start;
+}
+
+.role-page .overview-card--wide {
+  grid-column: 1 / -1;
+}
+
+.role-page .home-lists {
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+}
+
+.role-page .trajectory-saved-list {
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+}
+
+.role-page > .status-view,
+.discipline-overview-page > .status-view {
+  position: relative;
+  min-height: 420px;
+  margin-top: 22px;
+  border-radius: 28px;
+  background: rgba(255, 255, 255, 0.68);
+  box-shadow: var(--card-shadow);
+}
+
+.primary-button,
+.secondary-button,
+.ghost-button,
+.trajectory-saved-card {
+  text-decoration: none;
+}
+
+.draft-autosave-note {
+  width: fit-content;
+  margin: 10px 0 0;
+  border-radius: 999px;
+  padding: 8px 11px;
+  background: rgba(19, 117, 91, 0.1);
+  color: #146b52;
+  font-size: 0.78rem;
+  font-weight: 900;
+}
+
+.trajectory-student-preview {
+  overflow: hidden;
+}
+
+.trajectory-preview-list {
+  display: flex;
+  gap: 14px;
+  margin-top: 16px;
+  overflow-x: auto;
+  padding: 2px 4px 14px;
+  scroll-snap-type: x proximity;
+}
+
+.trajectory-preview-topic {
+  position: relative;
+  flex: 0 0 min(360px, 88vw);
+  display: grid;
+  gap: 12px;
+  padding: 18px;
+  border: 1px solid rgba(54, 150, 105, 0.2);
+  border-radius: 22px;
+  background:
+    radial-gradient(circle at top right, rgba(54, 150, 105, 0.16), transparent 34%),
+    rgba(255, 255, 255, 0.88);
+  box-shadow: 0 18px 38px rgba(31, 55, 84, 0.1);
+  scroll-snap-align: start;
+}
+
+.trajectory-preview-topic__step {
+  position: absolute;
+  top: -10px;
+  left: -10px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  border-radius: 999px;
+  border: 3px solid rgba(255, 255, 255, 0.95);
+  background: linear-gradient(145deg, #ff4f5f, #d91f34);
+  color: white;
+  font-weight: 900;
+  box-shadow: 0 12px 20px rgba(168, 34, 51, 0.24);
+}
+
+.trajectory-preview-topic strong {
+  display: block;
+  color: #226b4b;
+  font-size: 1rem;
+  line-height: 1.28;
+}
+
+.trajectory-preview-topic p {
+  margin: 8px 0 0;
+  color: var(--muted);
+  line-height: 1.45;
+}
+
+.trajectory-preview-topic__meta,
+.trajectory-preview-elements {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.trajectory-preview-topic__meta span,
+.trajectory-preview-elements span {
+  border-radius: 999px;
+  padding: 7px 10px;
+  background: rgba(19, 117, 91, 0.1);
+  color: #226b4b;
+  font-size: 0.78rem;
+  font-weight: 900;
+  line-height: 1.25;
+}
+
+.trajectory-preview-elements span {
+  background: rgba(36, 80, 184, 0.1);
+  color: #244d95;
+}
+
+.student-progress {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.student-progress__bar {
+  flex: 1 0 100%;
+  height: 9px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: rgba(31, 55, 84, 0.1);
+}
+
+.student-progress__bar i {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(135deg, #36a96d, #78d7a4);
+}
+
+.student-progress span {
+  margin: 0;
+  border-radius: 999px;
+  padding: 6px 9px;
+  background: rgba(36, 80, 184, 0.08);
+  color: #365a95;
+  font-size: 0.76rem;
+  font-weight: 900;
+}
+
 @media (max-width: 980px) {
   .home-shell {
     padding: 18px;
@@ -1677,11 +1910,14 @@ textarea {
 
   .home-stats,
   .home-grid,
-  .home-lists {
+  .home-lists,
+  .role-page > .overview-grid,
+  .overview-grid {
     grid-template-columns: 1fr;
   }
 
-  .home-card--wide {
+  .home-card--wide,
+  .overview-card--wide {
     grid-column: span 1;
   }
 
@@ -2305,6 +2541,22 @@ textarea {
   font-size: 0.8rem;
   font-weight: 800;
   line-height: 1.35;
+}
+
+.trajectory-status-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.trajectory-status-row span {
+  border-radius: 999px;
+  padding: 7px 11px;
+  background: rgba(235, 244, 255, 0.78);
+  color: #365a95;
+  font-size: 0.78rem;
+  font-weight: 900;
 }
 
 .trajectory-graph-stage {

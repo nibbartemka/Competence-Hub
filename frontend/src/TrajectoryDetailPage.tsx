@@ -1,5 +1,5 @@
 import { type DragEvent, useEffect, useMemo, useRef, useState } from "react";
-import { useNavigate, useParams } from "react-router-dom";
+import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 import RelationGraph, {
   type JsonLine,
   type JsonNode,
@@ -12,6 +12,7 @@ import {
   fetchDisciplineKnowledgeGraph,
   fetchLearningTrajectory,
   isAbortError,
+  updateLearningTrajectoryStatus,
   updateLearningTrajectoryTopicOrder,
 } from "./api";
 import { GraphNode } from "./components/GraphNode";
@@ -69,6 +70,24 @@ function topicName(topicById: Map<string, Topic>, topicId: string) {
 
 function elementName(elementById: Map<string, KnowledgeElement>, elementId: string) {
   return elementById.get(elementId)?.name ?? "Элемент не найден";
+}
+
+function statusLabel(status: LearningTrajectory["status"]) {
+  if (status === "active") return "Активна";
+  if (status === "archived") return "Архив";
+  return "Черновик";
+}
+
+function nextStatusAction(status: LearningTrajectory["status"]) {
+  if (status === "draft") {
+    return { label: "Активировать", status: "active" as const };
+  }
+
+  if (status === "active") {
+    return { label: "Перевести в архив", status: "archived" as const };
+  }
+
+  return { label: "Вернуть в черновик", status: "draft" as const };
 }
 
 function validateTopicOrder(order: string[], graph: DisciplineKnowledgeGraph) {
@@ -227,6 +246,7 @@ export default function TrajectoryDetailPage() {
     trajectoryId: string;
   }>();
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const graphRef = useRef<RelationGraphComponent>();
 
   const [graph, setGraph] = useState<DisciplineKnowledgeGraph | null>(null);
@@ -237,6 +257,7 @@ export default function TrajectoryDetailPage() {
   const [saving, setSaving] = useState(false);
   const [draggedTopicId, setDraggedTopicId] = useState("");
   const [dragOverTopicId, setDragOverTopicId] = useState("");
+  const [studentPreviewOpen, setStudentPreviewOpen] = useState(false);
   const [notifications, setNotifications] = useState<ToastMessage[]>([]);
 
   function pushNotification(kind: ToastMessage["kind"], text: string) {
@@ -249,6 +270,12 @@ export default function TrajectoryDetailPage() {
   function dismissNotification(id: string) {
     setNotifications((current) => current.filter((notification) => notification.id !== id));
   }
+
+  useEffect(() => {
+    if (searchParams.get("preview") === "student") {
+      setStudentPreviewOpen(true);
+    }
+  }, [searchParams]);
 
   useEffect(() => {
     if (!disciplineId || !trajectoryId) return;
@@ -300,6 +327,7 @@ export default function TrajectoryDetailPage() {
     if (!graph || !trajectory) return null;
     return buildTrajectoryScene(graph, trajectory, topicOrder);
   }, [graph, trajectory, topicOrder]);
+  const canEditTrajectory = trajectory?.status === "draft" && trajectory.is_actual;
 
   useEffect(() => {
     if (!scene || !graphRef.current) return;
@@ -325,6 +353,15 @@ export default function TrajectoryDetailPage() {
 
   async function persistTopicOrder(nextOrder: string[]) {
     if (!graph || !trajectory || !trajectoryId) return;
+    if (!canEditTrajectory) {
+      pushNotification(
+        "error",
+        trajectory.status === "draft"
+          ? "Траектория устарела относительно текущей версии графа знаний. Сначала пересобери её."
+          : "Редактировать можно только траектории в статусе «Черновик».",
+      );
+      return;
+    }
 
     const error = validateTopicOrder(nextOrder, graph);
     if (error) {
@@ -407,6 +444,21 @@ export default function TrajectoryDetailPage() {
     return false;
   }
 
+  async function handleStatusChange(status: LearningTrajectory["status"]) {
+    if (!trajectoryId) return;
+
+    try {
+      setSaving(true);
+      const updatedTrajectory = await updateLearningTrajectoryStatus(trajectoryId, status);
+      setTrajectory(updatedTrajectory);
+      pushNotification("success", `Статус траектории изменён: ${statusLabel(status)}.`);
+    } catch (error) {
+      pushNotification("error", extractErrorMessage(error));
+    } finally {
+      setSaving(false);
+    }
+  }
+
   if (!disciplineId || !trajectoryId) return null;
 
   return (
@@ -455,6 +507,23 @@ export default function TrajectoryDetailPage() {
           >
             К графу знаний
           </button>
+          <button
+            className="ghost-button"
+            onClick={() => setStudentPreviewOpen((current) => !current)}
+            type="button"
+          >
+            {studentPreviewOpen ? "Скрыть предпросмотр" : "Предпросмотр студента"}
+          </button>
+          {trajectory ? (
+            <button
+              className="primary-button"
+              disabled={saving}
+              onClick={() => void handleStatusChange(nextStatusAction(trajectory.status).status)}
+              type="button"
+            >
+              {nextStatusAction(trajectory.status).label}
+            </button>
+          ) : null}
         </div>
       </header>
 
@@ -495,14 +564,86 @@ export default function TrajectoryDetailPage() {
           </div>
         </section>
 
+        {studentPreviewOpen && trajectory ? (
+          <section className="card card--soft trajectory-student-preview">
+            <div className="card__header">
+              <div>
+                <p className="card__eyebrow">Предпросмотр глазами студента</p>
+                <h2>{trajectory.name}</h2>
+              </div>
+              <span className="hero__chip">{statusLabel(trajectory.status)}</span>
+            </div>
+            <p className="card__text">
+              Так студент увидит назначенную последовательность: темы идут по шагам, внутри каждой
+              темы показаны выбранные формируемые элементы и их пороги.
+            </p>
+
+            {topicOrder.length ? (
+              <div className="trajectory-preview-list">
+                {topicOrder.map((topicId, index) => {
+                  const topic = topicById.get(topicId);
+                  const trajectoryTopic = trajectoryTopicByTopicId.get(topicId);
+
+                  return (
+                    <article className="trajectory-preview-topic" key={topicId}>
+                      <span className="trajectory-preview-topic__step">{index + 1}</span>
+                      <div>
+                        <strong>{topic?.name ?? "Тема не найдена"}</strong>
+                        <p>{topic?.description || "Описание темы пока не добавлено."}</p>
+                      </div>
+                      <div className="trajectory-preview-topic__meta">
+                        <span>Порог темы {trajectoryTopic?.threshold ?? 100}</span>
+                        <span>Статус: не начато</span>
+                      </div>
+                      <div className="trajectory-preview-elements">
+                        {(trajectoryTopic?.elements ?? []).length ? (
+                          trajectoryTopic!.elements.map((element) => (
+                            <span key={element.id}>
+                              {elementName(elementById, element.element_id)} · порог{" "}
+                              {element.threshold}
+                            </span>
+                          ))
+                        ) : (
+                          <span>Элементы для студента не выбраны.</span>
+                        )}
+                      </div>
+                    </article>
+                  );
+                })}
+              </div>
+            ) : (
+              <p className="card__text">В траектории пока нет тем для предпросмотра.</p>
+            )}
+          </section>
+        ) : null}
+
         <section className="card card--soft trajectory-selected-panel">
           <div className="card__header">
             <div>
               <p className="card__eyebrow">Мини-редактор</p>
               <h2>Порядок тем</h2>
             </div>
-            <span className="hero__chip">{saving ? "Сохраняю..." : `${topicOrder.length} тем`}</span>
+            <span className="hero__chip">
+              {saving ? "Сохраняю..." : `${topicOrder.length} тем`}
+            </span>
           </div>
+          {trajectory ? (
+            <div className="trajectory-status-row">
+              <span>{statusLabel(trajectory.status)}</span>
+              <span>
+                Версия графа: {trajectory.graph_version}
+                {graph ? ` / текущая ${graph.discipline.knowledge_graph_version}` : ""}
+              </span>
+              <span>{trajectory.is_actual ? "Актуальна" : "Устарела"}</span>
+            </div>
+          ) : null}
+
+          {!canEditTrajectory && trajectory ? (
+            <p className="card__text">
+              Изменение порядка заблокировано: траектория должна быть черновиком и соответствовать
+              текущей версии графа знаний.
+            </p>
+          ) : null}
 
           {topicOrder.length ? (
             <div className="trajectory-selected-list">
@@ -533,8 +674,8 @@ export default function TrajectoryDetailPage() {
                       <button
                         aria-label={`Перетащить тему ${topicName(topicById, topicId)}`}
                         className="trajectory-drag-handle"
-                        disabled={saving || topicOrder.length < 2}
-                        draggable={!saving && topicOrder.length > 1}
+                        disabled={saving || !canEditTrajectory || topicOrder.length < 2}
+                        draggable={!saving && canEditTrajectory && topicOrder.length > 1}
                         onDragEnd={handleTopicDragEnd}
                         onDragStart={(event) => handleTopicDragStart(event, topicId)}
                         title="Перетащить тему"
@@ -547,7 +688,7 @@ export default function TrajectoryDetailPage() {
                     <div className="trajectory-topic-actions">
                       <button
                         className="secondary-button"
-                        disabled={saving || index === 0}
+                        disabled={saving || !canEditTrajectory || index === 0}
                         onClick={() => moveTopic(topicId, -1)}
                         type="button"
                       >
@@ -555,7 +696,7 @@ export default function TrajectoryDetailPage() {
                       </button>
                       <button
                         className="secondary-button"
-                        disabled={saving || index === topicOrder.length - 1}
+                        disabled={saving || !canEditTrajectory || index === topicOrder.length - 1}
                         onClick={() => moveTopic(topicId, 1)}
                         type="button"
                       >

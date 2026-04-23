@@ -8,6 +8,11 @@ from app.api.deps import DbSession
 from app.models import KnowledgeElement, Topic, TopicKnowledgeElement
 from app.models.enums import TopicKnowledgeElementRole
 from app.schemas import TopicKnowledgeElementCreate, TopicKnowledgeElementRead
+from app.services.knowledge_graph_integrity import (
+    assert_no_topic_dependency_cycle,
+    bump_knowledge_graph_version,
+    ensure_topic_element_link_can_be_removed,
+)
 from app.services.topic_dependencies import sync_topic_dependencies_for_discipline
 
 
@@ -66,6 +71,8 @@ async def create_topic_knowledge_element(
     session.add(topic_element)
     await flush_or_409(session)
     await sync_topic_dependencies_for_discipline(session, topic.discipline_id)
+    await assert_no_topic_dependency_cycle(session, topic.discipline_id)
+    await bump_knowledge_graph_version(session, [topic.discipline_id])
     await commit_or_409(session)
     await session.refresh(topic_element)
     return topic_element
@@ -78,11 +85,13 @@ async def delete_topic_knowledge_element(topic_element_id: UUID, session: DbSess
         raise not_found("Topic knowledge element", topic_element_id)
     topic = await session.get(Topic, topic_element.topic_id)
     discipline_id = topic.discipline_id if topic is not None else None
+    await ensure_topic_element_link_can_be_removed(session, topic_element.topic_id)
 
     await session.delete(topic_element)
     await flush_or_409(session)
 
     if discipline_id is not None:
         await sync_topic_dependencies_for_discipline(session, discipline_id)
+        await bump_knowledge_graph_version(session, [discipline_id])
 
     await commit_or_409(session)

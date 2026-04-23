@@ -97,6 +97,34 @@ type ToastMessage = Feedback & {
   id: string;
 };
 
+type TrajectoryDraftSnapshot = {
+  version: 1;
+  trajectoryName: string;
+  selectedTeacherId: string;
+  selectedGroupId: string;
+  targetMode: "group" | "subgroup";
+  selectedSubgroupId: string;
+  selectedTopicIds: string[];
+  topicThresholds: Record<string, number>;
+  selectedElementsByTopic: Record<string, string[]>;
+  elementThresholds: Record<string, number>;
+  updatedAt: string;
+};
+
+function trajectoryDraftKey(disciplineId: string) {
+  return `competence-hub:trajectory-draft:${disciplineId}`;
+}
+
+function hasDraftContent(snapshot: TrajectoryDraftSnapshot) {
+  return (
+    snapshot.trajectoryName.trim().length > 0 ||
+    snapshot.selectedTeacherId.length > 0 ||
+    snapshot.selectedGroupId.length > 0 ||
+    snapshot.selectedTopicIds.length > 0 ||
+    Object.values(snapshot.selectedElementsByTopic).some((elementIds) => elementIds.length > 0)
+  );
+}
+
 function extractErrorMessage(error: unknown) {
   if (error instanceof Error) {
     return error.message;
@@ -221,6 +249,7 @@ export default function TrajectoryGraphBuilder() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [exportingImage, setExportingImage] = useState(false);
+  const [draftRestored, setDraftRestored] = useState(false);
   const [competenceFilters, setCompetenceFilters] = useState<Record<CompetenceType, boolean>>({
     know: true,
     can: true,
@@ -775,6 +804,87 @@ export default function TrajectoryGraphBuilder() {
   }, [disciplineId, navigate]);
 
   useEffect(() => {
+    setDraftRestored(false);
+  }, [disciplineId]);
+
+  useEffect(() => {
+    if (!disciplineId || draftRestored) return;
+
+    try {
+      const rawDraft = window.localStorage.getItem(trajectoryDraftKey(disciplineId));
+      if (!rawDraft) {
+        setDraftRestored(true);
+        return;
+      }
+
+      const draft = JSON.parse(rawDraft) as Partial<TrajectoryDraftSnapshot>;
+      if (draft.version !== 1) {
+        window.localStorage.removeItem(trajectoryDraftKey(disciplineId));
+        setDraftRestored(true);
+        return;
+      }
+
+      setTrajectoryName(draft.trajectoryName ?? "");
+      setSelectedTeacherId(draft.selectedTeacherId ?? "");
+      setSelectedGroupId(draft.selectedGroupId ?? "");
+      setTargetMode(draft.targetMode === "subgroup" ? "subgroup" : "group");
+      setSelectedSubgroupId(draft.selectedSubgroupId ?? "");
+      setSelectedTopicIds(draft.selectedTopicIds ?? []);
+      setTopicThresholds(draft.topicThresholds ?? {});
+      setSelectedElementsByTopic(draft.selectedElementsByTopic ?? {});
+      setElementThresholds(draft.elementThresholds ?? {});
+      pushNotification({ kind: "success", text: "Черновик траектории восстановлен." });
+    } catch {
+      window.localStorage.removeItem(trajectoryDraftKey(disciplineId));
+    } finally {
+      setDraftRestored(true);
+    }
+  }, [disciplineId, draftRestored]);
+
+  useEffect(() => {
+    if (!disciplineId || !draftRestored) return;
+
+    const snapshot: TrajectoryDraftSnapshot = {
+      version: 1,
+      trajectoryName,
+      selectedTeacherId,
+      selectedGroupId,
+      targetMode,
+      selectedSubgroupId,
+      selectedTopicIds,
+      topicThresholds,
+      selectedElementsByTopic,
+      elementThresholds,
+      updatedAt: new Date().toISOString(),
+    };
+
+    try {
+      if (hasDraftContent(snapshot)) {
+        window.localStorage.setItem(trajectoryDraftKey(disciplineId), JSON.stringify(snapshot));
+      } else {
+        window.localStorage.removeItem(trajectoryDraftKey(disciplineId));
+      }
+    } catch {
+      pushNotification({
+        kind: "error",
+        text: "Не удалось автосохранить черновик траектории в браузере.",
+      });
+    }
+  }, [
+    disciplineId,
+    draftRestored,
+    elementThresholds,
+    selectedElementsByTopic,
+    selectedGroupId,
+    selectedSubgroupId,
+    selectedTeacherId,
+    selectedTopicIds,
+    targetMode,
+    topicThresholds,
+    trajectoryName,
+  ]);
+
+  useEffect(() => {
     if (selectedTeacherId && disciplineTeachers.some((teacher) => teacher.id === selectedTeacherId)) {
       return;
     }
@@ -1205,6 +1315,7 @@ export default function TrajectoryGraphBuilder() {
         })),
       });
 
+      window.localStorage.removeItem(trajectoryDraftKey(disciplineId));
       setTrajectoryName("");
       setSelectedTopicIds([]);
       setTopicThresholds({});
@@ -1413,6 +1524,7 @@ export default function TrajectoryGraphBuilder() {
           <section className="card card--soft">
             <p className="card__eyebrow">Настройки</p>
             <h2>{activeDiscipline?.name ?? "Дисциплина"}</h2>
+            <p className="draft-autosave-note">Черновик автосохраняется в этом браузере.</p>
 
             <div className="trajectory-settings">
               <label className="field">
@@ -1520,7 +1632,11 @@ export default function TrajectoryGraphBuilder() {
                   >
                     <strong>{trajectory.name}</strong>
                     <span>
-                      {trajectory.topics.length} тем · {trajectory.group_id
+                      {trajectory.topics.length} тем · {trajectory.status === "draft"
+                        ? "черновик"
+                        : trajectory.status === "active"
+                          ? "активна"
+                          : "архив"} · {trajectory.is_actual ? "актуальна" : "устарела"} · {trajectory.group_id
                         ? groupById.get(trajectory.group_id)?.name
                         : "без группы"}
                     </span>
