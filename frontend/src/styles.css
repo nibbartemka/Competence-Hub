@@ -1117,6 +1117,41 @@ textarea {
   overflow-wrap: anywhere;
 }
 
+.graph-node__progress {
+  display: grid;
+  gap: 6px;
+  margin-top: 4px;
+}
+
+.graph-node__progress-label {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  color: #4e6788;
+  font-size: 0.76rem;
+  font-weight: 800;
+}
+
+.graph-node__progress-label strong {
+  color: #226b4b;
+  font-size: 0.82rem;
+}
+
+.graph-node__progress-bar {
+  height: 8px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: rgba(31, 55, 84, 0.1);
+}
+
+.graph-node__progress-bar i {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(135deg, #36a96d, #78d7a4);
+}
+
 .graph-node__metrics {
   display: flex;
   flex-wrap: wrap;
@@ -1601,6 +1636,7 @@ textarea {
 }
 
 .toast-message button {
+  position: relative;
   width: 28px;
   height: 28px;
   border: 0;
@@ -1611,6 +1647,27 @@ textarea {
   font-size: 1.15rem;
   font-weight: 900;
   line-height: 1;
+}
+
+.toast-message__close::before,
+.toast-message__close::after {
+  content: "";
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 12px;
+  height: 2px;
+  border-radius: 999px;
+  background: currentColor;
+  transform-origin: center;
+}
+
+.toast-message__close::before {
+  transform: translate(-50%, -50%) rotate(45deg);
+}
+
+.toast-message__close::after {
+  transform: translate(-50%, -50%) rotate(-45deg);
 }
 
 .toast-message--success::before {
@@ -1636,8 +1693,23 @@ textarea {
 }
 
 .home-grid--triad {
+  width: 100%;
   max-width: 1480px;
   margin: 0 auto;
+}
+
+.home-grid--triad > .home-card {
+  min-height: 332px;
+  display: flex;
+  flex-direction: column;
+}
+
+.home-grid--triad > .home-card .home-form {
+  flex: 1;
+}
+
+.home-grid--triad > .home-card .home-form .primary-button {
+  margin-top: auto;
 }
 
 .home-sections {
@@ -1648,6 +1720,8 @@ textarea {
 }
 
 .home-section {
+  width: min(1480px, 100%);
+  margin: 0 auto;
   display: grid;
   gap: 0;
 }
@@ -1946,13 +2020,20 @@ textarea {
 }
 
 .role-page > .status-view,
-.discipline-overview-page > .status-view {
+.discipline-overview-page > .status-view,
+.immersive-page__status {
   position: relative;
+  inset: auto;
   min-height: 420px;
   margin-top: 22px;
   border-radius: 28px;
   background: rgba(255, 255, 255, 0.68);
   box-shadow: var(--card-shadow);
+}
+
+.student-dashboard-shell > .immersive-page__status {
+  width: 100%;
+  margin-top: 0;
 }
 
 .primary-button,
@@ -2158,6 +2239,46 @@ textarea {
   padding: 10px 12px;
 }
 
+.trajectory-task-preview {
+  display: grid;
+  gap: 10px;
+  padding: 16px;
+  border: 1px solid rgba(31, 55, 84, 0.1);
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.72);
+}
+
+.trajectory-task-preview > p {
+  margin: 0;
+  color: #203854;
+  font-weight: 800;
+}
+
+.trajectory-task-preview > span {
+  color: #5d718b;
+  line-height: 1.5;
+}
+
+.trajectory-task-preview__items {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.trajectory-task-preview__item {
+  border-radius: 999px;
+  padding: 8px 12px;
+  background: rgba(236, 243, 247, 0.9);
+  color: #405a78;
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.trajectory-task-preview__item--correct {
+  background: rgba(211, 242, 225, 0.95);
+  color: #146c53;
+}
+
 .trajectory-task-list {
   display: grid;
   gap: 12px;
@@ -2249,6 +2370,77 @@ textarea {
     rgba(255, 255, 255, 0.82);
 }
 
+.student-task-card__feedback {
+  border-radius: 18px;
+  padding: 12px 14px;
+  background: rgba(211, 237, 223, 0.82);
+  color: #1f6f4a;
+  font-weight: 800;
+}
+
+.student-control-header {
+  width: min(1180px, calc(100% - 48px));
+  margin: 28px auto 18px;
+  border-radius: 30px;
+  padding: 28px 34px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 24px;
+  background: rgba(255, 255, 255, 0.76);
+  border: 1px solid rgba(179, 201, 222, 0.56);
+  box-shadow: 0 24px 70px rgba(57, 81, 109, 0.14);
+}
+
+.student-control-layout {
+  width: min(1180px, calc(100% - 48px));
+  margin: 0 auto 48px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 340px;
+  gap: 22px;
+  align-items: start;
+}
+
+.student-control-task {
+  min-height: 420px;
+}
+
+.student-control-task__status {
+  min-height: 320px;
+}
+
+.student-control-panel {
+  position: sticky;
+  top: 20px;
+}
+
+.mastery-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  padding: 14px 0;
+  border-bottom: 1px solid rgba(115, 139, 166, 0.18);
+}
+
+.mastery-row:last-child {
+  border-bottom: 0;
+}
+
+.mastery-row div {
+  display: grid;
+  gap: 4px;
+}
+
+.mastery-row strong {
+  color: #1f3550;
+}
+
+.mastery-row span {
+  color: #5c7190;
+  font-weight: 800;
+}
+
 .student-progress {
   display: flex;
   flex-wrap: wrap;
@@ -2282,6 +2474,24 @@ textarea {
 }
 
 @media (max-width: 980px) {
+  .student-control-header,
+  .student-control-layout {
+    width: min(100% - 24px, 720px);
+  }
+
+  .student-control-header {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .student-control-layout {
+    grid-template-columns: 1fr;
+  }
+
+  .student-control-panel {
+    position: static;
+  }
+
   .home-shell {
     padding: 18px;
   }

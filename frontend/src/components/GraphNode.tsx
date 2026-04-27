@@ -81,11 +81,14 @@ export function GraphNode({ node }: RGNodeSlotProps) {
   const lockState = runtimeState?.lockStateByNodeId?.has(node.id)
     ? runtimeState.lockStateByNodeId.get(node.id)
     : data.lockState;
-  const cardAction = runtimeState?.cardActionByNodeId?.get(node.id) ??
+  const cardAction =
+    runtimeState?.cardActionByNodeId?.get(node.id) ??
     (hasCardAction(data) ? data.onCardClick : undefined);
-  const hintAction = runtimeState?.hintActionByNodeId?.get(node.id) ??
+  const hintAction =
+    runtimeState?.hintActionByNodeId?.get(node.id) ??
     (hasHintAction(data) ? data.onHintClick : undefined);
-  const secondaryHintAction = runtimeState?.secondaryHintActionByNodeId?.get(node.id) ??
+  const secondaryHintAction =
+    runtimeState?.secondaryHintActionByNodeId?.get(node.id) ??
     (hasSecondaryHintAction(data) ? data.onSecondaryHintClick : undefined);
 
   const handleActionKeyDown =
@@ -156,9 +159,7 @@ export function GraphNode({ node }: RGNodeSlotProps) {
       ) : null}
 
       <div className="graph-node__header">
-        <span
-          className={`graph-node__badge graph-node__badge--${data.badgeTone ?? data.tone}`}
-        >
+        <span className={`graph-node__badge graph-node__badge--${data.badgeTone ?? data.tone}`}>
           {data.badge}
         </span>
 
@@ -193,8 +194,18 @@ export function GraphNode({ node }: RGNodeSlotProps) {
 
       <strong className="graph-node__title">{data.title}</strong>
       {data.subtitle ? <p className="graph-node__subtitle">{data.subtitle}</p> : null}
-      {data.description ? (
-        <p className="graph-node__description">{data.description}</p>
+      {data.description ? <p className="graph-node__description">{data.description}</p> : null}
+
+      {typeof data.progressValue === "number" ? (
+        <div className="graph-node__progress">
+          <div className="graph-node__progress-label">
+            <span>{data.progressLabel ?? "Прогресс"}</span>
+            <strong>{Math.max(0, Math.min(100, Math.round(data.progressValue)))}</strong>
+          </div>
+          <div className="graph-node__progress-bar">
+            <i style={{ width: `${Math.max(0, Math.min(100, data.progressValue))}%` }} />
+          </div>
+        </div>
       ) : null}
 
       {metrics.length ? (

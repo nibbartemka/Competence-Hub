@@ -14,7 +14,7 @@ import { actionHoverMotion, cardHoverMotion, revealMotion } from "./motionPreset
 import type {
   DisciplineKnowledgeGraph,
   Group,
-  LearningTrajectory,
+  LearningTrajectorySummary,
   Subgroup,
   Teacher,
 } from "./types";
@@ -26,7 +26,7 @@ function extractErrorMessage(error: unknown) {
   return "Не удалось загрузить страницу дисциплины.";
 }
 
-function trajectoryStatusLabel(status: LearningTrajectory["status"]) {
+function trajectoryStatusLabel(status: LearningTrajectorySummary["status"]) {
   if (status === "active") return "Активна";
   if (status === "archived") return "Архив";
   return "Черновик";
@@ -40,7 +40,7 @@ export default function DisciplineOverviewPage() {
   const [groups, setGroups] = useState<Group[]>([]);
   const [subgroups, setSubgroups] = useState<Subgroup[]>([]);
   const [teachers, setTeachers] = useState<Teacher[]>([]);
-  const [trajectories, setTrajectories] = useState<LearningTrajectory[]>([]);
+  const [trajectories, setTrajectories] = useState<LearningTrajectorySummary[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 

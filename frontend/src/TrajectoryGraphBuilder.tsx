@@ -30,7 +30,7 @@ import type {
   Group,
   KnowledgeElement,
   KnowledgeElementRelationType,
-  LearningTrajectory,
+  LearningTrajectorySummary,
   SceneNodeData,
   Subgroup,
   Teacher,
@@ -231,7 +231,7 @@ export default function TrajectoryGraphBuilder() {
   const [teachers, setTeachers] = useState<Teacher[]>([]);
   const [subgroups, setSubgroups] = useState<Subgroup[]>([]);
   const [graph, setGraph] = useState<DisciplineKnowledgeGraph | null>(null);
-  const [trajectories, setTrajectories] = useState<LearningTrajectory[]>([]);
+  const [trajectories, setTrajectories] = useState<LearningTrajectorySummary[]>([]);
 
   const [trajectoryName, setTrajectoryName] = useState("");
   const [selectedTeacherId, setSelectedTeacherId] = useState("");
@@ -1490,12 +1490,11 @@ export default function TrajectoryGraphBuilder() {
             >
               <p>{notification.text}</p>
               <button
+                className="toast-message__close"
                 aria-label="Закрыть уведомление"
                 onClick={() => dismissNotification(notification.id)}
                 type="button"
-              >
-                ×
-              </button>
+              />
             </article>
           ))}
         </div>
@@ -1623,7 +1622,7 @@ export default function TrajectoryGraphBuilder() {
                   >
                     <strong>{trajectory.name}</strong>
                     <span>
-                      {trajectory.topics.length} тем · {trajectory.status === "draft"
+                      {trajectory.topic_count} тем · {trajectory.status === "draft"
                         ? "черновик"
                         : trajectory.status === "active"
                           ? "активна"

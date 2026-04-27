@@ -14,7 +14,9 @@ from .knowledge_elements import (
 from .learning_trajectories import (
     LearningTrajectoryCreate,
     LearningTrajectoryRead,
+    LearningTrajectorySummaryRead,
     LearningTrajectoryStatusUpdate,
+    StudentLearningTrajectorySummaryRead,
     LearningTrajectoryTopicOrderUpdate,
     LearningTrajectoryTopicCreate,
     LearningTrajectoryTopicRead,
@@ -25,11 +27,16 @@ from .learning_trajectory_tasks import (
     LearningTrajectoryTaskCreate,
     LearningTrajectoryTaskElementRead,
     LearningTrajectoryTaskRead,
+    LearningTrajectoryTaskRelationRead,
     LearningTrajectoryTaskUpdate,
     StudentAssignedTaskRead,
     StudentTaskAnswerSubmit,
     StudentTaskElementStateRead,
     StudentTaskProgressRead,
+)
+from .learning_control import (
+    StudentTopicControlElementRead,
+    StudentTopicControlRead,
 )
 from .topic_dependencies import TopicDependencyCreate, TopicDependencyRead
 from .topic_knowledge_elements import (
@@ -62,7 +69,9 @@ __all__ = [
     "KnowledgeElementUpdate",
     "LearningTrajectoryCreate",
     "LearningTrajectoryRead",
+    "LearningTrajectorySummaryRead",
     "LearningTrajectoryStatusUpdate",
+    "StudentLearningTrajectorySummaryRead",
     "LearningTrajectoryTopicOrderUpdate",
     "LearningTrajectoryTopicCreate",
     "LearningTrajectoryTopicRead",
@@ -71,11 +80,14 @@ __all__ = [
     "LearningTrajectoryTaskCreate",
     "LearningTrajectoryTaskElementRead",
     "LearningTrajectoryTaskRead",
+    "LearningTrajectoryTaskRelationRead",
     "LearningTrajectoryTaskUpdate",
     "StudentAssignedTaskRead",
     "StudentTaskAnswerSubmit",
     "StudentTaskElementStateRead",
     "StudentTaskProgressRead",
+    "StudentTopicControlElementRead",
+    "StudentTopicControlRead",
     "TopicKnowledgeElementCreate",
     "TopicKnowledgeElementRead",
     "KnowledgeElementRelationCreate",

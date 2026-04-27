@@ -77,4 +77,17 @@ class LearningTrajectoryTaskType(StrEnum):
     SINGLE_CHOICE = "single_choice"
     MULTIPLE_CHOICE = "multiple_choice"
     MATCHING = "matching"
+    ORDERING = "ordering"
     TEXT = "text"
+
+
+class LearningTrajectoryTaskTemplateKind(StrEnum):
+    DEFINITION_CHOICE = "definition_choice"
+    TERM_CHOICE = "term_choice"
+    RELATION_CHOICE = "relation_choice"
+    REQUIRES_ORDERING = "requires_ordering"
+    CONTAINS_MULTIPLE = "contains_multiple"
+    MATCHING_DEFINITION = "matching_definition"
+    CONTRAST_CHOICE = "contrast_choice"
+    TEXT_DEFINITION = "text_definition"
+    MANUAL = "manual"

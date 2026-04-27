@@ -6,6 +6,7 @@ import DisciplineOverviewPage from "./DisciplineOverviewPage";
 import { HomePage } from "./HomePage";
 import KnowledgeGraph from "./KnowledgeGraph";
 import StudentDashboardPage from "./StudentDashboardPage";
+import StudentTopicControlPage from "./StudentTopicControlPage";
 import TeacherDashboardPage from "./TeacherDashboardPage";
 import TrajectoryGraphBuilder from "./TrajectoryGraphBuilder";
 import TrajectoryDetailPage from "./TrajectoryDetailPage";
@@ -22,6 +23,10 @@ const router = createBrowserRouter([
   },
   { path: "/teachers/:teacherId", element: <TeacherDashboardPage /> },
   { path: "/students/:studentId", element: <StudentDashboardPage /> },
+  {
+    path: "/students/:studentId/trajectories/:trajectoryId/control/:topicId",
+    element: <StudentTopicControlPage />,
+  },
 ]);
 
 ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(

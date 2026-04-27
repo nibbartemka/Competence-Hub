@@ -382,6 +382,20 @@ def _sync_sqlite_schema(connection) -> None:
                     "ADD COLUMN content_json TEXT NOT NULL DEFAULT '{}'"
                 )
             )
+        if not _sqlite_has_column(connection, "learning_trajectory_tasks", "title"):
+            connection.execute(
+                text(
+                    "ALTER TABLE learning_trajectory_tasks "
+                    "ADD COLUMN title TEXT NOT NULL DEFAULT ''"
+                )
+            )
+        if not _sqlite_has_column(connection, "learning_trajectory_tasks", "template_kind"):
+            connection.execute(
+                text(
+                    "ALTER TABLE learning_trajectory_tasks "
+                    "ADD COLUMN template_kind TEXT NOT NULL DEFAULT 'manual'"
+                )
+            )
     if _sqlite_has_table(connection, "student_task_progress") and not _sqlite_has_column(
         connection, "student_task_progress", "last_answer_payload"
     ):
@@ -389,6 +403,15 @@ def _sync_sqlite_schema(connection) -> None:
             text(
                 "ALTER TABLE student_task_progress "
                 "ADD COLUMN last_answer_payload TEXT"
+            )
+        )
+    if _sqlite_has_table(connection, "student_task_progress") and not _sqlite_has_column(
+        connection, "student_task_progress", "last_feedback_json"
+    ):
+        connection.execute(
+            text(
+                "ALTER TABLE student_task_progress "
+                "ADD COLUMN last_feedback_json TEXT"
             )
         )
 

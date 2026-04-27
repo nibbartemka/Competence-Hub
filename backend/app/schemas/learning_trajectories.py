@@ -67,3 +67,24 @@ class LearningTrajectoryRead(BaseModel):
     group_id: UUID | None
     subgroup_id: UUID | None
     topics: list[LearningTrajectoryTopicRead] = Field(default_factory=list)
+
+
+class LearningTrajectorySummaryRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+    name: str
+    status: LearningTrajectoryStatus
+    graph_version: int
+    is_actual: bool
+    discipline_id: UUID
+    teacher_id: UUID
+    group_id: UUID | None
+    subgroup_id: UUID | None
+    topic_count: int = 0
+
+
+class StudentLearningTrajectorySummaryRead(LearningTrajectorySummaryRead):
+    total_task_count: int = 0
+    completed_task_count: int = 0
+    progress_percent: int = 0

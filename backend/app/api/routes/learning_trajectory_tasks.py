@@ -15,12 +15,20 @@ from app.models import (
     LearningTrajectoryElement,
     LearningTrajectoryTask,
     LearningTrajectoryTaskElement,
+    LearningTrajectoryTaskRelation,
     LearningTrajectoryTopic,
     Student,
     StudentElementMastery,
+    StudentTaskAttempt,
+    StudentTaskInstance,
     StudentTaskProgress,
 )
-from app.models.enums import LearningTrajectoryStatus, StudentTaskProgressStatus
+from app.models.enums import (
+    CompetenceType,
+    LearningTrajectoryStatus,
+    LearningTrajectoryTaskType,
+    StudentTaskProgressStatus,
+)
 from app.schemas import (
     LearningTrajectoryTaskCreate,
     LearningTrajectoryTaskRead,
@@ -37,8 +45,10 @@ from app.services.learning_tasks import (
     ensure_task_write_allowed,
     evaluate_task_answer,
     merge_mastery_value,
+    parse_task_content_json,
     prerequisites_ready,
-    task_priority,
+    select_next_task,
+    TASK_CHECKED_RELATIONS,
     validate_manual_task_payload,
 )
 
@@ -62,6 +72,10 @@ def _task_read_options():
         selectinload(LearningTrajectoryTask.trajectory).selectinload(
             LearningTrajectory.discipline
         ),
+        selectinload(LearningTrajectoryTask.trajectory)
+        .selectinload(LearningTrajectory.topics)
+        .selectinload(LearningTrajectoryTopic.elements)
+        .selectinload(LearningTrajectoryElement.element),
         selectinload(LearningTrajectoryTask.trajectory_topic).selectinload(
             LearningTrajectoryTopic.topic
         ),
@@ -69,6 +83,12 @@ def _task_read_options():
         selectinload(LearningTrajectoryTask.related_elements).selectinload(
             LearningTrajectoryTaskElement.element
         ),
+        selectinload(LearningTrajectoryTask.checked_relations)
+        .selectinload(LearningTrajectoryTaskRelation.relation)
+        .selectinload(KnowledgeElementRelation.source_element),
+        selectinload(LearningTrajectoryTask.checked_relations)
+        .selectinload(LearningTrajectoryTaskRelation.relation)
+        .selectinload(KnowledgeElementRelation.target_element),
         selectinload(LearningTrajectoryTask.student_progress_entries),
     )
 
@@ -115,6 +135,8 @@ async def _load_student_tasks(
     student: Student,
     session: DbSession,
     discipline_id: UUID | None = None,
+    trajectory_id: UUID | None = None,
+    topic_id: UUID | None = None,
 ) -> list[LearningTrajectoryTask]:
     query = (
         select(LearningTrajectoryTask)
@@ -123,6 +145,7 @@ async def _load_student_tasks(
         .where(
             LearningTrajectory.status == LearningTrajectoryStatus.ACTIVE,
             LearningTrajectory.group_id == student.group_id,
+            LearningTrajectoryTask.task_type != LearningTrajectoryTaskType.TEXT,
         )
     )
 
@@ -138,11 +161,55 @@ async def _load_student_tasks(
 
     if discipline_id is not None:
         query = query.where(LearningTrajectory.discipline_id == discipline_id)
+    if trajectory_id is not None:
+        query = query.where(LearningTrajectoryTask.trajectory_id == trajectory_id)
+    if topic_id is not None:
+        query = query.join(
+            LearningTrajectoryTopic,
+            LearningTrajectoryTask.trajectory_topic_id == LearningTrajectoryTopic.id,
+        ).where(LearningTrajectoryTopic.topic_id == topic_id)
 
     result = await session.execute(
         query.order_by(LearningTrajectoryTask.created_at.desc())
     )
     return list(result.scalars().all())
+
+
+def _trajectory_topic_mastery(
+    trajectory_topic: LearningTrajectoryTopic,
+    mastery_by_element_id: dict[UUID, int],
+) -> int:
+    element_ids = [element.element_id for element in trajectory_topic.elements]
+    if not element_ids:
+        return 100
+    return round(
+        sum(mastery_by_element_id.get(element_id, 0) for element_id in element_ids)
+        / len(element_ids)
+    )
+
+
+def _trajectory_topic_is_unlocked(
+    trajectory: LearningTrajectory,
+    trajectory_topic: LearningTrajectoryTopic,
+    mastery_by_element_id: dict[UUID, int],
+) -> bool:
+    for previous_topic in trajectory.topics:
+        if previous_topic.position >= trajectory_topic.position:
+            continue
+        if _trajectory_topic_mastery(previous_topic, mastery_by_element_id) < previous_topic.threshold:
+            return False
+    return True
+
+
+def _topic_is_unlocked(
+    task: LearningTrajectoryTask,
+    mastery_by_element_id: dict[UUID, int],
+) -> bool:
+    return _trajectory_topic_is_unlocked(
+        task.trajectory,
+        task.trajectory_topic,
+        mastery_by_element_id,
+    )
 
 
 async def _load_mastery_map(
@@ -181,6 +248,85 @@ async def _load_relation_map(
         .where(KnowledgeElement.discipline_id.in_(discipline_ids))
     )
     return build_relation_maps(list(result.scalars().all()))
+
+
+async def _validate_checked_relations(
+    trajectory: LearningTrajectory,
+    primary_element_id: UUID,
+    related_element_ids: list[UUID],
+    checked_relation_ids: list[UUID],
+    session: DbSession,
+) -> list[KnowledgeElementRelation]:
+    if not checked_relation_ids:
+        return []
+    if len(checked_relation_ids) != len(set(checked_relation_ids)):
+        raise bad_request("Проверяемые связи в одном задании не должны повторяться.")
+
+    checked_element_ids = {primary_element_id, *related_element_ids}
+    result = await session.execute(
+        select(KnowledgeElementRelation)
+        .options(
+            selectinload(KnowledgeElementRelation.source_element),
+            selectinload(KnowledgeElementRelation.target_element),
+        )
+        .where(KnowledgeElementRelation.id.in_(checked_relation_ids))
+    )
+    relations = list(result.scalars().all())
+    relation_by_id = {relation.id: relation for relation in relations}
+    missing_ids = [relation_id for relation_id in checked_relation_ids if relation_id not in relation_by_id]
+    if missing_ids:
+        raise bad_request("Одна из проверяемых связей не найдена.")
+
+    for relation in relations:
+        if relation.relation_type not in TASK_CHECKED_RELATIONS:
+            raise bad_request("Для заданий «Знать» выбрана неподдерживаемая проверяемая связь.")
+        if (
+            relation.source_element_id not in checked_element_ids
+            or relation.target_element_id not in checked_element_ids
+        ):
+            raise bad_request(
+                "Проверяемая связь должна соединять ключевой элемент и выбранные связанные элементы задания."
+            )
+        if (
+            relation.source_element.discipline_id != trajectory.discipline_id
+            or relation.target_element.discipline_id != trajectory.discipline_id
+        ):
+            raise bad_request("Проверяемая связь должна принадлежать дисциплине этой траектории.")
+        if (
+            relation.source_element.competence_type != CompetenceType.KNOW
+            or relation.target_element.competence_type != CompetenceType.KNOW
+        ):
+            raise bad_request("Проверяемые связи в заданиях пока доступны только для элементов «Знать».")
+
+    return [relation_by_id[relation_id] for relation_id in checked_relation_ids]
+
+
+async def _get_or_create_task_instance(
+    student: Student,
+    task: LearningTrajectoryTask,
+    session: DbSession,
+) -> StudentTaskInstance:
+    result = await session.execute(
+        select(StudentTaskInstance)
+        .where(
+            StudentTaskInstance.student_id == student.id,
+            StudentTaskInstance.task_id == task.id,
+            StudentTaskInstance.answered_at.is_(None),
+        )
+        .order_by(StudentTaskInstance.issued_at.desc())
+    )
+    instance = result.scalars().first()
+    if instance is not None:
+        return instance
+
+    instance = StudentTaskInstance(
+        student_id=student.id,
+        task_id=task.id,
+        content_snapshot_json=task.content_json,
+    )
+    session.add(instance)
+    await flush_or_409(session)
+    return instance
 
 
 async def _upsert_student_mastery(
@@ -224,7 +370,10 @@ async def list_learning_trajectory_tasks(
     result = await session.execute(
         select(LearningTrajectoryTask)
         .options(*_task_read_options())
-        .where(LearningTrajectoryTask.trajectory_id == trajectory_id)
+        .where(
+            LearningTrajectoryTask.trajectory_id == trajectory_id,
+            LearningTrajectoryTask.task_type != LearningTrajectoryTaskType.TEXT,
+        )
         .order_by(LearningTrajectoryTask.created_at.desc())
     )
     return [build_task_read(task) for task in result.scalars().all()]
@@ -242,6 +391,13 @@ async def create_learning_trajectory_task(
 ) -> LearningTrajectoryTaskRead:
     trajectory = await _get_trajectory_for_tasks(trajectory_id, session)
     normalized_content = validate_manual_task_payload(trajectory, payload)
+    checked_relations = await _validate_checked_relations(
+        trajectory=trajectory,
+        primary_element_id=payload.primary_element_id,
+        related_element_ids=payload.related_element_ids,
+        checked_relation_ids=payload.checked_relation_ids,
+        session=session,
+    )
 
     trajectory_topic = next(
         topic for topic in trajectory.topics if topic.topic_id == payload.topic_id
@@ -251,6 +407,8 @@ async def create_learning_trajectory_task(
         trajectory_topic_id=trajectory_topic.id,
         primary_element_id=payload.primary_element_id,
         task_type=payload.task_type,
+        template_kind=payload.template_kind,
+        title=payload.title.strip(),
         prompt=payload.prompt.strip(),
         content_json=dump_task_content(normalized_content),
         difficulty=payload.difficulty,
@@ -263,6 +421,13 @@ async def create_learning_trajectory_task(
             LearningTrajectoryTaskElement(
                 task_id=task.id,
                 element_id=related_element_id,
+            )
+        )
+    for relation in checked_relations:
+        session.add(
+            LearningTrajectoryTaskRelation(
+                task_id=task.id,
+                relation_id=relation.id,
             )
         )
 
@@ -282,6 +447,13 @@ async def update_learning_trajectory_task(
         trajectory,
         LearningTrajectoryTaskCreate(**payload.model_dump()),
     )
+    checked_relations = await _validate_checked_relations(
+        trajectory=trajectory,
+        primary_element_id=payload.primary_element_id,
+        related_element_ids=payload.related_element_ids,
+        checked_relation_ids=payload.checked_relation_ids,
+        session=session,
+    )
 
     trajectory_topic = next(
         topic for topic in trajectory.topics if topic.topic_id == payload.topic_id
@@ -289,6 +461,8 @@ async def update_learning_trajectory_task(
     task.trajectory_topic_id = trajectory_topic.id
     task.primary_element_id = payload.primary_element_id
     task.task_type = payload.task_type
+    task.template_kind = payload.template_kind
+    task.title = payload.title.strip()
     task.prompt = payload.prompt.strip()
     task.content_json = dump_task_content(normalized_content)
     task.difficulty = payload.difficulty
@@ -296,6 +470,8 @@ async def update_learning_trajectory_task(
 
     for related_element in list(task.related_elements):
         await session.delete(related_element)
+    for checked_relation in list(task.checked_relations):
+        await session.delete(checked_relation)
     await flush_or_409(session)
 
     for related_element_id in payload.related_element_ids:
@@ -303,6 +479,13 @@ async def update_learning_trajectory_task(
             LearningTrajectoryTaskElement(
                 task_id=task.id,
                 element_id=related_element_id,
+            )
+        )
+    for relation in checked_relations:
+        session.add(
+            LearningTrajectoryTaskRelation(
+                task_id=task.id,
+                relation_id=relation.id,
             )
         )
 
@@ -328,12 +511,14 @@ async def list_student_tasks(
     student_id: UUID,
     session: DbSession,
     discipline_id: UUID | None = None,
+    trajectory_id: UUID | None = None,
+    topic_id: UUID | None = None,
 ) -> list[StudentAssignedTaskRead]:
     student = await session.get(Student, student_id)
     if student is None:
         raise not_found("Student", student_id)
 
-    tasks = await _load_student_tasks(student, session, discipline_id)
+    tasks = await _load_student_tasks(student, session, discipline_id, trajectory_id, topic_id)
     discipline_ids = {task.trajectory.discipline_id for task in tasks}
     mastery_by_element_id = await _load_mastery_map(student.id, discipline_ids, session)
 
@@ -369,12 +554,14 @@ async def get_recommended_student_task(
     student_id: UUID,
     session: DbSession,
     discipline_id: UUID | None = None,
+    trajectory_id: UUID | None = None,
+    topic_id: UUID | None = None,
 ) -> StudentAssignedTaskRead | None:
     student = await session.get(Student, student_id)
     if student is None:
         raise not_found("Student", student_id)
 
-    tasks = await _load_student_tasks(student, session, discipline_id)
+    tasks = await _load_student_tasks(student, session, discipline_id, trajectory_id, topic_id)
     if not tasks:
         return None
 
@@ -382,8 +569,8 @@ async def get_recommended_student_task(
     mastery_by_element_id = await _load_mastery_map(student.id, discipline_ids, session)
     outgoing_by_source, degree_by_element_id = await _load_relation_map(discipline_ids, session)
 
-    candidates: list[tuple[float, LearningTrajectoryTask, StudentTaskProgress | None]] = []
-    fallback_candidates: list[tuple[float, LearningTrajectoryTask, StudentTaskProgress | None]] = []
+    candidates: list[tuple[LearningTrajectoryTask, StudentTaskProgress | None]] = []
+    fallback_candidates: list[tuple[LearningTrajectoryTask, StudentTaskProgress | None]] = []
     for task in tasks:
         progress = next(
             (
@@ -395,25 +582,31 @@ async def get_recommended_student_task(
         )
         if not prerequisites_ready(task, mastery_by_element_id, outgoing_by_source):
             continue
+        if not _topic_is_unlocked(task, mastery_by_element_id):
+            continue
 
-        score = task_priority(task, mastery_by_element_id, degree_by_element_id, progress)
-        fallback_candidates.append((score, task, progress))
+        fallback_candidates.append((task, progress))
         primary_mastery = mastery_by_element_id.get(task.primary_element_id, 0)
         if primary_mastery < 85 or progress is None or progress.status != StudentTaskProgressStatus.COMPLETED:
-            candidates.append((score, task, progress))
+            candidates.append((task, progress))
 
     pool = candidates or fallback_candidates
-    if not pool:
+    selected = select_next_task(pool, mastery_by_element_id, degree_by_element_id)
+    if selected is None:
         return None
 
-    pool.sort(key=lambda item: item[0], reverse=True)
-    recommendation_score, task, progress = pool[0]
+    task, progress, recommendation_score = selected
+    instance = await _get_or_create_task_instance(student, task, session)
+    await commit_or_409(session)
+    content_snapshot = parse_task_content_json(instance.content_snapshot_json)
     return build_student_task_read(
         task=task,
         discipline_name=task.trajectory.discipline.name,
         mastery_by_element_id=mastery_by_element_id,
         progress=progress,
         recommendation_score=round(recommendation_score, 4),
+        task_instance_id=instance.id,
+        content_snapshot=content_snapshot,
     )
 
 
@@ -435,8 +628,23 @@ async def submit_student_task_score(
     if not _student_can_access_task(student, task):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="Task is not assigned to this student.",
+            detail="Задание не назначено этому студенту.",
         )
+
+    if payload.task_instance_id is not None:
+        instance = await session.get(StudentTaskInstance, payload.task_instance_id)
+        if (
+            instance is None
+            or instance.student_id != student.id
+            or instance.task_id != task.id
+        ):
+            raise bad_request("Экземпляр задания не найден для этого студента.")
+        if instance.answered_at is not None:
+            raise bad_request("Этот экземпляр задания уже был отправлен.")
+    else:
+        instance = await _get_or_create_task_instance(student, task, session)
+
+    content_snapshot = parse_task_content_json(instance.content_snapshot_json)
 
     result = await session.execute(
         select(StudentTaskProgress).where(
@@ -449,23 +657,44 @@ async def submit_student_task_score(
         progress = StudentTaskProgress(
             student_id=student.id,
             task_id=task.id,
+            attempts_count=0,
+            status=StudentTaskProgressStatus.NOT_STARTED,
         )
         session.add(progress)
 
-    score, normalized_answer_payload = evaluate_task_answer(task, payload.answer_payload)
+    score, normalized_answer_payload, feedback = evaluate_task_answer(
+        task,
+        payload.answer_payload,
+        content_snapshot=content_snapshot,
+    )
+    answered_at = datetime.utcnow()
+    instance.answered_at = answered_at
+    session.add(
+        StudentTaskAttempt(
+            instance_id=instance.id,
+            student_id=student.id,
+            task_id=task.id,
+            answer_payload_json=dump_task_content(normalized_answer_payload),
+            feedback_json=dump_task_content(feedback),
+            score=score,
+            duration_seconds=payload.duration_seconds,
+            answered_at=answered_at,
+        )
+    )
 
-    progress.attempts_count += 1
+    progress.attempts_count = (progress.attempts_count or 0) + 1
     progress.last_score = score
     progress.best_score = max(progress.best_score or 0, score)
-    progress.last_answered_at = datetime.utcnow()
+    progress.last_answered_at = answered_at
     progress.last_answer_payload = dump_task_content(normalized_answer_payload)
+    progress.last_feedback_json = dump_task_content(feedback)
     progress.status = (
         StudentTaskProgressStatus.COMPLETED
         if score >= 60
         else StudentTaskProgressStatus.IN_PROGRESS
     )
     if progress.status == StudentTaskProgressStatus.COMPLETED:
-        progress.completed_at = datetime.utcnow()
+        progress.completed_at = answered_at
 
     affected_element_ids = [task.primary_element_id] + [
         related.element_id for related in task.related_elements

@@ -1,7 +1,13 @@
 from __future__ import annotations
 
-from pathlib import Path
+import json
+import os
+import random
 import sys
+from dataclasses import dataclass
+from datetime import UTC, datetime
+from pathlib import Path
+from typing import Iterable
 
 from sqlalchemy import create_engine, select
 from sqlalchemy.orm import Session, sessionmaker
@@ -14,32 +20,98 @@ if str(ROOT_DIR) not in sys.path:
 from app.core import Base
 from app.models import (
     Discipline,
+    Group,
+    GroupDiscipline,
     KnowledgeElement,
     KnowledgeElementRelation,
+    LearningTrajectory,
+    LearningTrajectoryElement,
+    LearningTrajectoryTask,
+    LearningTrajectoryTaskElement,
+    LearningTrajectoryTaskRelation,
+    LearningTrajectoryTopic,
+    Student,
+    StudentDiscipline,
+    StudentElementMastery,
+    StudentTaskAttempt,
+    StudentTaskInstance,
+    StudentTaskProgress,
+    Subgroup,
+    Teacher,
+    TeacherDiscipline,
+    TeacherGroup,
+    TeacherSubgroup,
     Topic,
     TopicDependency,
     TopicKnowledgeElement,
-    Group,
-    GroupDiscipline,
-    Teacher,
-    Subgroup,
-    Student,
-    TeacherGroup,
-    TeacherDiscipline,
-    TeacherSubgroup,
-    StudentDiscipline,
 )
 from app.models.enums import (
     CompetenceType,
     KnowledgeElementRelationType,
+    LearningTrajectoryStatus,
+    LearningTrajectoryTaskTemplateKind,
+    LearningTrajectoryTaskType,
+    StudentTaskProgressStatus,
     TopicDependencyRelationType,
+    TopicDependencySource,
     TopicKnowledgeElementRole,
 )
 from app.services.topic_dependencies import calculate_topic_dependency_pairs
 
 
-DB_PATH = ROOT_DIR / "app.db"
+DB_PATH = Path(os.environ.get("COMPETENCE_HUB_DB_PATH", str(ROOT_DIR / "app.db")))
 DATABASE_URL = f"sqlite:///{DB_PATH.as_posix()}"
+RNG = random.Random(42)
+
+
+@dataclass(frozen=True)
+class TopicBlueprint:
+    index: int
+    title: str
+    summary: str
+    know_core: str
+    know_detail: str
+    prerequisites: tuple[int, ...] = ()
+
+
+TOPIC_BLUEPRINTS: list[TopicBlueprint] = [
+    TopicBlueprint(1, "Введение в графы", "Базовые определения и способ чтения графовой модели.", "Понятие графа", "Вершина и ребро"),
+    TopicBlueprint(2, "Ориентированные графы", "Направление связи и интерпретация дуг.", "Ориентированный граф", "Дуга и направление", (1,)),
+    TopicBlueprint(3, "Неориентированные и двудольные графы", "Классические типы графов и их признаки.", "Неориентированный граф", "Двудольный граф", (1,)),
+    TopicBlueprint(4, "Матричные представления", "Матрицы смежности и инцидентности.", "Матрица смежности", "Матрица инцидентности", (2, 3)),
+    TopicBlueprint(5, "Степени и локальные характеристики", "Степени вершин, полустепени и локальные свойства.", "Степень вершины", "Полустепень вершины", (4,)),
+    TopicBlueprint(6, "Маршруты и цепи", "Маршруты, цепи и длина пути.", "Маршрут в графе", "Цепь и путь", (4,)),
+    TopicBlueprint(7, "Циклы и связность", "Связность, цикличность и компоненты.", "Цикл в графе", "Связность графа", (5, 6)),
+    TopicBlueprint(8, "Достижимость", "Переходы между вершинами и достижимость.", "Достижимость вершины", "Контрдостижимость", (6,)),
+    TopicBlueprint(9, "Сильная связность", "Сильные компоненты и их анализ.", "Сильная связность", "Компонента сильной связности", (7, 8)),
+    TopicBlueprint(10, "Деревья", "Деревья, леса и корневые структуры.", "Дерево", "Лес графа", (7,)),
+    TopicBlueprint(11, "Остовы", "Остовные подграфы и остовные деревья.", "Остовный подграф", "Остовное дерево", (10,)),
+    TopicBlueprint(12, "Кратчайшие пути", "Постановка задач о кратчайшем пути.", "Кратчайший путь", "Вес пути", (11,)),
+    TopicBlueprint(13, "Алгоритм Дейкстры", "Жадный подход для неотрицательных весов.", "Алгоритм Дейкстры", "Релаксация расстояний", (12,)),
+    TopicBlueprint(14, "Алгоритм Беллмана-Форда", "Кратчайшие пути при возможных отрицательных весах.", "Алгоритм Беллмана-Форда", "Отрицательный цикл", (12,)),
+    TopicBlueprint(15, "Флойд-Уоршелл", "Кратчайшие пути между всеми парами вершин.", "Алгоритм Флойда-Уоршелла", "Матрица кратчайших путей", (13, 14)),
+    TopicBlueprint(16, "Независимые множества", "Независимость вершин и ограничения конфликтов.", "Независимое множество", "Максимальное независимое множество", (5, 7)),
+    TopicBlueprint(17, "Доминирующие множества", "Покрытие графа через доминирование.", "Доминирующее множество", "Минимальное доминирующее множество", (16,)),
+    TopicBlueprint(18, "Покрытия", "Покрытия вершин и ребер.", "Покрытие вершин", "Покрытие ребер", (16, 17)),
+    TopicBlueprint(19, "Раскраски", "Назначение цветов и конфликтные ограничения.", "Раскраска графа", "Правильная раскраска", (4, 18)),
+    TopicBlueprint(20, "Хроматическое число", "Минимальное число цветов для корректной раскраски.", "Хроматическое число", "Оценка хроматического числа", (19,)),
+    TopicBlueprint(21, "Паросочетания", "Паросочетания и их свойства.", "Паросочетание", "Максимальное паросочетание", (18, 19)),
+    TopicBlueprint(22, "Назначения", "Модель назначения как развитие задачи о паросочетаниях.", "Задача о назначениях", "Матрица стоимости назначения", (21,)),
+    TopicBlueprint(23, "Потоки в сетях", "Сети, пропускные способности и допустимые потоки.", "Поток в сети", "Пропускная способность", (8, 11)),
+    TopicBlueprint(24, "Максимальный поток", "Поиск максимального значения потока.", "Максимальный поток", "Увеличивающий путь", (23,)),
+    TopicBlueprint(25, "Минимальный разрез", "Связь разрезов и потоков.", "Минимальный разрез", "Теорема max-flow min-cut", (23,)),
+    TopicBlueprint(26, "Поток минимальной стоимости", "Потоки с учетом стоимости транспортировки.", "Поток минимальной стоимости", "Стоимость потока", (24, 25)),
+    TopicBlueprint(27, "Эйлеровы цепи", "Эйлеровы обходы и условия существования.", "Эйлерова цепь", "Эйлеров цикл", (7, 10)),
+    TopicBlueprint(28, "Гамильтоновы циклы", "Обходы по вершинам без повторений.", "Гамильтонов цикл", "Гамильтонова цепь", (7, 27)),
+    TopicBlueprint(29, "Коммивояжер", "Маршрутные оптимизационные постановки.", "Задача коммивояжера", "Тур коммивояжера", (15, 28)),
+    TopicBlueprint(30, "Планарные графы", "Плоские укладки и ограничения планарности.", "Планарный граф", "Формула Эйлера для планарных графов", (3, 19)),
+    TopicBlueprint(31, "Специальные классы графов", "Классы графов с особыми структурными свойствами.", "Полный граф", "Регулярный граф", (3, 21)),
+    TopicBlueprint(32, "Изоморфизм графов", "Сравнение структур графов по взаимно-однозначному соответствию.", "Изоморфизм графов", "Инварианты графа", (1, 3)),
+    TopicBlueprint(33, "Центры и медианы", "Центральные вершины и оптимальное размещение.", "Центр графа", "Медиана графа", (6, 15)),
+    TopicBlueprint(34, "Прикладное моделирование", "Связка графовых моделей с практическими задачами.", "Графовая модель задачи", "Интерпретация решения на графе", (23, 29, 33)),
+]
+
+assert len(TOPIC_BLUEPRINTS) == 34
 
 
 def recreate_database() -> None:
@@ -50,7 +122,6 @@ def recreate_database() -> None:
     Base.metadata.create_all(engine)
 
     session_local = sessionmaker(bind=engine, autoflush=False, autocommit=False, future=True)
-
     with session_local() as session:
         seed_data(session)
         session.commit()
@@ -58,925 +129,745 @@ def recreate_database() -> None:
     print(f"Database recreated: {DB_PATH.resolve()}")
 
 
-def seed_data(session: Session) -> None:
-    KNOW = CompetenceType.KNOW
-    CAN = CompetenceType.CAN
-    MASTER = CompetenceType.MASTER
+def utcnow_naive() -> datetime:
+    return datetime.now(UTC).replace(tzinfo=None)
 
-    discipline = Discipline(name="Теория графов (Кристофидес)")
+
+def seed_data(session: Session) -> None:
+    discipline = Discipline(name="Теория графов. Демонстрационный контур", knowledge_graph_version=1)
     session.add(discipline)
     session.flush()
 
-    element_specs = [
-        # ===== ГЛАВА 1. ВВЕДЕНИЕ =====
-        (
-            "Понятие графа",
-            "Знание определения графа, вершин, ребер и базовых обозначений.",
-            KNOW,
-        ),
-        (
-            "Пути и маршруты",
-            "Знание понятий путь, маршрут, простая цепь, длина пути.",
-            KNOW,
-        ),
-        (
-            "Циклы и петли",
-            "Знание понятий цикл, ориентированный цикл, замкнутый путь, петля.",
-            KNOW,
-        ),
-        (
-            "Определять тип графа",
-            "Умение различать ориентированный, неориентированный, полный, двудольный, планарный граф.",
-            CAN,
-        ),
-        (
-            "Представлять граф матрицей",
-            "Умение строить матрицу смежности и матрицу инцидентности.",
-            CAN,
-        ),
-        (
-            "Свободно оперировать базовыми представлениями графа",
-            "Владение переходом между рисунком графа, множественным и матричным представлением.",
-            MASTER,
-        ),
+    topics_by_index, elements_by_topic = build_knowledge_graph(session, discipline)
+    build_topic_dependencies(session, topics_by_index)
 
-        # ===== ГЛАВА 2. ДОСТИЖИМОСТЬ И СВЯЗНОСТЬ =====
-        (
-            "Достижимость",
-            "Знание понятия достижимости и контрадостижимости в ориентированном графе.",
-            KNOW,
-        ),
-        (
-            "Сильная компонента",
-            "Знание понятия сильной компоненты и связности графа.",
-            KNOW,
-        ),
-        (
-            "Матрица достижимости",
-            "Умение строить и использовать матрицу достижимости.",
-            CAN,
-        ),
-        (
-            "Находить сильные компоненты",
-            "Умение выделять сильные компоненты графа.",
-            CAN,
-        ),
-        (
-            "Анализировать структуру связности графа",
-            "Владение анализом баз, сильных компонент и ограниченной достижимости.",
-            MASTER,
-        ),
+    people = build_people_and_group_data(session, discipline)
+    trajectories = build_learning_trajectories(
+        session=session,
+        discipline=discipline,
+        topics_by_index=topics_by_index,
+        elements_by_topic=elements_by_topic,
+        people=people,
+    )
+    seed_student_mastery_and_progress(
+        session=session,
+        discipline=discipline,
+        trajectories=trajectories,
+        people=people,
+    )
+    print_seed_summary(session, discipline)
 
-        # ===== ГЛАВА 3. НЕЗАВИСИМЫЕ / ДОМИНИРУЮЩИЕ МНОЖЕСТВА / ПОКРЫТИЕ =====
-        (
-            "Независимое множество",
-            "Знание понятия независимого множества вершин.",
-            KNOW,
-        ),
-        (
-            "Доминирующее множество",
-            "Знание понятия доминирующего множества.",
-            KNOW,
-        ),
-        (
-            "Покрытие в графе",
-            "Знание задачи о покрытии и ее интерпретаций.",
-            KNOW,
-        ),
-        (
-            "Находить покрытия и независимые множества",
-            "Умение формулировать и решать задачи на независимые, доминирующие множества и покрытия.",
-            CAN,
-        ),
-        (
-            "Моделировать прикладные задачи как покрытие",
-            "Владение сведением прикладных задач к задачам покрытия.",
-            MASTER,
-        ),
 
-        # ===== ГЛАВА 4. РАСКРАСКИ =====
-        (
-            "Хроматическое число",
-            "Знание понятия хроматического числа и основных оценок.",
-            KNOW,
-        ),
-        (
-            "Раскраска графа",
-            "Знание постановки задачи раскраски графа.",
-            KNOW,
-        ),
-        (
-            "Выполнять точную раскраску",
-            "Умение применять точные алгоритмы раскраски.",
-            CAN,
-        ),
-        (
-            "Выполнять приближенную раскраску",
-            "Умение применять приближенные алгоритмы раскраски.",
-            CAN,
-        ),
-        (
-            "Выбирать метод раскраски под задачу",
-            "Владение выбором стратегии раскраски в зависимости от ограничений задачи.",
-            MASTER,
-        ),
+def build_knowledge_graph(
+    session: Session,
+    discipline: Discipline,
+) -> tuple[dict[int, Topic], dict[int, dict[str, KnowledgeElement]]]:
+    topics_by_index: dict[int, Topic] = {}
+    elements_by_topic: dict[int, dict[str, KnowledgeElement]] = {}
 
-        # ===== ГЛАВА 5. РАЗМЕЩЕНИЕ ЦЕНТРОВ =====
-        (
-            "Центр и радиус графа",
-            "Знание понятий центр, радиус, абсолютный центр графа.",
-            KNOW,
-        ),
-        (
-            "p-центр",
-            "Знание понятия кратного центра и абсолютного p-центра.",
-            KNOW,
-        ),
-        (
-            "Находить центр графа",
-            "Умение находить центр, абсолютный центр и p-центр графа.",
-            CAN,
-        ),
-        (
-            "Решать задачи размещения центров",
-            "Владение моделированием задач размещения сервисов и пунктов обслуживания через центры графа.",
-            MASTER,
-        ),
-
-        # ===== ГЛАВА 6. РАЗМЕЩЕНИЕ МЕДИАН =====
-        (
-            "Медиана графа",
-            "Знание понятия медианы и p-медианы графа.",
-            KNOW,
-        ),
-        (
-            "Обобщенная p-медиана",
-            "Знание постановки задачи обобщенной p-медианы.",
-            KNOW,
-        ),
-        (
-            "Находить медиану графа",
-            "Умение решать задачу о медиане и p-медиане.",
-            CAN,
-        ),
-        (
-            "Решать задачи размещения медиан",
-            "Владение выбором медианных моделей для задач минимизации суммарных затрат.",
-            MASTER,
-        ),
-
-        # ===== ГЛАВА 7. ДЕРЕВЬЯ =====
-        (
-            "Дерево и остов",
-            "Знание понятий дерево, остовное дерево, остовный подграф.",
-            KNOW,
-        ),
-        (
-            "Кратчайший остов",
-            "Знание постановки задачи о кратчайшем остове.",
-            KNOW,
-        ),
-        (
-            "Строить остовные деревья",
-            "Умение строить остовные деревья и кратчайший остов.",
-            CAN,
-        ),
-        (
-            "Задача Штейнера",
-            "Знание и понимание задачи Штейнера на графах.",
-            KNOW,
-        ),
-        (
-            "Применять остовные конструкции",
-            "Владение использованием остовов и деревьев Штейнера в проектировании сетей.",
-            MASTER,
-        ),
-
-        # ===== ГЛАВА 8. КРАТЧАЙШИЕ ПУТИ =====
-        (
-            "Кратчайший путь",
-            "Знание постановки задачи о кратчайшем пути.",
-            KNOW,
-        ),
-        (
-            "Кратчайшие пути между всеми парами",
-            "Знание постановки задачи кратчайших путей между всеми парами вершин.",
-            KNOW,
-        ),
-        (
-            "Находить кратчайшие пути",
-            "Умение решать задачу кратчайшего пути между двумя вершинами и между всеми парами.",
-            CAN,
-        ),
-        (
-            "Обнаруживать отрицательные циклы",
-            "Умение обнаруживать циклы отрицательного веса.",
-            CAN,
-        ),
-        (
-            "Применять модели кратчайших путей",
-            "Владение использованием моделей кратчайших путей в маршрутизации и сетевом планировании.",
-            MASTER,
-        ),
-
-        # ===== ГЛАВА 9. ЦИКЛЫ, РАЗРЕЗЫ И ЭЙЛЕР =====
-        (
-            "Цикломатическое число",
-            "Знание цикломатического числа и фундаментальных циклов.",
-            KNOW,
-        ),
-        (
-            "Разрез графа",
-            "Знание понятия разреза и матриц циклов и разрезов.",
-            KNOW,
-        ),
-        (
-            "Эйлеров цикл",
-            "Знание условий существования эйлерова цикла.",
-            KNOW,
-        ),
-        (
-            "Находить эйлеровы циклы",
-            "Умение строить эйлеровы циклы и решать задачу китайского почтальона.",
-            CAN,
-        ),
-        (
-            "Анализировать циклическую структуру графа",
-            "Владение использованием циклов и разрезов для анализа структуры сети.",
-            MASTER,
-        ),
-
-        # ===== ГЛАВА 10. ГАМИЛЬТОН / КОММИВОЯЖЕР =====
-        (
-            "Гамильтонов цикл",
-            "Знание понятия гамильтонова цикла и цепи.",
-            KNOW,
-        ),
-        (
-            "Задача коммивояжера",
-            "Знание постановки задачи коммивояжера.",
-            KNOW,
-        ),
-        (
-            "Искать гамильтоновы циклы",
-            "Умение применять методы поиска гамильтоновых циклов.",
-            CAN,
-        ),
-        (
-            "Связывать TSP с остовом и назначениями",
-            "Умение использовать связи задачи коммивояжера с задачей остова и назначений.",
-            CAN,
-        ),
-        (
-            "Проектировать маршруты обхода",
-            "Владение выбором моделей обхода и транспортных маршрутов.",
-            MASTER,
-        ),
-
-        # ===== ГЛАВА 11. ПОТОКИ В СЕТЯХ =====
-        (
-            "Поток в сети",
-            "Знание понятий поток, источник, сток, пропускная способность.",
-            KNOW,
-        ),
-        (
-            "Максимальный поток",
-            "Знание постановки задачи о максимальном потоке.",
-            KNOW,
-        ),
-        (
-            "Находить максимальный поток",
-            "Умение решать задачу о максимальном потоке.",
-            CAN,
-        ),
-        (
-            "Поток минимальной стоимости",
-            "Знание и понимание задачи о потоке минимальной стоимости.",
-            KNOW,
-        ),
-        (
-            "Моделировать сетевые потоки",
-            "Владение моделями потоков для транспортных и производственных сетей.",
-            MASTER,
-        ),
-
-        # ===== ГЛАВА 12. ПАРОСОЧЕТАНИЯ / НАЗНАЧЕНИЯ =====
-        (
-            "Паросочетание",
-            "Знание понятия паросочетания и его видов.",
-            KNOW,
-        ),
-        (
-            "Задача о назначениях",
-            "Знание постановки задачи о назначениях.",
-            KNOW,
-        ),
-        (
-            "Находить максимальное паросочетание",
-            "Умение находить наибольшие и максимальные паросочетания.",
-            CAN,
-        ),
-        (
-            "Решать задачу о назначениях",
-            "Умение решать задачу о назначениях и связанные транспортные задачи.",
-            CAN,
-        ),
-        (
-            "Использовать модели соответствия и назначения",
-            "Владение сведением прикладных задач к паросочетаниям, назначениям и покрытиям.",
-            MASTER,
-        ),
-    ]
-
-    elements: dict[str, KnowledgeElement] = {}
-
-    for name, description, competence_type in element_specs:
-        element = KnowledgeElement(
-            name=name,
-            description=description,
-            competence_type=competence_type,
-            discipline_id=discipline.id,
-        )
-        session.add(element)
-        elements[name] = element
-
-    session.flush()
-
-    topics_spec = [
-        {
-            "name": "Глава 1. Введение",
-            "description": "Базовые понятия графов: определения, пути, циклы, степени, подграфы, типы графов, матричные представления.",
-            "required": [],
-            "formed": [
-                "Понятие графа",
-                "Пути и маршруты",
-                "Циклы и петли",
-                "Определять тип графа",
-                "Представлять граф матрицей",
-                "Свободно оперировать базовыми представлениями графа",
-            ],
-        },
-        {
-            "name": "Глава 2. Достижимость и связность",
-            "description": "Достижимость, сильные компоненты, базы, ограниченная достижимость.",
-            "required": [
-                "Понятие графа",
-                "Пути и маршруты",
-                "Циклы и петли",
-                "Представлять граф матрицей",
-            ],
-            "formed": [
-                "Достижимость",
-                "Сильная компонента",
-                "Матрица достижимости",
-                "Находить сильные компоненты",
-                "Анализировать структуру связности графа",
-            ],
-        },
-        {
-            "name": "Глава 3. Независимые и доминирующие множества. Покрытие",
-            "description": "Независимые множества, доминирующие множества, задача о покрытии.",
-            "required": [
-                "Понятие графа",
-                "Пути и маршруты",
-                "Определять тип графа",
-            ],
-            "formed": [
-                "Независимое множество",
-                "Доминирующее множество",
-                "Покрытие в графе",
-                "Находить покрытия и независимые множества",
-                "Моделировать прикладные задачи как покрытие",
-            ],
-        },
-        {
-            "name": "Глава 4. Раскраски",
-            "description": "Хроматическое число, точные и приближенные алгоритмы раскраски.",
-            "required": [
-                "Понятие графа",
-                "Определять тип графа",
-                "Независимое множество",
-            ],
-            "formed": [
-                "Хроматическое число",
-                "Раскраска графа",
-                "Выполнять точную раскраску",
-                "Выполнять приближенную раскраску",
-                "Выбирать метод раскраски под задачу",
-            ],
-        },
-        {
-            "name": "Глава 5. Размещение центров",
-            "description": "Центр, радиус, абсолютный центр, p-центры.",
-            "required": [
-                "Понятие графа",
-                "Пути и маршруты",
-            ],
-            "formed": [
-                "Центр и радиус графа",
-                "p-центр",
-                "Находить центр графа",
-                "Решать задачи размещения центров",
-            ],
-        },
-        {
-            "name": "Глава 6. Размещение медиан в графе",
-            "description": "Медианы и p-медианы графа.",
-            "required": [
-                "Понятие графа",
-                "Пути и маршруты",
-                "Центр и радиус графа",
-            ],
-            "formed": [
-                "Медиана графа",
-                "Обобщенная p-медиана",
-                "Находить медиану графа",
-                "Решать задачи размещения медиан",
-            ],
-        },
-        {
-            "name": "Глава 7. Деревья",
-            "description": "Остовные деревья, кратчайший остов, задача Штейнера.",
-            "required": [
-                "Понятие графа",
-                "Пути и маршруты",
-                "Циклы и петли",
-            ],
-            "formed": [
-                "Дерево и остов",
-                "Кратчайший остов",
-                "Строить остовные деревья",
-                "Задача Штейнера",
-                "Применять остовные конструкции",
-            ],
-        },
-        {
-            "name": "Глава 8. Кратчайшие пути",
-            "description": "Кратчайшие пути между двумя вершинами и всеми парами, отрицательные циклы.",
-            "required": [
-                "Понятие графа",
-                "Пути и маршруты",
-                "Представлять граф матрицей",
-                "Дерево и остов",
-            ],
-            "formed": [
-                "Кратчайший путь",
-                "Кратчайшие пути между всеми парами",
-                "Находить кратчайшие пути",
-                "Обнаруживать отрицательные циклы",
-                "Применять модели кратчайших путей",
-            ],
-        },
-        {
-            "name": "Глава 9. Циклы, разрезы и задача Эйлера",
-            "description": "Цикломатическое число, разрезы, матрицы циклов и разрезов, эйлеровы циклы.",
-            "required": [
-                "Понятие графа",
-                "Пути и маршруты",
-                "Циклы и петли",
-                "Дерево и остов",
-            ],
-            "formed": [
-                "Цикломатическое число",
-                "Разрез графа",
-                "Эйлеров цикл",
-                "Находить эйлеровы циклы",
-                "Анализировать циклическую структуру графа",
-            ],
-        },
-        {
-            "name": "Глава 10. Гамильтоновы циклы, цепи и задача коммивояжера",
-            "description": "Гамильтоновы циклы, задача коммивояжера, связи с остовом и назначениями.",
-            "required": [
-                "Понятие графа",
-                "Пути и маршруты",
-                "Циклы и петли",
-                "Кратчайший остов",
-            ],
-            "formed": [
-                "Гамильтонов цикл",
-                "Задача коммивояжера",
-                "Искать гамильтоновы циклы",
-                "Связывать TSP с остовом и назначениями",
-                "Проектировать маршруты обхода",
-            ],
-        },
-        {
-            "name": "Глава 11. Потоки в сетях",
-            "description": "Максимальный поток, поток минимальной стоимости, потоки в графах с выигрышами.",
-            "required": [
-                "Понятие графа",
-                "Пути и маршруты",
-                "Разрез графа",
-                "Представлять граф матрицей",
-            ],
-            "formed": [
-                "Поток в сети",
-                "Максимальный поток",
-                "Находить максимальный поток",
-                "Поток минимальной стоимости",
-                "Моделировать сетевые потоки",
-            ],
-        },
-        {
-            "name": "Глава 12. Паросочетания, транспортная задача и задача о назначениях",
-            "description": "Паросочетания, задача о назначениях, покрытия, остовные подграфы с предписанными степенями.",
-            "required": [
-                "Понятие графа",
-                "Покрытие в графе",
-                "Поток в сети",
-                "Максимальный поток",
-            ],
-            "formed": [
-                "Паросочетание",
-                "Задача о назначениях",
-                "Находить максимальное паросочетание",
-                "Решать задачу о назначениях",
-                "Использовать модели соответствия и назначения",
-            ],
-        },
-    ]
-
-    topics: dict[str, Topic] = {}
-
-    for spec in topics_spec:
+    for blueprint in TOPIC_BLUEPRINTS:
         topic = Topic(
-            name=spec["name"],
-            description=spec["description"],
+            name=f"Тема {blueprint.index}. {blueprint.title}",
+            description=blueprint.summary,
             discipline_id=discipline.id,
         )
         session.add(topic)
-        topics[spec["name"]] = topic
+        session.flush()
+        topics_by_index[blueprint.index] = topic
 
-    session.flush()
+        topic_elements = {
+            "know_core": KnowledgeElement(
+                name=blueprint.know_core,
+                description=f"Ключевое теоретическое понятие темы «{blueprint.title}».",
+                competence_type=CompetenceType.KNOW,
+                discipline_id=discipline.id,
+            ),
+            "know_detail": KnowledgeElement(
+                name=blueprint.know_detail,
+                description=f"Уточняющее или связанное понятие темы «{blueprint.title}».",
+                competence_type=CompetenceType.KNOW,
+                discipline_id=discipline.id,
+            ),
+            "can": KnowledgeElement(
+                name=f"Решать задачи по теме «{blueprint.title}»",
+                description=f"Умение применять идеи темы «{blueprint.title}» в задачах.",
+                competence_type=CompetenceType.CAN,
+                discipline_id=discipline.id,
+            ),
+            "master": KnowledgeElement(
+                name=f"Моделировать прикладные случаи по теме «{blueprint.title}»",
+                description=f"Владение устойчивым применением темы «{blueprint.title}» в моделировании.",
+                competence_type=CompetenceType.MASTER,
+                discipline_id=discipline.id,
+            ),
+        }
+        session.add_all(topic_elements.values())
+        session.flush()
+        elements_by_topic[blueprint.index] = topic_elements
 
-    for spec in topics_spec:
-        topic = topics[spec["name"]]
+        required_elements: list[KnowledgeElement] = []
+        for prerequisite_index in blueprint.prerequisites:
+            prerequisite_elements = elements_by_topic[prerequisite_index]
+            required_elements.append(prerequisite_elements["know_core"])
+            required_elements.append(prerequisite_elements["know_detail"])
 
-        for element_name in spec["required"]:
-            session.add(
-                TopicKnowledgeElement(
-                    topic_id=topic.id,
-                    element_id=elements[element_name].id,
-                    role=TopicKnowledgeElementRole.REQUIRED,
-                    note=f"'{element_name}' is required before starting topic '{topic.name}'",
-                )
+        topic_links = [
+            TopicKnowledgeElement(
+                topic_id=topic.id,
+                element_id=element.id,
+                role=TopicKnowledgeElementRole.FORMED,
             )
-
-        for element_name in spec["formed"]:
-            session.add(
-                TopicKnowledgeElement(
-                    topic_id=topic.id,
-                    element_id=elements[element_name].id,
-                    role=TopicKnowledgeElementRole.FORMED,
-                    note=f"'{element_name}' is formed while studying topic '{topic.name}'",
-                )
-            )
-
-    session.flush()
-
-    seed_knowledge_element_relations(session, elements)
-    build_topic_dependencies(session)
-    build_people_and_group_data(session, discipline)
-    print_seed_summary(session)
-
-
-def seed_knowledge_element_relations(
-    session: Session,
-    elements: dict[str, KnowledgeElement],
-) -> None:
-    relations_spec = [
-        (
-            "Пути и маршруты",
-            "Понятие графа",
-            KnowledgeElementRelationType.REQUIRES,
-            "The concept of a path is defined only after mastering the concept of a graph.",
-        ),
-        (
-            "Циклы и петли",
-            "Пути и маршруты",
-            KnowledgeElementRelationType.BUILDS_ON,
-            "The concept of a cycle is built on the concept of a path and route.",
-        ),
-        (
-            "Определять тип графа",
-            "Понятие графа",
-            KnowledgeElementRelationType.IMPLEMENTS,
-            "Knowledge of the graph concept is expressed in the ability to classify graphs.",
-        ),
-        (
-            "Представлять граф матрицей",
-            "Понятие графа",
-            KnowledgeElementRelationType.IMPLEMENTS,
-            "Basic graph knowledge is expressed in matrix representation.",
-        ),
-        (
-            "Матрица достижимости",
-            "Достижимость",
-            KnowledgeElementRelationType.IMPLEMENTS,
-            "The reachability concept is implemented in constructing the reachability matrix.",
-        ),
-        (
-            "Сильная компонента",
-            "Достижимость",
-            KnowledgeElementRelationType.REQUIRES,
-            "The concept of a strongly connected component requires understanding reachability.",
-        ),
-        (
-            "Находить сильные компоненты",
-            "Сильная компонента",
-            KnowledgeElementRelationType.IMPLEMENTS,
-            "Understanding strong connectivity is expressed in the ability to find components.",
-        ),
-        (
-            "Покрытие в графе",
-            "Независимое множество",
-            KnowledgeElementRelationType.CONTRASTS_WITH,
-            "Covering and independent sets must be distinguished.",
-        ),
-        (
-            "Доминирующее множество",
-            "Покрытие в графе",
-            KnowledgeElementRelationType.SIMILAR,
-            "Dominating sets are conceptually related to covering problems.",
-        ),
-        (
-            "Раскраска графа",
-            "Независимое множество",
-            KnowledgeElementRelationType.BUILDS_ON,
-            "Graph coloring is closely related to partitioning into independent sets.",
-        ),
-        (
-            "Хроматическое число",
-            "Раскраска графа",
-            KnowledgeElementRelationType.PROPERTY_OF,
-            "The chromatic number is a property of graph coloring.",
-        ),
-        (
-            "Выполнять точную раскраску",
-            "Раскраска графа",
-            KnowledgeElementRelationType.IMPLEMENTS,
-            "Knowledge of graph coloring is expressed in the ability to perform exact coloring.",
-        ),
-        (
-            "Выполнять приближенную раскраску",
-            "Выполнять точную раскраску",
-            KnowledgeElementRelationType.CONTRASTS_WITH,
-            "Approximate and exact coloring are different solution strategies.",
-        ),
-        (
-            "p-центр",
-            "Центр и радиус графа",
-            KnowledgeElementRelationType.REFINES,
-            "The p-center refines the broader center concept.",
-        ),
-        (
-            "Медиана графа",
-            "Центр и радиус графа",
-            KnowledgeElementRelationType.CONTRASTS_WITH,
-            "Center-based and median-based models solve different optimization problems.",
-        ),
-        (
-            "Дерево и остов",
-            "Циклы и петли",
-            KnowledgeElementRelationType.CONTRASTS_WITH,
-            "A tree is characterized by the absence of cycles.",
-        ),
-        (
-            "Кратчайший остов",
-            "Дерево и остов",
-            KnowledgeElementRelationType.REFINES,
-            "A minimum spanning tree refines the spanning tree concept.",
-        ),
-        (
-            "Строить остовные деревья",
-            "Кратчайший остов",
-            KnowledgeElementRelationType.IMPLEMENTS,
-            "Understanding spanning trees is expressed in the ability to construct them.",
-        ),
-        (
-            "Кратчайший путь",
-            "Пути и маршруты",
-            KnowledgeElementRelationType.REFINES,
-            "The shortest path is a refinement of the general path concept.",
-        ),
-        (
-            "Находить кратчайшие пути",
-            "Кратчайший путь",
-            KnowledgeElementRelationType.IMPLEMENTS,
-            "Knowledge of shortest paths is expressed in algorithmic solving ability.",
-        ),
-        (
-            "Обнаруживать отрицательные циклы",
-            "Кратчайший путь",
-            KnowledgeElementRelationType.USED_WITH,
-            "Negative cycle detection is used together with shortest path problems.",
-        ),
-        (
-            "Эйлеров цикл",
-            "Циклы и петли",
-            KnowledgeElementRelationType.REFINES,
-            "An Eulerian cycle refines the general cycle concept.",
-        ),
-        (
-            "Гамильтонов цикл",
-            "Циклы и петли",
-            KnowledgeElementRelationType.REFINES,
-            "A Hamiltonian cycle refines the general cycle concept.",
-        ),
-        (
-            "Гамильтонов цикл",
-            "Эйлеров цикл",
-            KnowledgeElementRelationType.CONTRASTS_WITH,
-            "Hamiltonian and Eulerian cycles must be distinguished.",
-        ),
-        (
-            "Задача коммивояжера",
-            "Гамильтонов цикл",
-            KnowledgeElementRelationType.BUILDS_ON,
-            "The traveling salesman problem is built on the idea of a Hamiltonian tour.",
-        ),
-        (
-            "Связывать TSP с остовом и назначениями",
-            "Задача коммивояжера",
-            KnowledgeElementRelationType.IMPLEMENTS,
-            "Knowledge of TSP is expressed in the ability to relate it to spanning tree and assignment models.",
-        ),
-        (
-            "Максимальный поток",
-            "Поток в сети",
-            KnowledgeElementRelationType.REFINES,
-            "Maximum flow refines the general flow model.",
-        ),
-        (
-            "Поток минимальной стоимости",
-            "Поток в сети",
-            KnowledgeElementRelationType.REFINES,
-            "Minimum-cost flow refines the general flow model.",
-        ),
-        (
-            "Находить максимальный поток",
-            "Максимальный поток",
-            KnowledgeElementRelationType.IMPLEMENTS,
-            "Understanding maximum flow is expressed in the ability to solve it algorithmically.",
-        ),
-        (
-            "Паросочетание",
-            "Покрытие в графе",
-            KnowledgeElementRelationType.USED_WITH,
-            "Matchings are tightly related to covering problems.",
-        ),
-        (
-            "Находить максимальное паросочетание",
-            "Паросочетание",
-            KnowledgeElementRelationType.IMPLEMENTS,
-            "Matching knowledge is expressed in the ability to find maximum matchings.",
-        ),
-        (
-            "Задача о назначениях",
-            "Паросочетание",
-            KnowledgeElementRelationType.BUILDS_ON,
-            "The assignment problem is built on the matching model.",
-        ),
-        (
-            "Решать задачу о назначениях",
-            "Задача о назначениях",
-            KnowledgeElementRelationType.IMPLEMENTS,
-            "Knowledge of the assignment problem is expressed in the ability to solve it.",
-        ),
-        (
-            "Использовать модели соответствия и назначения",
-            "Решать задачу о назначениях",
-            KnowledgeElementRelationType.AUTOMATES,
-            "A stable skill of solving assignment problems turns into mastery of applied modeling.",
-        ),
-    ]
-
-    session.add_all(
-        [
-            KnowledgeElementRelation(
-                source_element_id=elements[source_name].id,
-                target_element_id=elements[target_name].id,
-                relation_type=relation_type,
-                description=description,
-            )
-            for source_name, target_name, relation_type, description in relations_spec
+            for element in topic_elements.values()
         ]
-    )
+        topic_links.extend(
+            TopicKnowledgeElement(
+                topic_id=topic.id,
+                element_id=element.id,
+                role=TopicKnowledgeElementRole.REQUIRED,
+            )
+            for element in required_elements
+        )
+        session.add_all(topic_links)
+        session.flush()
+
+    session.add_all(build_knowledge_relations(elements_by_topic))
     session.flush()
+    return topics_by_index, elements_by_topic
 
 
-def build_topic_dependencies(session: Session) -> None:
-    topics = session.scalars(select(Topic)).all()
+def build_knowledge_relations(
+    elements_by_topic: dict[int, dict[str, KnowledgeElement]],
+) -> list[KnowledgeElementRelation]:
+    relations: list[KnowledgeElementRelation] = []
+
+    for blueprint in TOPIC_BLUEPRINTS:
+        current = elements_by_topic[blueprint.index]
+        relations.extend(
+            [
+                KnowledgeElementRelation(
+                    source_element_id=current["know_detail"].id,
+                    target_element_id=current["know_core"].id,
+                    relation_type=KnowledgeElementRelationType.REFINES,
+                    description="Уточняющее понятие конкретизирует базовое.",
+                ),
+                KnowledgeElementRelation(
+                    source_element_id=current["can"].id,
+                    target_element_id=current["know_core"].id,
+                    relation_type=KnowledgeElementRelationType.IMPLEMENTS,
+                    description="Теоретическое знание выражается в действии.",
+                ),
+                KnowledgeElementRelation(
+                    source_element_id=current["master"].id,
+                    target_element_id=current["can"].id,
+                    relation_type=KnowledgeElementRelationType.AUTOMATES,
+                    description="Устойчивый навык вырастает из освоенного умения.",
+                ),
+            ]
+        )
+
+        for prerequisite_index in blueprint.prerequisites:
+            prerequisite = elements_by_topic[prerequisite_index]
+            relations.extend(
+                [
+                    KnowledgeElementRelation(
+                        source_element_id=current["know_core"].id,
+                        target_element_id=prerequisite["know_core"].id,
+                        relation_type=KnowledgeElementRelationType.REQUIRES,
+                        description="Новое понятие опирается на базу предыдущей темы.",
+                    ),
+                    KnowledgeElementRelation(
+                        source_element_id=current["know_detail"].id,
+                        target_element_id=prerequisite["know_detail"].id,
+                        relation_type=KnowledgeElementRelationType.BUILDS_ON,
+                        description="Уточнение строится на ранее изученном уточнении.",
+                    ),
+                    KnowledgeElementRelation(
+                        source_element_id=current["know_core"].id,
+                        target_element_id=prerequisite["know_detail"].id,
+                        relation_type=KnowledgeElementRelationType.USED_WITH,
+                        description="Понятия часто используются совместно в решении задач.",
+                    ),
+                ]
+            )
+
+    return relations
+
+
+def build_topic_dependencies(session: Session, topics_by_index: dict[int, Topic]) -> None:
+    topics = [topics_by_index[index] for index in sorted(topics_by_index)]
     topic_links = session.scalars(select(TopicKnowledgeElement)).all()
-    topic_by_id = {topic.id: topic for topic in topics}
     dependency_pairs = calculate_topic_dependency_pairs(topics, topic_links)
 
-    dependencies_to_add = [
+    dependencies = [
         TopicDependency(
             prerequisite_topic_id=prerequisite_topic_id,
             dependent_topic_id=dependent_topic_id,
             relation_type=TopicDependencyRelationType.REQUIRES,
-            description=(
-                f"Auto-built from formed elements of "
-                f"'{topic_by_id[prerequisite_topic_id].name}' and required elements of "
-                f"'{topic_by_id[dependent_topic_id].name}'"
-            ),
+            source=TopicDependencySource.COMPUTED,
+            description="Связь вычислена автоматически по пересечению требуемых и формируемых элементов.",
         )
         for prerequisite_topic_id, dependent_topic_id in sorted(
             dependency_pairs,
-            key=lambda pair: (
-                topic_by_id[pair[0]].name,
-                topic_by_id[pair[1]].name,
-            ),
+            key=lambda pair: (str(pair[0]), str(pair[1])),
         )
     ]
-
-    session.add_all(dependencies_to_add)
+    session.add_all(dependencies)
     session.flush()
 
 
-def build_people_and_group_data(session: Session, discipline: Discipline) -> None:
-    group = Group(name="Б9124-09.03.04прогин")
+def build_people_and_group_data(session: Session, discipline: Discipline) -> dict[str, object]:
+    group = Group(name="Б9124-09.03.04")
     session.add(group)
     session.flush()
 
-    subgroup = Subgroup(group_id=group.id, subgroup_num=1)
-    session.add(subgroup)
+    subgroup_1 = Subgroup(group_id=group.id, subgroup_num=1)
+    subgroup_2 = Subgroup(group_id=group.id, subgroup_num=2)
+    session.add_all([subgroup_1, subgroup_2])
     session.flush()
 
-    teacher = Teacher(name="Крестникова О.А.")
-    session.add(teacher)
+    teacher_1 = Teacher(name="Остроухова Светлана Николаевна")
+    teacher_2 = Teacher(name="Петров Александр Игоревич")
+    session.add_all([teacher_1, teacher_2])
     session.flush()
 
-    students = [
-        Student(
-            name="Гаффоров Тимур",
-            group_id=group.id,
-            subgroup_id=subgroup.id,
-        ),
-        Student(
-            name="Исихара Никита",
-            group_id=group.id,
-            subgroup_id=subgroup.id,
-        ),
-        Student(
-            name="Голомидов Никита",
-            group_id=group.id,
-            subgroup_id=subgroup.id,
-        ),
+    students_subgroup_1 = [
+        Student(name="Борщевский Кирилл", group_id=group.id, subgroup_id=subgroup_1.id),
+        Student(name="Пяткин Алексей", group_id=group.id, subgroup_id=subgroup_1.id),
     ]
-    session.add_all(students)
+    students_subgroup_2 = [
+        Student(name="Федоров Максим", group_id=group.id, subgroup_id=subgroup_2.id),
+        Student(name="Иванова Дарья", group_id=group.id, subgroup_id=subgroup_2.id),
+    ]
+    session.add_all([*students_subgroup_1, *students_subgroup_2])
     session.flush()
 
     session.add(GroupDiscipline(group_id=group.id, discipline_id=discipline.id))
-    session.add(TeacherDiscipline(teacher_id=teacher.id, discipline_id=discipline.id))
-    session.add(TeacherGroup(teacher_id=teacher.id, group_id=group.id))
-    session.add(TeacherSubgroup(teacher_id=teacher.id, subgroup_id=subgroup.id))
-    
     session.add_all(
         [
-            StudentDiscipline(student_id=student.id, discipline_id=discipline.id)
-            for student in students
+            TeacherDiscipline(teacher_id=teacher_1.id, discipline_id=discipline.id),
+            TeacherDiscipline(teacher_id=teacher_2.id, discipline_id=discipline.id),
+            TeacherGroup(teacher_id=teacher_1.id, group_id=group.id),
+            TeacherGroup(teacher_id=teacher_2.id, group_id=group.id),
+            TeacherSubgroup(teacher_id=teacher_1.id, subgroup_id=subgroup_1.id),
+            TeacherSubgroup(teacher_id=teacher_2.id, subgroup_id=subgroup_2.id),
         ]
     )
+    session.add_all(
+        StudentDiscipline(student_id=student.id, discipline_id=discipline.id)
+        for student in [*students_subgroup_1, *students_subgroup_2]
+    )
+    session.flush()
+
+    return {
+        "group": group,
+        "subgroups": [subgroup_1, subgroup_2],
+        "teachers": [teacher_1, teacher_2],
+        "students_by_subgroup": {
+            subgroup_1.id: students_subgroup_1,
+            subgroup_2.id: students_subgroup_2,
+        },
+    }
+
+
+def build_learning_trajectories(
+    session: Session,
+    discipline: Discipline,
+    topics_by_index: dict[int, Topic],
+    elements_by_topic: dict[int, dict[str, KnowledgeElement]],
+    people: dict[str, object],
+) -> list[LearningTrajectory]:
+    teachers = people["teachers"]
+    subgroups = people["subgroups"]
+    group = people["group"]
+
+    trajectory_specs = [
+        {
+            "teacher": teachers[0],
+            "subgroup": subgroups[0],
+            "name": "Траектория Адаптивный старт",
+            "topic_indices": [1, 2, 4, 6, 7, 10, 11, 12],
+            "thresholds": [0, 40, 45, 50, 55, 60, 65, 70],
+        },
+        {
+            "teacher": teachers[1],
+            "subgroup": subgroups[1],
+            "name": "Траектория Сетевые модели",
+            "topic_indices": [1, 3, 5, 7, 8, 23, 24, 25, 26, 34],
+            "thresholds": [0, 35, 40, 45, 50, 55, 60, 65, 70, 75],
+        },
+    ]
+
+    trajectories: list[LearningTrajectory] = []
+    for spec in trajectory_specs:
+        trajectory = LearningTrajectory(
+            name=spec["name"],
+            status=LearningTrajectoryStatus.ACTIVE,
+            graph_version=discipline.knowledge_graph_version,
+            discipline_id=discipline.id,
+            teacher_id=spec["teacher"].id,
+            group_id=group.id,
+            subgroup_id=spec["subgroup"].id,
+        )
+        session.add(trajectory)
+        session.flush()
+
+        trajectory_topics: list[LearningTrajectoryTopic] = []
+        topic_index_by_topic_id: dict[object, int] = {}
+        for position, (topic_index, threshold) in enumerate(
+            zip(spec["topic_indices"], spec["thresholds"], strict=True),
+            start=1,
+        ):
+            trajectory_topic = LearningTrajectoryTopic(
+                trajectory_id=trajectory.id,
+                topic_id=topics_by_index[topic_index].id,
+                position=position,
+                threshold=threshold,
+            )
+            session.add(trajectory_topic)
+            session.flush()
+            trajectory_topics.append(trajectory_topic)
+            topic_index_by_topic_id[trajectory_topic.topic_id] = topic_index
+
+            know_elements = [
+                elements_by_topic[topic_index]["know_core"],
+                elements_by_topic[topic_index]["know_detail"],
+            ]
+            element_thresholds = [0, max(20, threshold)]
+            for element, element_threshold in zip(know_elements, element_thresholds, strict=True):
+                session.add(
+                    LearningTrajectoryElement(
+                        trajectory_topic_id=trajectory_topic.id,
+                        element_id=element.id,
+                        threshold=element_threshold,
+                    )
+                )
+            session.flush()
+
+        session.refresh(trajectory)
+        create_trajectory_tasks(
+            session=session,
+            trajectory=trajectory,
+            trajectory_topics=trajectory_topics,
+            elements_by_topic=elements_by_topic,
+            topic_index_by_topic_id=topic_index_by_topic_id,
+        )
+        trajectories.append(trajectory)
+
+    session.flush()
+    return trajectories
+
+
+def create_trajectory_tasks(
+    session: Session,
+    trajectory: LearningTrajectory,
+    trajectory_topics: list[LearningTrajectoryTopic],
+    elements_by_topic: dict[int, dict[str, KnowledgeElement]],
+    topic_index_by_topic_id: dict[object, int],
+) -> None:
+    relation_by_key = build_relation_lookup(
+        session.scalars(select(KnowledgeElementRelation)).all()
+    )
+
+    all_trajectory_know_elements = []
+    for trajectory_topic in trajectory_topics:
+        topic_index = topic_index_by_topic_id[trajectory_topic.topic_id]
+        all_trajectory_know_elements.extend(
+            [
+                elements_by_topic[topic_index]["know_core"],
+                elements_by_topic[topic_index]["know_detail"],
+            ]
+        )
+
+    for trajectory_topic in trajectory_topics:
+        topic_index = topic_index_by_topic_id[trajectory_topic.topic_id]
+        current_elements = elements_by_topic[topic_index]
+        primary_core = current_elements["know_core"]
+        primary_detail = current_elements["know_detail"]
+        distractors = pick_distractors(
+            pool=all_trajectory_know_elements,
+            excluded_ids={primary_core.id, primary_detail.id},
+            count=3,
+        )
+
+        add_task(
+            session=session,
+            trajectory=trajectory,
+            trajectory_topic=trajectory_topic,
+            primary_element=primary_core,
+            related_elements=distractors,
+            checked_relations=[],
+            task_type=LearningTrajectoryTaskType.SINGLE_CHOICE,
+            template_kind=LearningTrajectoryTaskTemplateKind.DEFINITION_CHOICE,
+            title=f"Определи понятие «{primary_core.name}»",
+            prompt=f"Какое из перечисленных понятий соответствует формулировке: {primary_core.description}",
+            difficulty=min(70, 20 + trajectory_topic.position * 5),
+            content={
+                "options": shuffle_options(
+                    [
+                        {
+                            "id": str(primary_core.id),
+                            "text": primary_core.name,
+                            "is_correct": True,
+                        },
+                        *[
+                            {
+                                "id": str(element.id),
+                                "text": element.name,
+                                "is_correct": False,
+                            }
+                            for element in distractors
+                        ],
+                    ]
+                )
+            },
+        )
+
+        add_task(
+            session=session,
+            trajectory=trajectory,
+            trajectory_topic=trajectory_topic,
+            primary_element=primary_detail,
+            related_elements=[primary_core, *distractors[:1]],
+            checked_relations=collect_relations(
+                relation_by_key,
+                [
+                    (primary_detail.id, primary_core.id, KnowledgeElementRelationType.REFINES),
+                ],
+            ),
+            task_type=LearningTrajectoryTaskType.MULTIPLE_CHOICE,
+            template_kind=LearningTrajectoryTaskTemplateKind.CONTAINS_MULTIPLE,
+            title=f"Выбери связанные понятия для темы «{trajectory_topic.topic.name}»",
+            prompt="Какие понятия относятся к текущему шагу траектории и должны быть удержаны вместе?",
+            difficulty=min(80, 30 + trajectory_topic.position * 5),
+            content={
+                "options": shuffle_options(
+                    [
+                        {
+                            "id": str(primary_core.id),
+                            "text": primary_core.name,
+                            "is_correct": True,
+                        },
+                        {
+                            "id": str(primary_detail.id),
+                            "text": primary_detail.name,
+                            "is_correct": True,
+                        },
+                        *[
+                            {
+                                "id": str(element.id),
+                                "text": element.name,
+                                "is_correct": False,
+                            }
+                            for element in distractors[:2]
+                        ],
+                    ]
+                )
+            },
+        )
+
+        matching_pairs = [primary_core, primary_detail]
+        add_task(
+            session=session,
+            trajectory=trajectory,
+            trajectory_topic=trajectory_topic,
+            primary_element=primary_core,
+            related_elements=[primary_detail],
+            checked_relations=collect_relations(
+                relation_by_key,
+                [
+                    (primary_detail.id, primary_core.id, KnowledgeElementRelationType.REFINES),
+                ],
+            ),
+            task_type=LearningTrajectoryTaskType.MATCHING,
+            template_kind=LearningTrajectoryTaskTemplateKind.MATCHING_DEFINITION,
+            title=f"Соотнеси термины и определения по теме «{trajectory_topic.topic.name}»",
+            prompt="Установи соответствие между терминами и их определениями.",
+            difficulty=min(85, 35 + trajectory_topic.position * 5),
+            content={
+                "pairs": [
+                    {
+                        "id": f"pair-{index + 1}",
+                        "left": element.name,
+                        "right": element.description or element.name,
+                    }
+                    for index, element in enumerate(matching_pairs)
+                ]
+            },
+        )
+
+        prerequisite_order = build_ordering_elements(
+            trajectory_topic=trajectory_topic,
+            trajectory_topics=trajectory_topics,
+            elements_by_topic=elements_by_topic,
+            topic_index_by_topic_id=topic_index_by_topic_id,
+        )
+        if len(prerequisite_order) >= 2:
+            primary_for_order = prerequisite_order[-1]
+            related_for_order = prerequisite_order[:-1]
+            ordering_relation_keys: list[tuple[object, object, KnowledgeElementRelationType]] = []
+            for previous, current in zip(prerequisite_order, prerequisite_order[1:], strict=False):
+                ordering_relation_keys.append(
+                    (current.id, previous.id, KnowledgeElementRelationType.REQUIRES)
+                )
+            add_task(
+                session=session,
+                trajectory=trajectory,
+                trajectory_topic=trajectory_topic,
+                primary_element=primary_for_order,
+                related_elements=related_for_order,
+                checked_relations=collect_relations(relation_by_key, ordering_relation_keys),
+                task_type=LearningTrajectoryTaskType.ORDERING,
+                template_kind=LearningTrajectoryTaskTemplateKind.REQUIRES_ORDERING,
+                title=f"Выстрой базу для темы «{trajectory_topic.topic.name}»",
+                prompt="Расположи понятия от базовых к более поздним по логике освоения.",
+                difficulty=min(90, 40 + trajectory_topic.position * 5),
+                content={
+                    "items": shuffle_ordering_items(prerequisite_order),
+                    "correct_order_ids": [str(element.id) for element in prerequisite_order],
+                },
+            )
+
+
+def build_relation_lookup(
+    relations: Iterable[KnowledgeElementRelation],
+) -> dict[tuple[object, object, KnowledgeElementRelationType], KnowledgeElementRelation]:
+    return {
+        (relation.source_element_id, relation.target_element_id, relation.relation_type): relation
+        for relation in relations
+    }
+
+
+def pick_distractors(
+    pool: list[KnowledgeElement],
+    excluded_ids: set[object],
+    count: int,
+) -> list[KnowledgeElement]:
+    result: list[KnowledgeElement] = []
+    for element in pool:
+        if element.id in excluded_ids:
+            continue
+        result.append(element)
+        if len(result) == count:
+            break
+    return result
+
+
+def shuffle_options(options: list[dict[str, object]]) -> list[dict[str, object]]:
+    shuffled = list(options)
+    RNG.shuffle(shuffled)
+    return shuffled
+
+
+def shuffle_ordering_items(elements: list[KnowledgeElement]) -> list[dict[str, str]]:
+    items = [{"id": str(element.id), "text": element.name} for element in elements]
+    RNG.shuffle(items)
+    return items
+
+
+def build_ordering_elements(
+    trajectory_topic: LearningTrajectoryTopic,
+    trajectory_topics: list[LearningTrajectoryTopic],
+    elements_by_topic: dict[int, dict[str, KnowledgeElement]],
+    topic_index_by_topic_id: dict[object, int],
+) -> list[KnowledgeElement]:
+    current_topic_index = topic_index_by_topic_id.get(trajectory_topic.topic_id)
+    if current_topic_index is None:
+        return []
+
+    available_previous_indices = {
+        topic_index_by_topic_id[item.topic_id]
+        for item in trajectory_topics
+        if item.position < trajectory_topic.position
+    }
+    prerequisite_indices = [
+        index
+        for index in TOPIC_BLUEPRINTS[current_topic_index - 1].prerequisites
+        if index in available_previous_indices
+    ]
+    ordered_elements = [
+        elements_by_topic[index]["know_core"]
+        for index in prerequisite_indices
+    ]
+    ordered_elements.append(elements_by_topic[current_topic_index]["know_core"])
+    return ordered_elements
+
+
+def collect_relations(
+    relation_by_key: dict[tuple[object, object, KnowledgeElementRelationType], KnowledgeElementRelation],
+    keys: list[tuple[object, object, KnowledgeElementRelationType]],
+) -> list[KnowledgeElementRelation]:
+    collected: list[KnowledgeElementRelation] = []
+    seen_ids: set[object] = set()
+    for key in keys:
+        relation = relation_by_key.get(key)
+        if relation is None or relation.id in seen_ids:
+            continue
+        seen_ids.add(relation.id)
+        collected.append(relation)
+    return collected
+
+
+def add_task(
+    session: Session,
+    trajectory: LearningTrajectory,
+    trajectory_topic: LearningTrajectoryTopic,
+    primary_element: KnowledgeElement,
+    related_elements: list[KnowledgeElement],
+    checked_relations: list[KnowledgeElementRelation],
+    task_type: LearningTrajectoryTaskType,
+    template_kind: LearningTrajectoryTaskTemplateKind,
+    title: str,
+    prompt: str,
+    difficulty: int,
+    content: dict[str, object],
+) -> LearningTrajectoryTask:
+    task = LearningTrajectoryTask(
+        trajectory_id=trajectory.id,
+        trajectory_topic_id=trajectory_topic.id,
+        primary_element_id=primary_element.id,
+        task_type=task_type,
+        template_kind=template_kind,
+        title=title,
+        prompt=prompt,
+        difficulty=difficulty,
+        content_json=json.dumps(content, ensure_ascii=False),
+    )
+    session.add(task)
+    session.flush()
+
+    seen_related_ids: set[object] = set()
+    for element in related_elements:
+        if element.id == primary_element.id or element.id in seen_related_ids:
+            continue
+        seen_related_ids.add(element.id)
+        session.add(
+            LearningTrajectoryTaskElement(
+                task_id=task.id,
+                element_id=element.id,
+            )
+        )
+
+    for relation in checked_relations:
+        session.add(
+            LearningTrajectoryTaskRelation(
+                task_id=task.id,
+                relation_id=relation.id,
+            )
+        )
+
+    session.flush()
+    return task
+
+
+def seed_student_mastery_and_progress(
+    session: Session,
+    discipline: Discipline,
+    trajectories: list[LearningTrajectory],
+    people: dict[str, object],
+) -> None:
+    students_by_subgroup = people["students_by_subgroup"]
+
+    mastery_profiles = [
+        [(82, 74), (46, 38), (15, 10)],
+        [(68, 58), (22, 14)],
+    ]
+
+    for trajectory in trajectories:
+        students = students_by_subgroup[trajectory.subgroup_id]
+        for student_index, student in enumerate(students):
+            profile = mastery_profiles[student_index]
+            for topic_position, trajectory_topic in enumerate(trajectory.topics, start=1):
+                base_pair = profile[min(topic_position - 1, len(profile) - 1)] if topic_position <= len(profile) else (0, 0)
+                know_elements = session.scalars(
+                    select(KnowledgeElement)
+                    .join(
+                        LearningTrajectoryElement,
+                        LearningTrajectoryElement.element_id == KnowledgeElement.id,
+                    )
+                    .where(
+                        LearningTrajectoryElement.trajectory_topic_id == trajectory_topic.id,
+                    )
+                    .order_by(KnowledgeElement.name)
+                ).all()
+                for element_index, element in enumerate(know_elements):
+                    session.add(
+                        StudentElementMastery(
+                            student_id=student.id,
+                            discipline_id=discipline.id,
+                            element_id=element.id,
+                            mastery_value=base_pair[element_index] if topic_position <= len(profile) else 0,
+                        )
+                    )
+
+            first_task = session.scalars(
+                select(LearningTrajectoryTask)
+                .where(LearningTrajectoryTask.trajectory_id == trajectory.id)
+                .order_by(LearningTrajectoryTask.created_at)
+            ).first()
+            if first_task is None:
+                continue
+            instance = StudentTaskInstance(
+                student_id=student.id,
+                task_id=first_task.id,
+                content_snapshot_json=first_task.content_json,
+                issued_at=utcnow_naive(),
+                answered_at=utcnow_naive(),
+            )
+            session.add(instance)
+            session.flush()
+
+            feedback = {"summary": "Эталонная попытка для тестового набора данных."}
+            session.add(
+                StudentTaskAttempt(
+                    instance_id=instance.id,
+                    student_id=student.id,
+                    task_id=first_task.id,
+                    answer_payload_json=json.dumps({"seed": True}, ensure_ascii=False),
+                    feedback_json=json.dumps(feedback, ensure_ascii=False),
+                    score=100 if student_index == 0 else 60,
+                    duration_seconds=45 + student_index * 15,
+                )
+            )
+            session.add(
+                StudentTaskProgress(
+                    student_id=student.id,
+                    task_id=first_task.id,
+                    status=StudentTaskProgressStatus.COMPLETED if student_index == 0 else StudentTaskProgressStatus.IN_PROGRESS,
+                    attempts_count=1,
+                    last_score=100 if student_index == 0 else 60,
+                    best_score=100 if student_index == 0 else 60,
+                    last_answered_at=utcnow_naive(),
+                    completed_at=utcnow_naive() if student_index == 0 else None,
+                    last_answer_payload=json.dumps({"seed": True}, ensure_ascii=False),
+                    last_feedback_json=json.dumps(feedback, ensure_ascii=False),
+                )
+            )
 
     session.flush()
 
 
-def print_seed_summary(session: Session) -> None:
-    print("\n=== Topics and elements ===")
-    topics = session.scalars(select(Topic)).all()
+def print_seed_summary(session: Session, discipline: Discipline) -> None:
+    topics_count = session.query(Topic).count()
+    elements_count = session.query(KnowledgeElement).count()
+    relations_count = session.query(KnowledgeElementRelation).count()
+    dependencies_count = session.query(TopicDependency).count()
+    trajectories_count = session.query(LearningTrajectory).count()
+    tasks_count = session.query(LearningTrajectoryTask).count()
+    students_count = session.query(Student).count()
+    teachers_count = session.query(Teacher).count()
+    subgroups_count = session.query(Subgroup).count()
 
-    for topic in topics:
-        required: list[str] = []
-        formed: list[str] = []
-
-        for link in topic.element_links:
-            if link.role == TopicKnowledgeElementRole.REQUIRED:
-                required.append(link.element.name)
-            elif link.role == TopicKnowledgeElementRole.FORMED:
-                formed.append(link.element.name)
-
-        print(topic.name)
-        print(f"  required: {sorted(required)}")
-        print(f"  formed:   {sorted(formed)}")
-
-    print("\n=== Topic dependencies ===")
-    dependencies = session.scalars(select(TopicDependency)).all()
-    for dependency in dependencies:
-        print(
-            f"{dependency.prerequisite_topic.name} -> {dependency.dependent_topic.name} "
-            f"[{dependency.relation_type.value}] | {dependency.description}"
-        )
-
-    print("\n=== Knowledge element relations ===")
-    relations = session.scalars(select(KnowledgeElementRelation)).all()
-    for relation in relations:
-        print(
-            f"{relation.source_element.name} -> {relation.target_element.name} "
-            f"[{relation.relation_type.value}] | {relation.description}"
-        )
+    print("\n=== Seed summary ===")
+    print(f"Discipline: {discipline.name}")
+    print(f"Topics: {topics_count}")
+    print(f"Knowledge elements: {elements_count}")
+    print(f"Element relations: {relations_count}")
+    print(f"Topic dependencies: {dependencies_count}")
+    print(f"Subgroups: {subgroups_count}")
+    print(f"Teachers: {teachers_count}")
+    print(f"Students: {students_count}")
+    print(f"Learning trajectories: {trajectories_count}")
+    print(f"Trajectory tasks: {tasks_count}")
 
 
 if __name__ == "__main__":

@@ -128,11 +128,40 @@ export type LearningTrajectory = {
   topics: LearningTrajectoryTopic[];
 };
 
+export type LearningTrajectorySummary = {
+  id: string;
+  name: string;
+  status: "draft" | "active" | "archived";
+  graph_version: number;
+  is_actual: boolean;
+  discipline_id: string;
+  teacher_id: string;
+  group_id: string | null;
+  subgroup_id: string | null;
+  topic_count: number;
+};
+
+export type StudentLearningTrajectorySummary = LearningTrajectorySummary & {
+  total_task_count: number;
+  completed_task_count: number;
+  progress_percent: number;
+};
+
 export type LearningTrajectoryTaskType =
   | "single_choice"
   | "multiple_choice"
   | "matching"
-  | "text";
+  | "ordering";
+
+export type LearningTrajectoryTaskTemplateKind =
+  | "definition_choice"
+  | "term_choice"
+  | "relation_choice"
+  | "requires_ordering"
+  | "contains_multiple"
+  | "matching_definition"
+  | "contrast_choice"
+  | "manual";
 
 export type LearningTrajectoryTaskOption = {
   id: string;
@@ -146,16 +175,33 @@ export type LearningTrajectoryTaskMatchingPair = {
   right: string;
 };
 
+export type LearningTrajectoryTaskOrderingItem = {
+  id: string;
+  text: string;
+};
+
 export type LearningTrajectoryTaskContent = {
   options?: LearningTrajectoryTaskOption[];
   pairs?: LearningTrajectoryTaskMatchingPair[];
-  accepted_answers?: string[];
-  placeholder?: string;
+  items?: LearningTrajectoryTaskOrderingItem[];
+  correct_order_ids?: string[];
+  correct_element_id?: string;
+  correct_related_element_ids?: string[];
+  distractor_element_ids?: string[];
 };
 
 export type LearningTrajectoryTaskElement = {
   element_id: string;
   name: string;
+};
+
+export type LearningTrajectoryTaskRelation = {
+  relation_id: string;
+  source_element_id: string;
+  source_element_name: string;
+  target_element_id: string;
+  target_element_name: string;
+  relation_type: KnowledgeElementRelationType;
 };
 
 export type LearningTrajectoryTask = {
@@ -164,14 +210,17 @@ export type LearningTrajectoryTask = {
   trajectory_topic_id: string;
   topic_id: string;
   topic_name: string;
+  title: string;
   prompt: string;
   difficulty: number;
   task_type: LearningTrajectoryTaskType;
+  template_kind: LearningTrajectoryTaskTemplateKind;
   content: LearningTrajectoryTaskContent;
   created_at: string;
   updated_at: string;
   primary_element: LearningTrajectoryTaskElement;
   related_elements: LearningTrajectoryTaskElement[];
+  checked_relations: LearningTrajectoryTaskRelation[];
 };
 
 export type StudentTaskProgress = {
@@ -181,6 +230,7 @@ export type StudentTaskProgress = {
   best_score: number | null;
   completed_at: string | null;
   last_answer_payload: Record<string, unknown> | null;
+  last_feedback: Record<string, unknown> | null;
 };
 
 export type StudentTaskElementState = {
@@ -203,25 +253,49 @@ export type StudentTaskContent = {
   options?: StudentTaskChoiceOption[];
   left_items?: StudentTaskMatchingItem[];
   right_items?: StudentTaskMatchingItem[];
+  items?: StudentTaskMatchingItem[];
   placeholder?: string;
 };
 
 export type StudentAssignedTask = {
   id: string;
+  task_instance_id: string | null;
   trajectory_id: string;
   trajectory_name: string;
   discipline_id: string;
   discipline_name: string;
   topic_id: string;
   topic_name: string;
+  title: string;
   prompt: string;
   difficulty: number;
   task_type: LearningTrajectoryTaskType;
+  template_kind: LearningTrajectoryTaskTemplateKind;
   content: StudentTaskContent;
   primary_element: StudentTaskElementState;
   related_elements: StudentTaskElementState[];
+  checked_relations: LearningTrajectoryTaskRelation[];
   progress: StudentTaskProgress;
   recommendation_score: number | null;
+};
+
+export type StudentTopicControlElement = {
+  element_id: string;
+  name: string;
+  threshold: number;
+  mastery_value: number;
+};
+
+export type StudentTopicControl = {
+  student_id: string;
+  trajectory_id: string;
+  topic_id: string;
+  topic_name: string;
+  topic_threshold: number;
+  topic_mastery: number;
+  is_unlocked: boolean;
+  elements: StudentTopicControlElement[];
+  current_task: StudentAssignedTask | null;
 };
 
 export type ViewMode =
@@ -284,6 +358,8 @@ export type SceneNodeData = {
   isDisabled?: boolean;
   lockState?: "locked" | "open";
   sequenceNumber?: number;
+  progressValue?: number;
+  progressLabel?: string;
   onSecondaryHintClick?: () => void;
 };
 

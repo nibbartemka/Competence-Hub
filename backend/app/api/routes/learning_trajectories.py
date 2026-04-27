@@ -2,7 +2,7 @@ from collections import defaultdict
 from uuid import UUID
 
 from fastapi import APIRouter, HTTPException, status
-from sqlalchemy import and_, or_, select
+from sqlalchemy import and_, func, or_, select
 from sqlalchemy.orm import selectinload
 
 from app.api.crud import commit_or_409, flush_or_409, not_found
@@ -26,13 +26,16 @@ from app.models import (
 from app.models.enums import (
     CompetenceType,
     LearningTrajectoryStatus,
+    StudentTaskProgressStatus,
     TopicKnowledgeElementRole,
 )
 from app.schemas import (
     LearningTrajectoryCreate,
     LearningTrajectoryElementCreate,
     LearningTrajectoryRead,
+    LearningTrajectorySummaryRead,
     LearningTrajectoryStatusUpdate,
+    StudentLearningTrajectorySummaryRead,
     LearningTrajectoryTopicCreate,
     LearningTrajectoryTopicOrderUpdate,
 )
@@ -51,6 +54,56 @@ def _trajectory_read_options():
         selectinload(LearningTrajectory.topics).selectinload(
             LearningTrajectoryTopic.elements
         ),
+    )
+
+
+def _trajectory_summary_options():
+    return (selectinload(LearningTrajectory.discipline),)
+
+
+def _build_trajectory_summary(
+    trajectory: LearningTrajectory,
+    topic_count: int = 0,
+) -> LearningTrajectorySummaryRead:
+    return LearningTrajectorySummaryRead(
+        id=trajectory.id,
+        name=trajectory.name,
+        status=trajectory.status,
+        graph_version=trajectory.graph_version,
+        is_actual=trajectory.is_actual,
+        discipline_id=trajectory.discipline_id,
+        teacher_id=trajectory.teacher_id,
+        group_id=trajectory.group_id,
+        subgroup_id=trajectory.subgroup_id,
+        topic_count=topic_count,
+    )
+
+
+def _build_student_trajectory_summary(
+    trajectory: LearningTrajectory,
+    topic_count: int = 0,
+    total_task_count: int = 0,
+    completed_task_count: int = 0,
+) -> StudentLearningTrajectorySummaryRead:
+    progress_percent = (
+        round((completed_task_count / total_task_count) * 100)
+        if total_task_count
+        else 0
+    )
+    return StudentLearningTrajectorySummaryRead(
+        id=trajectory.id,
+        name=trajectory.name,
+        status=trajectory.status,
+        graph_version=trajectory.graph_version,
+        is_actual=trajectory.is_actual,
+        discipline_id=trajectory.discipline_id,
+        teacher_id=trajectory.teacher_id,
+        group_id=trajectory.group_id,
+        subgroup_id=trajectory.subgroup_id,
+        topic_count=topic_count,
+        total_task_count=total_task_count,
+        completed_task_count=completed_task_count,
+        progress_percent=progress_percent,
     )
 
 
@@ -79,8 +132,8 @@ def ensure_trajectory_editable(trajectory: LearningTrajectory) -> None:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail=(
-                "Learning trajectory was created for an older knowledge graph version. "
-                "Rebuild or archive it before editing."
+                "Траектория создана для старой версии графа знаний. "
+                "Пересобери или отправь её в архив перед редактированием."
             ),
         )
 
@@ -288,7 +341,7 @@ async def validate_learning_trajectory(
     await _validate_topics_and_elements(payload, session)
 
 
-@router.get("/", response_model=list[LearningTrajectoryRead])
+@router.get("/", response_model=list[LearningTrajectorySummaryRead])
 async def list_learning_trajectories(
     session: DbSession,
     discipline_id: UUID | None = None,
@@ -296,8 +349,8 @@ async def list_learning_trajectories(
     group_id: UUID | None = None,
     subgroup_id: UUID | None = None,
     status_filter: LearningTrajectoryStatus | None = None,
-) -> list[LearningTrajectory]:
-    query = select(LearningTrajectory).options(*_trajectory_read_options())
+) -> list[LearningTrajectorySummaryRead]:
+    query = select(LearningTrajectory).options(*_trajectory_summary_options())
     if discipline_id is not None:
         query = query.where(LearningTrajectory.discipline_id == discipline_id)
     if teacher_id is not None:
@@ -310,15 +363,41 @@ async def list_learning_trajectories(
         query = query.where(LearningTrajectory.status == status_filter)
 
     result = await session.execute(query.order_by(LearningTrajectory.name))
-    return list(result.scalars().all())
+    trajectories = list(result.scalars().all())
+    if not trajectories:
+        return []
+
+    trajectory_ids = [trajectory.id for trajectory in trajectories]
+    topic_counts_result = await session.execute(
+        select(
+            LearningTrajectoryTopic.trajectory_id,
+            func.count(LearningTrajectoryTopic.id),
+        )
+        .where(LearningTrajectoryTopic.trajectory_id.in_(trajectory_ids))
+        .group_by(LearningTrajectoryTopic.trajectory_id)
+    )
+    topic_counts = {
+        trajectory_id: topic_count
+        for trajectory_id, topic_count in topic_counts_result.all()
+    }
+    return [
+        _build_trajectory_summary(
+            trajectory,
+            topic_count=topic_counts.get(trajectory.id, 0),
+        )
+        for trajectory in trajectories
+    ]
 
 
-@router.get("/students/{student_id}", response_model=list[LearningTrajectoryRead])
+@router.get(
+    "/students/{student_id}",
+    response_model=list[StudentLearningTrajectorySummaryRead],
+)
 async def list_student_learning_trajectories(
     student_id: UUID,
     session: DbSession,
-) -> list[LearningTrajectory]:
-    from app.models import Student
+) -> list[StudentLearningTrajectorySummaryRead]:
+    from app.models import LearningTrajectoryTask, Student, StudentTaskProgress
 
     student = await session.get(Student, student_id)
     if student is None:
@@ -338,14 +417,71 @@ async def list_student_learning_trajectories(
 
     result = await session.execute(
         select(LearningTrajectory)
-        .options(*_trajectory_read_options())
+        .options(*_trajectory_summary_options())
         .where(
             target_filter,
             LearningTrajectory.status == LearningTrajectoryStatus.ACTIVE,
         )
         .order_by(LearningTrajectory.name)
     )
-    return list(result.scalars().all())
+    trajectories = list(result.scalars().all())
+    if not trajectories:
+        return []
+
+    trajectory_ids = [trajectory.id for trajectory in trajectories]
+    topic_counts_result = await session.execute(
+        select(
+            LearningTrajectoryTopic.trajectory_id,
+            func.count(LearningTrajectoryTopic.id),
+        )
+        .where(LearningTrajectoryTopic.trajectory_id.in_(trajectory_ids))
+        .group_by(LearningTrajectoryTopic.trajectory_id)
+    )
+    topic_counts = {
+        trajectory_id: topic_count
+        for trajectory_id, topic_count in topic_counts_result.all()
+    }
+    total_task_counts_result = await session.execute(
+        select(
+            LearningTrajectoryTask.trajectory_id,
+            func.count(LearningTrajectoryTask.id),
+        )
+        .where(LearningTrajectoryTask.trajectory_id.in_(trajectory_ids))
+        .group_by(LearningTrajectoryTask.trajectory_id)
+    )
+    total_task_counts = {
+        trajectory_id: total_task_count
+        for trajectory_id, total_task_count in total_task_counts_result.all()
+    }
+    completed_task_counts_result = await session.execute(
+        select(
+            LearningTrajectoryTask.trajectory_id,
+            func.count(StudentTaskProgress.id),
+        )
+        .join(
+            StudentTaskProgress,
+            and_(
+                StudentTaskProgress.task_id == LearningTrajectoryTask.id,
+                StudentTaskProgress.student_id == student.id,
+                StudentTaskProgress.status == StudentTaskProgressStatus.COMPLETED,
+            ),
+        )
+        .where(LearningTrajectoryTask.trajectory_id.in_(trajectory_ids))
+        .group_by(LearningTrajectoryTask.trajectory_id)
+    )
+    completed_task_counts = {
+        trajectory_id: completed_task_count
+        for trajectory_id, completed_task_count in completed_task_counts_result.all()
+    }
+    return [
+        _build_student_trajectory_summary(
+            trajectory,
+            topic_count=topic_counts.get(trajectory.id, 0),
+            total_task_count=total_task_counts.get(trajectory.id, 0),
+            completed_task_count=completed_task_counts.get(trajectory.id, 0),
+        )
+        for trajectory in trajectories
+    ]
 
 
 @router.post(
@@ -467,7 +603,7 @@ async def update_learning_trajectory_status(
     if payload.status == LearningTrajectoryStatus.ACTIVE:
         if not trajectory.is_actual:
             raise _bad_request(
-                "Learning trajectory cannot be activated because its knowledge graph version is outdated."
+                "Траекторию нельзя активировать: версия графа знаний устарела."
             )
         validation_payload = LearningTrajectoryCreate(
             name=trajectory.name,

@@ -7,11 +7,15 @@ import type {
   KnowledgeElementRelation,
   KnowledgeElementRelationType,
   LearningTrajectory,
+  LearningTrajectorySummary,
   LearningTrajectoryTaskContent,
+  LearningTrajectoryTaskTemplateKind,
   LearningTrajectoryTaskType,
   LearningTrajectoryTask,
   Student,
   StudentAssignedTask,
+  StudentLearningTrajectorySummary,
+  StudentTopicControl,
   Subgroup,
   Teacher,
   Topic,
@@ -48,16 +52,24 @@ export function isAbortError(error: unknown) {
 
 async function request<T>(path: string, options: RequestOptions = {}): Promise<T> {
   const { body, method = "GET", signal } = options;
-  const response = await fetch(`${API_BASE}${path}`, {
-    method,
-    cache: "no-store",
-    headers: {
-      Accept: "application/json",
-      ...(body ? { "Content-Type": "application/json" } : {}),
-    },
-    body: body ? JSON.stringify(body) : undefined,
-    signal,
-  });
+  let response: Response;
+  try {
+    response = await fetch(`${API_BASE}${path}`, {
+      method,
+      cache: "no-store",
+      headers: {
+        Accept: "application/json",
+        ...(body ? { "Content-Type": "application/json" } : {}),
+      },
+      body: body ? JSON.stringify(body) : undefined,
+      signal,
+    });
+  } catch (error) {
+    if (isAbortError(error)) {
+      throw error;
+    }
+    throw new Error("Не удалось связаться с сервером API. Проверь, что backend запущен.");
+  }
 
   if (!response.ok) {
     const contentType = response.headers.get("content-type") ?? "";
@@ -302,11 +314,14 @@ export function fetchLearningTrajectories(
   if (params.subgroup_id) query.set("subgroup_id", params.subgroup_id);
   if (params.status_filter) query.set("status_filter", params.status_filter);
   const suffix = query.toString() ? `?${query.toString()}` : "";
-  return request<LearningTrajectory[]>(`/learning-trajectories/${suffix}`, { signal });
+  return request<LearningTrajectorySummary[]>(`/learning-trajectories/${suffix}`, { signal });
 }
 
 export function fetchStudentLearningTrajectories(studentId: string, signal?: AbortSignal) {
-  return request<LearningTrajectory[]>(`/learning-trajectories/students/${studentId}`, { signal });
+  return request<StudentLearningTrajectorySummary[]>(
+    `/learning-trajectories/students/${studentId}`,
+    { signal },
+  );
 }
 
 export function fetchLearningTrajectory(trajectoryId: string, signal?: AbortSignal) {
@@ -370,9 +385,12 @@ export function createLearningTrajectoryTask(
     topic_id: string;
     primary_element_id: string;
     related_element_ids: string[];
+    checked_relation_ids: string[];
+    title: string;
     prompt: string;
     difficulty: number;
     task_type: LearningTrajectoryTaskType;
+    template_kind: LearningTrajectoryTaskTemplateKind;
     content: LearningTrajectoryTaskContent;
   },
 ) {
@@ -388,9 +406,12 @@ export function updateLearningTrajectoryTask(
     topic_id: string;
     primary_element_id: string;
     related_element_ids: string[];
+    checked_relation_ids: string[];
+    title: string;
     prompt: string;
     difficulty: number;
     task_type: LearningTrajectoryTaskType;
+    template_kind: LearningTrajectoryTaskTemplateKind;
     content: LearningTrajectoryTaskContent;
   },
 ) {
@@ -410,8 +431,14 @@ export function fetchStudentTasks(
   studentId: string,
   signal?: AbortSignal,
   disciplineId?: string,
+  trajectoryId?: string,
+  topicId?: string,
 ) {
-  const suffix = disciplineId ? `?discipline_id=${encodeURIComponent(disciplineId)}` : "";
+  const query = new URLSearchParams();
+  if (disciplineId) query.set("discipline_id", disciplineId);
+  if (trajectoryId) query.set("trajectory_id", trajectoryId);
+  if (topicId) query.set("topic_id", topicId);
+  const suffix = query.toString() ? `?${query.toString()}` : "";
   return request<StudentAssignedTask[]>(`/learning-trajectory-tasks/students/${studentId}${suffix}`, {
     signal,
   });
@@ -421,10 +448,28 @@ export function fetchRecommendedStudentTask(
   studentId: string,
   signal?: AbortSignal,
   disciplineId?: string,
+  trajectoryId?: string,
+  topicId?: string,
 ) {
-  const suffix = disciplineId ? `?discipline_id=${encodeURIComponent(disciplineId)}` : "";
+  const query = new URLSearchParams();
+  if (disciplineId) query.set("discipline_id", disciplineId);
+  if (trajectoryId) query.set("trajectory_id", trajectoryId);
+  if (topicId) query.set("topic_id", topicId);
+  const suffix = query.toString() ? `?${query.toString()}` : "";
   return request<StudentAssignedTask | null>(
     `/learning-trajectory-tasks/students/${studentId}/next${suffix}`,
+    { signal },
+  );
+}
+
+export function fetchStudentTopicControl(
+  studentId: string,
+  trajectoryId: string,
+  topicId: string,
+  signal?: AbortSignal,
+) {
+  return request<StudentTopicControl>(
+    `/students/${studentId}/trajectories/${trajectoryId}/control/${topicId}`,
     { signal },
   );
 }
@@ -433,9 +478,15 @@ export function submitStudentTaskScore(
   taskId: string,
   studentId: string,
   answerPayload: Record<string, unknown>,
+  taskInstanceId?: string | null,
+  durationSeconds?: number | null,
 ) {
   return request<StudentAssignedTask>(`/learning-trajectory-tasks/${taskId}/students/${studentId}/progress`, {
     method: "PUT",
-    body: { answer_payload: answerPayload },
+    body: {
+      answer_payload: answerPayload,
+      task_instance_id: taskInstanceId ?? null,
+      duration_seconds: durationSeconds ?? null,
+    },
   });
 }
