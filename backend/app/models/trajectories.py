@@ -64,6 +64,13 @@ class LearningTrajectory(Base):
         lazy="selectin",
         order_by="LearningTrajectoryTopic.position",
     )
+    tasks: Mapped[list["LearningTrajectoryTask"]] = relationship(
+        "LearningTrajectoryTask",
+        back_populates="trajectory",
+        cascade="all, delete-orphan",
+        lazy="selectin",
+        order_by="LearningTrajectoryTask.created_at",
+    )
 
     @property
     def is_actual(self) -> bool:
@@ -108,6 +115,12 @@ class LearningTrajectoryTopic(Base):
 
     elements: Mapped[list["LearningTrajectoryElement"]] = relationship(
         "LearningTrajectoryElement",
+        back_populates="trajectory_topic",
+        cascade="all, delete-orphan",
+        lazy="selectin",
+    )
+    tasks: Mapped[list["LearningTrajectoryTask"]] = relationship(
+        "LearningTrajectoryTask",
         back_populates="trajectory_topic",
         cascade="all, delete-orphan",
         lazy="selectin",

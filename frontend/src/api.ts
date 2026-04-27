@@ -7,7 +7,11 @@ import type {
   KnowledgeElementRelation,
   KnowledgeElementRelationType,
   LearningTrajectory,
+  LearningTrajectoryTaskContent,
+  LearningTrajectoryTaskType,
+  LearningTrajectoryTask,
   Student,
+  StudentAssignedTask,
   Subgroup,
   Teacher,
   Topic,
@@ -348,5 +352,90 @@ export function updateLearningTrajectoryStatus(
   return request<LearningTrajectory>(`/learning-trajectories/${trajectoryId}/status`, {
     method: "PUT",
     body: { status },
+  });
+}
+
+export function fetchLearningTrajectoryTasks(
+  trajectoryId: string,
+  signal?: AbortSignal,
+) {
+  return request<LearningTrajectoryTask[]>(`/learning-trajectory-tasks/trajectories/${trajectoryId}`, {
+    signal,
+  });
+}
+
+export function createLearningTrajectoryTask(
+  trajectoryId: string,
+  payload: {
+    topic_id: string;
+    primary_element_id: string;
+    related_element_ids: string[];
+    prompt: string;
+    difficulty: number;
+    task_type: LearningTrajectoryTaskType;
+    content: LearningTrajectoryTaskContent;
+  },
+) {
+  return request<LearningTrajectoryTask>(`/learning-trajectory-tasks/trajectories/${trajectoryId}`, {
+    method: "POST",
+    body: payload,
+  });
+}
+
+export function updateLearningTrajectoryTask(
+  taskId: string,
+  payload: {
+    topic_id: string;
+    primary_element_id: string;
+    related_element_ids: string[];
+    prompt: string;
+    difficulty: number;
+    task_type: LearningTrajectoryTaskType;
+    content: LearningTrajectoryTaskContent;
+  },
+) {
+  return request<LearningTrajectoryTask>(`/learning-trajectory-tasks/${taskId}`, {
+    method: "PUT",
+    body: payload,
+  });
+}
+
+export function deleteLearningTrajectoryTask(taskId: string) {
+  return request<void>(`/learning-trajectory-tasks/${taskId}`, {
+    method: "DELETE",
+  });
+}
+
+export function fetchStudentTasks(
+  studentId: string,
+  signal?: AbortSignal,
+  disciplineId?: string,
+) {
+  const suffix = disciplineId ? `?discipline_id=${encodeURIComponent(disciplineId)}` : "";
+  return request<StudentAssignedTask[]>(`/learning-trajectory-tasks/students/${studentId}${suffix}`, {
+    signal,
+  });
+}
+
+export function fetchRecommendedStudentTask(
+  studentId: string,
+  signal?: AbortSignal,
+  disciplineId?: string,
+) {
+  const suffix = disciplineId ? `?discipline_id=${encodeURIComponent(disciplineId)}` : "";
+  return request<StudentAssignedTask | null>(
+    `/learning-trajectory-tasks/students/${studentId}/next${suffix}`,
+    { signal },
+  );
+}
+
+export function submitStudentTaskScore(
+  taskId: string,
+  studentId: string,
+  answerPayload: Record<string, unknown>,
+) {
+  return request<StudentAssignedTask>(`/learning-trajectory-tasks/${taskId}/students/${studentId}/progress`, {
+    method: "PUT",
+    body: { answer_payload: answerPayload },
   });
 }

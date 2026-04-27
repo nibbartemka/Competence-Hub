@@ -1,3 +1,5 @@
+import os
+
 from fastapi import FastAPI
 import uvicorn
 
@@ -9,8 +11,9 @@ app: FastAPI = create_app()
 
 if __name__ == "__main__":
     uvicorn.run(
-        "main:app",
+        "app.main:create_app",
         host=settings.APP.HOST,
         port=settings.APP.PORT,
-        reload=True
+        factory=True,
+        reload=os.getenv("COMPETENCE_HUB_RELOAD") == "1",
     )

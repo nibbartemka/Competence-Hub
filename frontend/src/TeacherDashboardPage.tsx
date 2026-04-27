@@ -1,3 +1,4 @@
+import { motion } from "motion/react";
 import { useEffect, useMemo, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 
@@ -8,7 +9,10 @@ import {
   fetchTeachers,
   isAbortError,
 } from "./api";
+import { actionHoverMotion, cardHoverMotion, revealMotion } from "./motionPresets";
 import type { Discipline, Group, Student, Teacher } from "./types";
+
+const MotionLink = motion(Link);
 
 function extractErrorMessage(error: unknown) {
   if (error instanceof Error) return error.message;
@@ -32,6 +36,7 @@ export default function TeacherDashboardPage() {
     async function load() {
       try {
         setLoading(true);
+        setError("");
         const [nextTeachers, nextDisciplines, nextGroups, nextStudents] = await Promise.all([
           fetchTeachers(controller.signal),
           fetchDisciplines(controller.signal),
@@ -66,13 +71,13 @@ export default function TeacherDashboardPage() {
   if (!teacherId) return null;
 
   return (
-    <div className="page-shell role-page">
-      <header className="hero">
+    <div className="page-shell role-page immersive-page immersive-page--teacher">
+      <motion.header className="hero immersive-page__hero" {...revealMotion(0.02)}>
         <div>
           <p className="hero__eyebrow">Роль: преподаватель</p>
           <h1>{teacher?.name ?? "Преподаватель"}</h1>
           <p className="hero__subtitle">
-            Дисциплины, группы и доступ к студентам через назначенные группы.
+            Дисциплины, группы и доступ к студентам через закреплённые учебные группы.
           </p>
         </div>
         <div className="hero__controls">
@@ -80,47 +85,56 @@ export default function TeacherDashboardPage() {
             На главную
           </button>
         </div>
-      </header>
+      </motion.header>
 
       {error ? <div className="home-feedback home-feedback--error">{error}</div> : null}
 
       {loading ? (
-        <section className="status-view">
+        <section className="status-view immersive-page__status">
           <div className="status-view__pulse" />
           <h3>Загружаю кабинет</h3>
         </section>
       ) : (
-        <main className="overview-grid">
-          <section className="card card--soft overview-card overview-card--wide">
+        <main className="overview-grid immersive-page__grid">
+          <motion.section
+            className="card card--soft overview-card overview-card--wide"
+            {...revealMotion(0.05)}
+            {...cardHoverMotion}
+          >
             <p className="card__eyebrow">Дисциплины преподавателя</p>
             <div className="discipline-list">
               {teacherDisciplines.length ? (
                 teacherDisciplines.map((discipline) => (
-                  <article className="discipline-row" key={discipline.id}>
+                  <motion.article className="discipline-row" key={discipline.id} layout {...actionHoverMotion}>
                     <div>
                       <strong>{discipline.name}</strong>
                       <span>Версия графа {discipline.knowledge_graph_version}</span>
                     </div>
                     <div className="discipline-row__actions">
-                      <Link className="primary-button" to={`/disciplines/${discipline.id}`}>
+                      <MotionLink className="primary-button" to={`/disciplines/${discipline.id}`} {...actionHoverMotion}>
                         Паспорт
-                      </Link>
-                      <Link
+                      </MotionLink>
+                      <MotionLink
                         className="secondary-button"
                         to={`/disciplines/${discipline.id}/knowledge`}
+                        {...actionHoverMotion}
                       >
                         Граф
-                      </Link>
+                      </MotionLink>
                     </div>
-                  </article>
+                  </motion.article>
                 ))
               ) : (
                 <p className="card__text">Дисциплины пока не назначены.</p>
               )}
             </div>
-          </section>
+          </motion.section>
 
-          <section className="card card--soft overview-card overview-card--wide">
+          <motion.section
+            className="card card--soft overview-card overview-card--wide"
+            {...revealMotion(0.09)}
+            {...cardHoverMotion}
+          >
             <p className="card__eyebrow">Группы и студенты</p>
             <div className="home-lists">
               {teacherGroups.length ? (
@@ -128,26 +142,31 @@ export default function TeacherDashboardPage() {
                   const groupStudents = students.filter((student) => student.group_id === group.id);
 
                   return (
-                    <div key={group.id}>
+                    <motion.div className="immersive-list-panel" key={group.id} layout {...actionHoverMotion}>
                       <h3>{group.name}</h3>
                       {groupStudents.length ? (
                         groupStudents.map((student) => (
-                          <Link className="overview-row" key={student.id} to={`/students/${student.id}`}>
+                          <MotionLink
+                            className="overview-row"
+                            key={student.id}
+                            to={`/students/${student.id}`}
+                            {...actionHoverMotion}
+                          >
                             <strong>{student.name}</strong>
                             <span>Открыть страницу студента</span>
-                          </Link>
+                          </MotionLink>
                         ))
                       ) : (
                         <p className="home-hint">Студентов пока нет.</p>
                       )}
-                    </div>
+                    </motion.div>
                   );
                 })
               ) : (
                 <p className="card__text">Группы пока не назначены.</p>
               )}
             </div>
-          </section>
+          </motion.section>
         </main>
       )}
     </div>

@@ -367,6 +367,30 @@ def _sync_sqlite_schema(connection) -> None:
                     "ADD COLUMN graph_version INTEGER NOT NULL DEFAULT 1"
                 )
             )
+    if _sqlite_has_table(connection, "learning_trajectory_tasks"):
+        if not _sqlite_has_column(connection, "learning_trajectory_tasks", "task_type"):
+            connection.execute(
+                text(
+                    "ALTER TABLE learning_trajectory_tasks "
+                    "ADD COLUMN task_type TEXT NOT NULL DEFAULT 'text'"
+                )
+            )
+        if not _sqlite_has_column(connection, "learning_trajectory_tasks", "content_json"):
+            connection.execute(
+                text(
+                    "ALTER TABLE learning_trajectory_tasks "
+                    "ADD COLUMN content_json TEXT NOT NULL DEFAULT '{}'"
+                )
+            )
+    if _sqlite_has_table(connection, "student_task_progress") and not _sqlite_has_column(
+        connection, "student_task_progress", "last_answer_payload"
+    ):
+        connection.execute(
+            text(
+                "ALTER TABLE student_task_progress "
+                "ADD COLUMN last_answer_payload TEXT"
+            )
+        )
 
 
 async def get_async_session() -> AsyncGenerator[AsyncSession, None]:

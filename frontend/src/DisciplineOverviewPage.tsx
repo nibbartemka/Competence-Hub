@@ -1,3 +1,4 @@
+import { motion } from "motion/react";
 import { useEffect, useMemo, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 
@@ -9,6 +10,7 @@ import {
   fetchTeachers,
   isAbortError,
 } from "./api";
+import { actionHoverMotion, cardHoverMotion, revealMotion } from "./motionPresets";
 import type {
   DisciplineKnowledgeGraph,
   Group,
@@ -16,6 +18,8 @@ import type {
   Subgroup,
   Teacher,
 } from "./types";
+
+const MotionLink = motion(Link);
 
 function extractErrorMessage(error: unknown) {
   if (error instanceof Error) return error.message;
@@ -42,6 +46,7 @@ export default function DisciplineOverviewPage() {
 
   useEffect(() => {
     if (!disciplineId) return;
+    const currentDisciplineId = disciplineId;
     const controller = new AbortController();
 
     async function load() {
@@ -49,10 +54,10 @@ export default function DisciplineOverviewPage() {
         setLoading(true);
         setError("");
         const [nextGraph, nextGroups, nextTeachers, nextTrajectories] = await Promise.all([
-          fetchDisciplineKnowledgeGraph(disciplineId!, controller.signal),
+          fetchDisciplineKnowledgeGraph(currentDisciplineId, controller.signal),
           fetchGroups(controller.signal),
           fetchTeachers(controller.signal),
-          fetchLearningTrajectories({ discipline_id: disciplineId! }, controller.signal),
+          fetchLearningTrajectories({ discipline_id: currentDisciplineId }, controller.signal),
         ]);
         const nextSubgroups = (
           await Promise.all(
@@ -95,38 +100,51 @@ export default function DisciplineOverviewPage() {
   if (!disciplineId) return null;
 
   return (
-    <div className="page-shell discipline-overview-page">
-      <header className="hero">
+    <div className="page-shell discipline-overview-page immersive-page immersive-page--discipline">
+      <motion.header className="hero immersive-page__hero" {...revealMotion(0.02)}>
         <div>
           <p className="hero__eyebrow">Паспорт дисциплины</p>
           <h1>{graph?.discipline.name ?? "Дисциплина"}</h1>
           <p className="hero__subtitle">
-            Преподаватели, группы, траектории и краткая статистика графа знаний.
+            Преподаватели, группы, траектории и краткая статистика графа знаний в одном
+            рабочем экране.
           </p>
         </div>
         <div className="hero__controls">
           <button className="ghost-button" onClick={() => navigate("/")} type="button">
             На главную
           </button>
-          <Link className="primary-button" to={`/disciplines/${disciplineId}/knowledge`}>
+          <MotionLink
+            className="primary-button"
+            to={`/disciplines/${disciplineId}/knowledge`}
+            {...actionHoverMotion}
+          >
             Граф знаний
-          </Link>
-          <Link className="secondary-button" to={`/disciplines/${disciplineId}/trajectory`}>
+          </MotionLink>
+          <MotionLink
+            className="secondary-button"
+            to={`/disciplines/${disciplineId}/trajectory`}
+            {...actionHoverMotion}
+          >
             Траектории
-          </Link>
+          </MotionLink>
         </div>
-      </header>
+      </motion.header>
 
       {error ? <div className="home-feedback home-feedback--error">{error}</div> : null}
 
       {loading ? (
-        <section className="status-view">
+        <section className="status-view immersive-page__status">
           <div className="status-view__pulse" />
           <h3>Загружаю дисциплину</h3>
         </section>
       ) : graph ? (
-        <main className="overview-grid">
-          <section className="card card--soft overview-card overview-card--wide">
+        <main className="overview-grid immersive-page__grid">
+          <motion.section
+            className="card card--soft overview-card overview-card--wide"
+            {...revealMotion(0.05)}
+            {...cardHoverMotion}
+          >
             <p className="card__eyebrow">Статистика графа</p>
             <div className="overview-stats">
               <span>{graph.topics.length} тем</span>
@@ -135,44 +153,53 @@ export default function DisciplineOverviewPage() {
               <span>{graph.knowledge_element_relations.length} связей элементов</span>
               <span>Версия {graph.discipline.knowledge_graph_version}</span>
             </div>
-          </section>
+          </motion.section>
 
-          <section className="card card--soft overview-card">
+          <motion.section className="card card--soft overview-card" {...revealMotion(0.08)} {...cardHoverMotion}>
             <p className="card__eyebrow">Преподаватели</p>
             {disciplineTeachers.length ? (
               disciplineTeachers.map((teacher) =>
                 teacher ? (
-                  <Link className="overview-row" key={teacher.id} to={`/teachers/${teacher.id}`}>
+                  <MotionLink
+                    className="overview-row"
+                    key={teacher.id}
+                    to={`/teachers/${teacher.id}`}
+                    {...actionHoverMotion}
+                  >
                     <strong>{teacher.name}</strong>
                     <span>{teacher.group_ids.length} групп</span>
-                  </Link>
+                  </MotionLink>
                 ) : null,
               )
             ) : (
               <p className="card__text">Преподаватель пока не назначен.</p>
             )}
-          </section>
+          </motion.section>
 
-          <section className="card card--soft overview-card">
+          <motion.section className="card card--soft overview-card" {...revealMotion(0.11)} {...cardHoverMotion}>
             <p className="card__eyebrow">Группы</p>
             {disciplineGroups.length ? (
               disciplineGroups.map((group) =>
                 group ? (
-                  <article className="overview-row" key={group.id}>
+                  <motion.article className="overview-row" key={group.id} {...actionHoverMotion}>
                     <strong>{group.name}</strong>
                     <span>
                       Подгруппы:{" "}
                       {subgroups.filter((subgroup) => subgroup.group_id === group.id).length || "нет"}
                     </span>
-                  </article>
+                  </motion.article>
                 ) : null,
               )
             ) : (
               <p className="card__text">Группы пока не назначены.</p>
             )}
-          </section>
+          </motion.section>
 
-          <section className="card card--soft overview-card overview-card--wide">
+          <motion.section
+            className="card card--soft overview-card overview-card--wide"
+            {...revealMotion(0.14)}
+            {...cardHoverMotion}
+          >
             <p className="card__eyebrow">Траектории</p>
             <div className="trajectory-saved-list">
               {trajectories.length ? (
@@ -183,10 +210,11 @@ export default function DisciplineOverviewPage() {
                   const group = trajectory.group_id ? groupById.get(trajectory.group_id) : null;
 
                   return (
-                    <Link
+                    <MotionLink
                       className="trajectory-saved-card"
                       key={trajectory.id}
                       to={`/disciplines/${disciplineId}/trajectories/${trajectory.id}`}
+                      {...actionHoverMotion}
                     >
                       <strong>{trajectory.name}</strong>
                       <span>
@@ -195,14 +223,14 @@ export default function DisciplineOverviewPage() {
                         {group?.name ?? "без группы"}
                         {subgroup ? ` / подгруппа ${subgroup.subgroup_num}` : ""}
                       </span>
-                    </Link>
+                    </MotionLink>
                   );
                 })
               ) : (
                 <p className="card__text">Траекторий пока нет.</p>
               )}
             </div>
-          </section>
+          </motion.section>
         </main>
       ) : null}
     </div>

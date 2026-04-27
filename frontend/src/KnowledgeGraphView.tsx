@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { AnimatePresence, motion } from "motion/react";
 import { useNavigate } from "react-router-dom";
 import RelationGraph, {
     type RGNode,
@@ -13,6 +14,7 @@ import {
 import { GraphEditor } from "./components/GraphEditor";
 import { GraphNode } from "./components/GraphNode";
 import { buildElementScene, buildTopicScene } from "./graphScene";
+import { actionHoverMotion, cardHoverMotion, revealMotion } from "./motionPresets";
 import type {
     CompetenceType,
     DetailCard,
@@ -504,8 +506,8 @@ export function KnowledgeGraphView({ disciplineId }: KnowledgeGraphViewProps) {
     const overlayLegendSections = view.level === "topics" ? TOPIC_LEGEND_SECTIONS : ELEMENT_LEGEND_SECTIONS;
 
     return (
-        <div className={`page-shell page-shell--${view.level}`}>
-            <header className="hero">
+        <div className={`page-shell immersive-page immersive-page--knowledge page-shell--${view.level}`}>
+            <motion.header className="hero immersive-page__hero" {...revealMotion(0.04)}>
                 <div>
                     <p className="hero__eyebrow">Competence Hub</p>
                     <h1>Граф знаний дисциплины</h1>
@@ -535,12 +537,11 @@ export function KnowledgeGraphView({ disciplineId }: KnowledgeGraphViewProps) {
                         </select>
                     </label>
                 </div>
-            </header>
+            </motion.header>
 
-            <div className="workspace">
-                <aside className="inspector">
-                    {/* Inspector content - same as before */}
-                    <section className="card card--soft">
+            <div className="workspace immersive-page__grid immersive-page__grid--knowledge graph-workspace">
+                <motion.aside className="inspector" {...revealMotion(0.1, 22)}>
+                    <motion.section className="card card--soft inspector-card inspector-card--nav" {...cardHoverMotion} layout>
                         <div className="card__header">
                             <span className="card__eyebrow">Навигация</span>
                         </div>
@@ -579,9 +580,9 @@ export function KnowledgeGraphView({ disciplineId }: KnowledgeGraphViewProps) {
                         <p className="card__text">
                             {scene?.subtitle ?? "Выбери дисциплину, а затем кликни по теме, чтобы раскрыть ее элементы."}
                         </p>
-                    </section>
+                    </motion.section>
 
-                    <section className="card card--soft">
+                    <motion.section className="card card--soft inspector-card inspector-card--orphans" {...cardHoverMotion} layout>
                         <div className="card__header">
                             <span className="card__eyebrow">Непривязанные элементы</span>
                         </div>
@@ -601,9 +602,9 @@ export function KnowledgeGraphView({ disciplineId }: KnowledgeGraphViewProps) {
                         ) : (
                             <p className="card__text">Все элементы уже привязаны к темам.</p>
                         )}
-                    </section>
+                    </motion.section>
 
-                    <section className="card">
+                    <motion.section className="card inspector-card inspector-card--detail" {...cardHoverMotion} layout>
                         <div className="card__header">
                             <span className="card__eyebrow">Выбранная вершина</span>
                         </div>
@@ -637,12 +638,12 @@ export function KnowledgeGraphView({ disciplineId }: KnowledgeGraphViewProps) {
                                 Кликни по вершине графа, чтобы увидеть детали и перейти между уровнями.
                             </p>
                         )}
-                    </section>
-                </aside>
+                    </motion.section>
+                </motion.aside>
 
-                <div className="workspace-main">
-                    <section className="graph-stage">
-                        <div className="graph-toolbar">
+                <motion.div className="workspace-main" {...revealMotion(0.16, 26)}>
+                    <motion.section className="graph-stage" {...cardHoverMotion} layout>
+                        <motion.div className="graph-toolbar" layout>
                             <div>
                                 <span className="graph-toolbar__eyebrow">Текущий срез</span>
                                 <h2>{scene?.title ?? "Построение графа"}</h2>
@@ -662,9 +663,12 @@ export function KnowledgeGraphView({ disciplineId }: KnowledgeGraphViewProps) {
                                         : "Кнопка в центральной теме возвращает на уровень тем."}
                                 </p>
                             </div>
-                        </div>
+                        </motion.div>
 
                         <div className="graph-surface">
+                            <div className="graph-surface__ambient graph-surface__ambient--primary" />
+                            <div className="graph-surface__ambient graph-surface__ambient--secondary" />
+                            <div className="graph-surface__grid" />
                             {loading ? (
                                 <div className="status-view">
                                     <div className="status-view__pulse" />
@@ -685,16 +689,26 @@ export function KnowledgeGraphView({ disciplineId }: KnowledgeGraphViewProps) {
                                 </div>
                             ) : (
                                 <>
-                                    <div className="graph-frame">
+                                    <motion.div
+                                        className="graph-frame"
+                                        initial={{ opacity: 0 }}
+                                        animate={{ opacity: 1 }}
+                                        transition={{ duration: 0.32 }}
+                                    >
                                         <RelationGraph
                                             ref={graphRef}
                                             options={GRAPH_OPTIONS}
                                             nodeSlot={GraphNode}
                                             onNodeClick={handleNodeClick}
                                         />
-                                    </div>
+                                    </motion.div>
 
-                                    <aside className="graph-legend-overlay">
+                                    <motion.aside
+                                        className="graph-legend-overlay"
+                                        initial={{ opacity: 0, y: 18, scale: 0.96 }}
+                                        animate={{ opacity: 1, y: 0, scale: 1 }}
+                                        transition={{ duration: 0.28, ease: [0.22, 1, 0.36, 1] }}
+                                    >
                                         <p className="graph-legend-overlay__eyebrow">Легенда</p>
                                         {overlayLegendSections.map((section) => (
                                             <section className="graph-legend-overlay__section" key={section.title}>
@@ -712,10 +726,10 @@ export function KnowledgeGraphView({ disciplineId }: KnowledgeGraphViewProps) {
                                                 </div>
                                             </section>
                                         ))}
-                                    </aside>
+                                    </motion.aside>
 
                                     {view.level === "elements" ? (
-                                        <aside
+                                        <motion.aside
                                             className="graph-filter-overlay"
                                             aria-label="Фильтр элементов по типу компетенции"
                                         >
@@ -732,18 +746,33 @@ export function KnowledgeGraphView({ disciplineId }: KnowledgeGraphViewProps) {
                                                     <span>{option.label}</span>
                                                 </label>
                                             ))}
-                                        </aside>
+                                        </motion.aside>
                                     ) : null}
                                 </>
                             )}
                         </div>
-                    </section>
-                </div>
+                    </motion.section>
+                </motion.div>
             </div>
 
+            <AnimatePresence>
             {editorOpen && disciplineId ? (
-                <div className="modal-backdrop" onClick={() => setEditorOpen(false)} role="presentation">
-                    <div className="modal-panel" onClick={(event) => event.stopPropagation()} role="dialog">
+                <motion.div
+                    className="modal-backdrop"
+                    onClick={() => setEditorOpen(false)}
+                    role="presentation"
+                    initial={{ opacity: 0 }}
+                    animate={{ opacity: 1 }}
+                    transition={{ duration: 0.22 }}
+                >
+                    <motion.div
+                        className="modal-panel"
+                        onClick={(event) => event.stopPropagation()}
+                        role="dialog"
+                        initial={{ opacity: 0, y: 24, scale: 0.97, filter: "blur(8px)" }}
+                        animate={{ opacity: 1, y: 0, scale: 1, filter: "blur(0px)" }}
+                        transition={{ duration: 0.26, ease: [0.22, 1, 0.36, 1] }}
+                    >
                         <div className="modal-panel__header">
                             <div>
                                 <p className="card__eyebrow">Редактор</p>
@@ -765,9 +794,10 @@ export function KnowledgeGraphView({ disciplineId }: KnowledgeGraphViewProps) {
                                 onDataChanged={refreshSelectedDisciplineGraph}
                             />
                         </div>
-                    </div>
-                </div>
+                    </motion.div>
+                </motion.div>
             ) : null}
+            </AnimatePresence>
         </div>
     );
 }

@@ -258,6 +258,7 @@ export default function TrajectoryGraphBuilder() {
   const [draggedTopicId, setDraggedTopicId] = useState("");
   const [dragOverTopicId, setDragOverTopicId] = useState("");
   const [notifications, setNotifications] = useState<ToastMessage[]>([]);
+  const [selectedTopicsModalOpen, setSelectedTopicsModalOpen] = useState(false);
 
   function pushNotification(message: Feedback) {
     const id = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
@@ -1396,25 +1397,6 @@ export default function TrajectoryGraphBuilder() {
                     </button>
                   </div>
 
-                  <div className="trajectory-topic-actions">
-                    <button
-                      className="secondary-button"
-                      disabled={index === 0}
-                      onClick={() => moveTopic(topicId, -1)}
-                      type="button"
-                    >
-                      Выше
-                    </button>
-                    <button
-                      className="secondary-button"
-                      disabled={index === selectedTopicIds.length - 1}
-                      onClick={() => moveTopic(topicId, 1)}
-                      type="button"
-                    >
-                      Ниже
-                    </button>
-                  </div>
-
                   <label className="trajectory-threshold-field">
                     Порог темы
                     <input
@@ -1474,8 +1456,8 @@ export default function TrajectoryGraphBuilder() {
   }
 
   return (
-    <div className={`page-shell trajectory-page page-shell--${view.level}`}>
-      <header className="hero trajectory-hero">
+    <div className={`page-shell trajectory-page immersive-page immersive-page--trajectory page-shell--${view.level}`}>
+      <header className="hero trajectory-hero immersive-page__hero">
         <div>
           <p className="hero__eyebrow">Learning path</p>
           <h1>Конструктор траектории</h1>
@@ -1599,6 +1581,7 @@ export default function TrajectoryGraphBuilder() {
 
           <section className="card card--soft">
             <p className="card__eyebrow">Проверка</p>
+            {validationErrors.length ? <p className="trajectory-errors-title">Ошибки</p> : null}
             <div className="trajectory-validation trajectory-validation--compact">
               {validationErrors.length ? (
                 validationErrors.slice(0, 5).map((error) => <span key={error}>{error}</span>)
@@ -1606,6 +1589,14 @@ export default function TrajectoryGraphBuilder() {
                 <strong>Траектория готова к сохранению.</strong>
               )}
             </div>
+
+            <button
+              className="secondary-button"
+              onClick={() => setSelectedTopicsModalOpen(true)}
+              type="button"
+            >
+              Выбранные темы
+            </button>
 
             <button
               className="primary-button trajectory-save-button"
@@ -1757,9 +1748,29 @@ export default function TrajectoryGraphBuilder() {
             </div>
           </section>
 
-          {renderSelectedTopicsPanel()}
         </main>
       </div>
+
+      {selectedTopicsModalOpen ? (
+        <div className="modal-backdrop" onClick={() => setSelectedTopicsModalOpen(false)}>
+          <div className="modal-panel" onClick={(event) => event.stopPropagation()}>
+            <div className="modal-panel__header">
+              <div>
+                <p className="card__eyebrow">Траектория</p>
+                <h2>Последовательность выбранных тем</h2>
+              </div>
+              <button
+                className="ghost-button"
+                onClick={() => setSelectedTopicsModalOpen(false)}
+                type="button"
+              >
+                Закрыть
+              </button>
+            </div>
+            <div className="modal-panel__body">{renderSelectedTopicsPanel()}</div>
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }

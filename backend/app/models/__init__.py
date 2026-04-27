@@ -14,6 +14,12 @@ from .trajectories import (
     LearningTrajectoryTopic,
     LearningTrajectoryElement,
 )
+from .learning_tasks import (
+    LearningTrajectoryTask,
+    LearningTrajectoryTaskElement,
+    StudentElementMastery,
+    StudentTaskProgress,
+)
 from .bindings import (
     GroupDiscipline,
     StudentDiscipline,
@@ -37,6 +43,10 @@ __all__ = [
     "LearningTrajectory",
     "LearningTrajectoryTopic",
     "LearningTrajectoryElement",
+    "LearningTrajectoryTask",
+    "LearningTrajectoryTaskElement",
+    "StudentElementMastery",
+    "StudentTaskProgress",
     "GroupDiscipline",
     "StudentDiscipline",
     "StudentDisciplineRating",

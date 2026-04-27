@@ -128,6 +128,102 @@ export type LearningTrajectory = {
   topics: LearningTrajectoryTopic[];
 };
 
+export type LearningTrajectoryTaskType =
+  | "single_choice"
+  | "multiple_choice"
+  | "matching"
+  | "text";
+
+export type LearningTrajectoryTaskOption = {
+  id: string;
+  text: string;
+  is_correct: boolean;
+};
+
+export type LearningTrajectoryTaskMatchingPair = {
+  id: string;
+  left: string;
+  right: string;
+};
+
+export type LearningTrajectoryTaskContent = {
+  options?: LearningTrajectoryTaskOption[];
+  pairs?: LearningTrajectoryTaskMatchingPair[];
+  accepted_answers?: string[];
+  placeholder?: string;
+};
+
+export type LearningTrajectoryTaskElement = {
+  element_id: string;
+  name: string;
+};
+
+export type LearningTrajectoryTask = {
+  id: string;
+  trajectory_id: string;
+  trajectory_topic_id: string;
+  topic_id: string;
+  topic_name: string;
+  prompt: string;
+  difficulty: number;
+  task_type: LearningTrajectoryTaskType;
+  content: LearningTrajectoryTaskContent;
+  created_at: string;
+  updated_at: string;
+  primary_element: LearningTrajectoryTaskElement;
+  related_elements: LearningTrajectoryTaskElement[];
+};
+
+export type StudentTaskProgress = {
+  status: "not_started" | "in_progress" | "completed";
+  attempts_count: number;
+  last_score: number | null;
+  best_score: number | null;
+  completed_at: string | null;
+  last_answer_payload: Record<string, unknown> | null;
+};
+
+export type StudentTaskElementState = {
+  element_id: string;
+  name: string;
+  mastery_value: number;
+};
+
+export type StudentTaskChoiceOption = {
+  id: string;
+  text: string;
+};
+
+export type StudentTaskMatchingItem = {
+  id: string;
+  text: string;
+};
+
+export type StudentTaskContent = {
+  options?: StudentTaskChoiceOption[];
+  left_items?: StudentTaskMatchingItem[];
+  right_items?: StudentTaskMatchingItem[];
+  placeholder?: string;
+};
+
+export type StudentAssignedTask = {
+  id: string;
+  trajectory_id: string;
+  trajectory_name: string;
+  discipline_id: string;
+  discipline_name: string;
+  topic_id: string;
+  topic_name: string;
+  prompt: string;
+  difficulty: number;
+  task_type: LearningTrajectoryTaskType;
+  content: StudentTaskContent;
+  primary_element: StudentTaskElementState;
+  related_elements: StudentTaskElementState[];
+  progress: StudentTaskProgress;
+  recommendation_score: number | null;
+};
+
 export type ViewMode =
   | {
       level: "topics";

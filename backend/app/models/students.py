@@ -47,3 +47,17 @@ class Student(Base):
         cascade="all, delete-orphan",
         lazy="selectin",
     )
+
+    element_masteries: Mapped[list["StudentElementMastery"]] = relationship(
+        "StudentElementMastery",
+        back_populates="student",
+        cascade="all, delete-orphan",
+        lazy="selectin",
+    )
+
+    task_progress_entries: Mapped[list["StudentTaskProgress"]] = relationship(
+        "StudentTaskProgress",
+        back_populates="student",
+        cascade="all, delete-orphan",
+        lazy="selectin",
+    )
