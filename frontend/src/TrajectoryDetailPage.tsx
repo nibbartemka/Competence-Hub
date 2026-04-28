@@ -186,6 +186,10 @@ function competenceLabel(type: KnowledgeElement["competence_type"]) {
   return "Владеть";
 }
 
+function buildDetailValueKey(label: string, value: string) {
+  return `${label}:${value}`;
+}
+
 function topicName(topicById: Map<string, Topic>, topicId: string) {
   return topicById.get(topicId)?.name ?? "Тема не найдена";
 }
@@ -1015,6 +1019,10 @@ export default function TrajectoryDetailPage() {
     }),
     [dimmedNodeIds],
   );
+  const detail: DetailCard | null =
+    selectedNodeId === NO_NODE_SELECTION
+      ? null
+      : scene?.detailsByNodeId[selectedNodeId || scene?.defaultSelectedNodeId] ?? null;
   const canEditTrajectory = trajectory?.status === "draft" && trajectory.is_actual;
 
   const availablePrimaryElements = useMemo(
@@ -2393,6 +2401,52 @@ export default function TrajectoryDetailPage() {
             )}
           </div>
         </section>
+
+        <aside className="inspector">
+          <section className="card card--soft">
+            <div className="card__header">
+              <span className="card__eyebrow">Выбранная вершина</span>
+            </div>
+            {detail ? (
+              <>
+                <h2>{detail.title}</h2>
+                {detail.subtitle ? <p className="card__lead">{detail.subtitle}</p> : null}
+                {detail.description ? <p className="card__text">{detail.description}</p> : null}
+
+                <div className="chip-row">
+                  {detail.chips.map((chip) => (
+                    <span className={`chip chip--${chip.tone}`} key={chip.label}>
+                      {chip.label}
+                    </span>
+                  ))}
+                </div>
+
+                <div className="stat-grid">
+                  {detail.stats.map((stat) => (
+                    <div className="stat" key={stat.label}>
+                      <span>{stat.label}</span>
+                      {Array.isArray(stat.value) ? (
+                        <ul className="stat__value-list">
+                          {stat.value.map((value) => (
+                            <li key={buildDetailValueKey(stat.label, value)}>{value}</li>
+                          ))}
+                        </ul>
+                      ) : (
+                        <strong>{stat.value}</strong>
+                      )}
+                    </div>
+                  ))}
+                </div>
+
+                {detail.footnote ? <p className="card__footnote">{detail.footnote}</p> : null}
+              </>
+            ) : (
+              <p className="card__text">
+                Выдели тему или элемент на графе, чтобы увидеть его описание и связанные вершины.
+              </p>
+            )}
+          </section>
+        </aside>
 
         {studentPreviewOpen && studentIdFromQuery && false ? (
           <section className="card card--soft trajectory-student-topic-panel">
