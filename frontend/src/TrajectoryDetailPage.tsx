@@ -24,6 +24,7 @@ import {
   updateLearningTrajectoryTopicOrder,
 } from "./api";
 import { GraphNode } from "./components/GraphNode";
+import { applySceneWithViewportMemory } from "./graphViewport";
 import type {
   DetailCard,
   DisciplineKnowledgeGraph,
@@ -399,6 +400,7 @@ function buildTrajectoryScene(
   }
 
   return {
+    key: `trajectory-topics:${trajectory.id}`,
     rootId: nodes[0]?.id ?? "",
     nodes,
     lines,
@@ -510,6 +512,7 @@ function buildStudentTrajectoryTopicsScene(
   }
 
   return {
+    key: `student-trajectory-topics:${trajectory.id}`,
     rootId: defaultSelectedNodeId || (nodes[0]?.id ?? ""),
     nodes,
     lines,
@@ -531,6 +534,7 @@ function buildStudentTrajectoryElementsScene(
 
   if (!trajectoryTopic || !topic) {
     return {
+      key: `student-trajectory-elements-missing:${trajectory.id}:${topicId}`,
       rootId: "",
       nodes: [] as JsonNode[],
       lines: [] as JsonLine[],
@@ -645,6 +649,7 @@ function buildStudentTrajectoryElementsScene(
   });
 
   return {
+    key: `student-trajectory-elements:${trajectory.id}:${topic.id}`,
     rootId: focusNodeId,
     nodes,
     lines,
@@ -661,6 +666,18 @@ export default function TrajectoryDetailPage() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const graphRef = useRef<RelationGraphComponent>();
+  const currentSceneKeyRef = useRef("");
+  const sceneViewportRef = useRef<
+    Map<
+      string,
+      {
+        offsetX: number;
+        offsetY: number;
+        positions: Map<string, { x: number; y: number }>;
+        zoom: number | undefined;
+      }
+    >
+  >(new Map());
 
   const [graph, setGraph] = useState<DisciplineKnowledgeGraph | null>(null);
   const [trajectory, setTrajectory] = useState<LearningTrajectory | null>(null);
@@ -1154,17 +1171,11 @@ export default function TrajectoryDetailPage() {
   useEffect(() => {
     if (!scene || !graphRef.current) return;
 
-    graphRef.current.setJsonData(
-      {
-        rootId: scene.rootId,
-        nodes: scene.nodes,
-        lines: scene.lines,
-      },
-      (graphInstance) => {
-        if (scene.defaultSelectedNodeId) {
-          graphInstance.setCheckedNode(scene.defaultSelectedNodeId);
-        }
-      },
+    applySceneWithViewportMemory(
+      graphRef.current,
+      scene,
+      currentSceneKeyRef,
+      sceneViewportRef,
     );
   }, [scene]);
 

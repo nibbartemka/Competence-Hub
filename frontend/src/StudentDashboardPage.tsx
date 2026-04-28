@@ -48,37 +48,30 @@ export default function StudentDashboardPage() {
         setLoading(true);
         setError("");
 
-        const [nextStudentRecord, nextGroups, nextDisciplines] = await Promise.all([
+        const [nextStudent, nextGroups, nextDisciplines] = await Promise.all([
           fetchStudent(currentStudentId, controller.signal),
           fetchGroups(controller.signal),
           fetchDisciplines(controller.signal),
         ]);
 
-        const nextStudent = nextStudentRecord;
-        let nextTrajectories: StudentLearningTrajectorySummary[] = [];
+        if (controller.signal.aborted) return;
 
-        if (nextStudent) {
-          try {
-            nextTrajectories = await fetchStudentLearningTrajectories(
-              currentStudentId,
-              controller.signal,
-            );
-          } catch (trajectoryError) {
-            if (!isAbortError(trajectoryError)) {
-              setError("Профиль загружен, но траектории получить не удалось.");
-            }
-          }
-        }
+        const [nextSubgroups, nextTrajectories] = nextStudent
+          ? await Promise.all([
+              nextStudent.group_id
+                ? fetchSubgroups(nextStudent.group_id, controller.signal)
+                : Promise.resolve([] as Subgroup[]),
+              fetchStudentLearningTrajectories(currentStudentId, controller.signal),
+            ])
+          : [[], [] as StudentLearningTrajectorySummary[]];
 
-        const nextSubgroups = nextStudent?.group_id
-          ? await fetchSubgroups(nextStudent.group_id, controller.signal)
-          : [];
+        if (controller.signal.aborted) return;
 
         setStudent(nextStudent);
         setGroups(nextGroups);
         setDisciplines(nextDisciplines);
-        setTrajectories(nextTrajectories);
         setSubgroups(nextSubgroups);
+        setTrajectories(nextTrajectories);
 
         if (!nextStudent) {
           setError("Студент не найден.");
@@ -132,17 +125,27 @@ export default function StudentDashboardPage() {
             <button className="ghost-button" onClick={() => navigate("/")} type="button">
               На главную
             </button>
-            <div className="hero__profile-card">
-              <p className="card__eyebrow">Профиль</p>
-              <strong>{student?.name ?? "Студент"}</strong>
-              <span>
-                {student?.group_id ? groupById.get(student.group_id)?.name ?? "Группа не найдена" : "Группа не назначена"}
-              </span>
-              <span>
-                {student?.subgroup_id
-                  ? `Подгруппа ${subgroupById.get(student.subgroup_id)?.subgroup_num ?? "не найдена"}`
-                  : "Подгруппа не назначена"}
-              </span>
+            <div className="student-profile-compact student-profile-card">
+              <span className="student-profile-compact__label">Профиль студента</span>
+              <strong className="student-profile-card__name">{student?.name ?? "Студент"}</strong>
+              <div className="student-profile-card__meta">
+                <div className="student-profile-card__row">
+                  <small>Группа</small>
+                  <span>
+                    {student?.group_id
+                      ? groupById.get(student.group_id)?.name ?? "Группа не найдена"
+                      : "Не назначена"}
+                  </span>
+                </div>
+                <div className="student-profile-card__row">
+                  <small>Подгруппа</small>
+                  <span>
+                    {student?.subgroup_id
+                      ? `№ ${subgroupById.get(student.subgroup_id)?.subgroup_num ?? "не найдена"}`
+                      : "Не назначена"}
+                  </span>
+                </div>
+              </div>
             </div>
           </div>
         </motion.header>
@@ -175,7 +178,8 @@ export default function StudentDashboardPage() {
                 </article>
               </div>
               <p className="card__text">
-                Выбери траекторию ниже. Задания открываются уже внутри графа выбранной траектории после клика по теме.
+                Выбери траекторию ниже. Задания открываются уже внутри графа выбранной
+                траектории после клика по теме.
               </p>
             </motion.section>
 
@@ -228,7 +232,8 @@ export default function StudentDashboardPage() {
                           </div>
                           <span>Прогресс: {trajectory.progress_percent}%</span>
                           <span>
-                            Выполнено {trajectory.completed_task_count} из {trajectory.total_task_count} заданий
+                            Выполнено {trajectory.completed_task_count} из{" "}
+                            {trajectory.total_task_count} заданий
                           </span>
                         </div>
 

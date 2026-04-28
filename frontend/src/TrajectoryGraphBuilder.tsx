@@ -1,7 +1,6 @@
 import { type DragEvent, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import RelationGraph, {
-  type RelationGraphInstance,
   type RGOptions,
   type RelationGraphComponent,
 } from "relation-graph-react";
@@ -21,6 +20,7 @@ import {
   GraphNodeRuntimeStateProvider,
   type GraphNodeRuntimeState,
 } from "./components/GraphNode";
+import { applySceneWithViewportMemory } from "./graphViewport";
 import { buildElementScene, buildTopicScene } from "./graphScene";
 import type {
   CompetenceType,
@@ -224,7 +224,18 @@ export default function TrajectoryGraphBuilder() {
   const { disciplineId } = useParams<{ disciplineId: string }>();
   const navigate = useNavigate();
   const graphRef = useRef<RelationGraphComponent>();
-  const previousSceneKeyRef = useRef("");
+  const currentSceneKeyRef = useRef("");
+  const sceneViewportRef = useRef<
+    Map<
+      string,
+      {
+        offsetX: number;
+        offsetY: number;
+        positions: Map<string, { x: number; y: number }>;
+        zoom: number | undefined;
+      }
+    >
+  >(new Map());
 
   const [disciplines, setDisciplines] = useState<Discipline[]>([]);
   const [groups, setGroups] = useState<Group[]>([]);
@@ -968,52 +979,12 @@ export default function TrajectoryGraphBuilder() {
   useEffect(() => {
     if (!scene || !graphRef.current) return;
 
-    const graphComponent = graphRef.current;
-    const graphInstance = graphComponent.getInstance();
-    const sameScene = previousSceneKeyRef.current === scene.key;
-    const previousPositions = new Map<string, { x: number; y: number }>();
-    const previousOffset = sameScene ? graphInstance.getGraphOffet() : null;
-    const previousZoom = sameScene ? graphInstance.options.canvasZoom : undefined;
-
-    if (sameScene) {
-      for (const node of graphInstance.getNodes()) {
-        previousPositions.set(node.id, { x: node.x, y: node.y });
-      }
-    }
-
-    const nodes = sameScene
-      ? scene.nodes.map((node) => {
-          const position = previousPositions.get(node.id);
-          return position ? { ...node, x: position.x, y: position.y } : node;
-        })
-      : scene.nodes;
-
-    const afterRefresh = (nextGraphInstance: RelationGraphInstance) => {
-      if (sameScene && previousOffset) {
-        nextGraphInstance.setCanvasOffset(previousOffset.offset_x, previousOffset.offset_y);
-        if (previousZoom) {
-          nextGraphInstance.setZoom(previousZoom);
-        }
-      }
-
-      if (scene.defaultSelectedNodeId) {
-        nextGraphInstance.setCheckedNode(scene.defaultSelectedNodeId);
-      }
-    };
-
-    const graphData = {
-      rootId: scene.rootId,
-      nodes,
-      lines: scene.lines,
-    };
-
-    if (sameScene) {
-      graphComponent.setJsonData(graphData, false, afterRefresh);
-    } else {
-      graphComponent.setJsonData(graphData, afterRefresh);
-    }
-
-    previousSceneKeyRef.current = scene.key;
+    applySceneWithViewportMemory(
+      graphRef.current,
+      scene,
+      currentSceneKeyRef,
+      sceneViewportRef,
+    );
   }, [scene]);
 
   function hasSelectedElementForCompetence(competenceType: CompetenceType) {

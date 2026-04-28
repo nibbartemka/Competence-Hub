@@ -13,6 +13,7 @@ import {
 } from "./api";
 import { GraphEditor } from "./components/GraphEditor";
 import { GraphNode } from "./components/GraphNode";
+import { applySceneWithViewportMemory } from "./graphViewport";
 import { buildElementScene, buildTopicScene } from "./graphScene";
 import { actionHoverMotion, cardHoverMotion, revealMotion } from "./motionPresets";
 import type {
@@ -197,6 +198,18 @@ interface KnowledgeGraphViewProps {
 export function KnowledgeGraphView({ disciplineId }: KnowledgeGraphViewProps) {
     const navigate = useNavigate();
     const graphRef = useRef<RelationGraphComponent>();
+    const currentSceneKeyRef = useRef("");
+    const sceneViewportRef = useRef<
+        Map<
+            string,
+            {
+                offsetX: number;
+                offsetY: number;
+                positions: Map<string, { x: number; y: number }>;
+                zoom: number | undefined;
+            }
+        >
+    >(new Map());
 
     const [disciplines, setDisciplines] = useState<Discipline[]>([]);
     const [graphData, setGraphData] = useState<DisciplineKnowledgeGraph | null>(null);
@@ -400,17 +413,11 @@ export function KnowledgeGraphView({ disciplineId }: KnowledgeGraphViewProps) {
     useEffect(() => {
         if (!scene || !graphRef.current) return;
 
-        graphRef.current.setJsonData(
-            {
-                rootId: scene.rootId,
-                nodes: scene.nodes,
-                lines: scene.lines,
-            },
-            (graphInstance) => {
-                if (scene.defaultSelectedNodeId) {
-                    graphInstance.setCheckedNode(scene.defaultSelectedNodeId);
-                }
-            },
+        applySceneWithViewportMemory(
+            graphRef.current,
+            scene,
+            currentSceneKeyRef,
+            sceneViewportRef,
         );
     }, [scene]);
 

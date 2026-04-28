@@ -53,6 +53,8 @@ type TopicNewElementDraft = {
   name: string;
 };
 
+type RelationDirection = "element1_to_element2" | "element2_to_element1";
+
 const COMPETENCE_OPTIONS: Array<{ label: string; value: CompetenceType }> = [
   { label: "Знать", value: "know" },
   { label: "Уметь", value: "can" },
@@ -103,6 +105,14 @@ function relationTypeLabel(value: KnowledgeElementRelationType) {
     ].find((option) => option.value === value)?.label ?? value
   );
 }
+
+const RELATION_DIRECTION_OPTIONS: Array<{
+  label: string;
+  value: RelationDirection;
+}> = [
+  { label: "Элемент 1 -> Элемент 2", value: "element1_to_element2" },
+  { label: "Элемент 2 -> Элемент 1", value: "element2_to_element1" },
+];
 
 function extractErrorMessage(error: unknown) {
   if (error instanceof Error) {
@@ -165,6 +175,42 @@ function getRelationOptions(
   return [];
 }
 
+function resolveRelationEndpoints(
+  element1Id: string,
+  element2Id: string,
+  direction: RelationDirection,
+) {
+  if (direction === "element2_to_element1") {
+    return {
+      sourceElementId: element2Id,
+      targetElementId: element1Id,
+    };
+  }
+
+  return {
+    sourceElementId: element1Id,
+    targetElementId: element2Id,
+  };
+}
+
+function resolveRelationElements(
+  element1: KnowledgeElement | undefined,
+  element2: KnowledgeElement | undefined,
+  direction: RelationDirection,
+) {
+  if (direction === "element2_to_element1") {
+    return {
+      sourceElement: element2,
+      targetElement: element1,
+    };
+  }
+
+  return {
+    sourceElement: element1,
+    targetElement: element2,
+  };
+}
+
 export function GraphEditor({
   disciplineId,
   disciplineElements,
@@ -204,11 +250,15 @@ export function GraphEditor({
 
   const [relationSourceElementId, setRelationSourceElementId] = useState("");
   const [relationTargetElementId, setRelationTargetElementId] = useState("");
+  const [relationDirection, setRelationDirection] =
+    useState<RelationDirection>("element1_to_element2");
   const [relationType, setRelationType] = useState<KnowledgeElementRelationType | "">("");
   const [relationDescription, setRelationDescription] = useState("");
   const [editRelationId, setEditRelationId] = useState("");
   const [editRelationSourceElementId, setEditRelationSourceElementId] = useState("");
   const [editRelationTargetElementId, setEditRelationTargetElementId] = useState("");
+  const [editRelationDirection, setEditRelationDirection] =
+    useState<RelationDirection>("element1_to_element2");
   const [editRelationType, setEditRelationType] = useState<KnowledgeElementRelationType | "">(
     "",
   );
@@ -265,13 +315,25 @@ export function GraphEditor({
     () => relationElements.find((element) => element.id === relationTargetElementId),
     [relationElements, relationTargetElementId],
   );
+  const resolvedCreateRelationElements = useMemo(
+    () =>
+      resolveRelationElements(
+        relationSourceElement,
+        relationTargetElement,
+        relationDirection,
+      ),
+    [relationDirection, relationSourceElement, relationTargetElement],
+  );
   const relationOptions = useMemo(
     () =>
       getRelationOptions(
-        relationSourceElement?.competence_type,
-        relationTargetElement?.competence_type,
+        resolvedCreateRelationElements.sourceElement?.competence_type,
+        resolvedCreateRelationElements.targetElement?.competence_type,
       ),
-    [relationSourceElement?.competence_type, relationTargetElement?.competence_type],
+    [
+      resolvedCreateRelationElements.sourceElement?.competence_type,
+      resolvedCreateRelationElements.targetElement?.competence_type,
+    ],
   );
 
   const editRelationSourceElement = useMemo(
@@ -282,13 +344,25 @@ export function GraphEditor({
     () => relationElements.find((element) => element.id === editRelationTargetElementId),
     [editRelationTargetElementId, relationElements],
   );
+  const resolvedEditRelationElements = useMemo(
+    () =>
+      resolveRelationElements(
+        editRelationSourceElement,
+        editRelationTargetElement,
+        editRelationDirection,
+      ),
+    [editRelationDirection, editRelationSourceElement, editRelationTargetElement],
+  );
   const editRelationOptions = useMemo(
     () =>
       getRelationOptions(
-        editRelationSourceElement?.competence_type,
-        editRelationTargetElement?.competence_type,
+        resolvedEditRelationElements.sourceElement?.competence_type,
+        resolvedEditRelationElements.targetElement?.competence_type,
       ),
-    [editRelationSourceElement?.competence_type, editRelationTargetElement?.competence_type],
+    [
+      resolvedEditRelationElements.sourceElement?.competence_type,
+      resolvedEditRelationElements.targetElement?.competence_type,
+    ],
   );
 
   useEffect(() => {
@@ -438,6 +512,7 @@ export function GraphEditor({
     );
     setEditRelationSourceElementId(selectedRelation?.source_element_id ?? "");
     setEditRelationTargetElementId(selectedRelation?.target_element_id ?? "");
+    setEditRelationDirection("element1_to_element2");
     setEditRelationType(selectedRelation?.relation_type ?? "");
     setEditRelationDescription(selectedRelation?.description ?? "");
   }, [editRelationId, sortedElementRelations]);
@@ -797,9 +872,14 @@ export function GraphEditor({
     try {
       setBusyAction("element-relation");
       setFeedback(null);
+      const resolvedEndpoints = resolveRelationEndpoints(
+        relationSourceElementId,
+        relationTargetElementId,
+        relationDirection,
+      );
       const createdRelation = await createKnowledgeElementRelation({
-        source_element_id: relationSourceElementId,
-        target_element_id: relationTargetElementId,
+        source_element_id: resolvedEndpoints.sourceElementId,
+        target_element_id: resolvedEndpoints.targetElementId,
         relation_type: relationType,
         description: relationDescription.trim(),
       });
@@ -834,9 +914,14 @@ export function GraphEditor({
     try {
       setBusyAction("element-relation-update");
       setFeedback(null);
+      const resolvedEndpoints = resolveRelationEndpoints(
+        editRelationSourceElementId,
+        editRelationTargetElementId,
+        editRelationDirection,
+      );
       await updateKnowledgeElementRelation(editRelationId, {
-        source_element_id: editRelationSourceElementId,
-        target_element_id: editRelationTargetElementId,
+        source_element_id: resolvedEndpoints.sourceElementId,
+        target_element_id: resolvedEndpoints.targetElementId,
         relation_type: editRelationType,
         description: editRelationDescription.trim(),
       });
@@ -1411,6 +1496,23 @@ export function GraphEditor({
                   ))}
                 </select>
               </label>
+
+              <label className="field">
+                <span>Направление</span>
+                <select
+                  value={editRelationDirection}
+                  onChange={(event) =>
+                    setEditRelationDirection(event.target.value as RelationDirection)
+                  }
+                  disabled={!sortedElementRelations.length || !relationElements.length}
+                >
+                  {RELATION_DIRECTION_OPTIONS.map((option) => (
+                    <option key={option.value} value={option.value}>
+                      {option.label}
+                    </option>
+                  ))}
+                </select>
+              </label>
             </div>
 
             {!relationOptions.length ? (
@@ -1448,6 +1550,13 @@ export function GraphEditor({
           <form className="editor-form" onSubmit={handleUpdateElementRelation}>
             {!sortedElementRelations.length ? (
               <p className="editor-empty">Пока нет связей между элементами для редактирования.</p>
+            ) : null}
+
+            {resolvedCreateRelationElements.sourceElement && resolvedCreateRelationElements.targetElement ? (
+              <p className="editor-helper">
+                Фактическое направление: {resolvedCreateRelationElements.sourceElement.name} -&gt;{" "}
+                {resolvedCreateRelationElements.targetElement.name}
+              </p>
             ) : null}
 
             <label className="field">
@@ -1491,6 +1600,23 @@ export function GraphEditor({
                   {relationElements.map((element) => (
                     <option key={element.id} value={element.id}>
                       {element.name} ({competenceLabel(element.competence_type)})
+                    </option>
+                  ))}
+                </select>
+              </label>
+
+              <label className="field">
+                <span>Направление</span>
+                <select
+                  value={relationDirection}
+                  onChange={(event) =>
+                    setRelationDirection(event.target.value as RelationDirection)
+                  }
+                  disabled={!relationElements.length}
+                >
+                  {RELATION_DIRECTION_OPTIONS.map((option) => (
+                    <option key={option.value} value={option.value}>
+                      {option.label}
                     </option>
                   ))}
                 </select>
