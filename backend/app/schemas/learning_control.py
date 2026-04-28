@@ -22,3 +22,24 @@ class StudentTopicControlRead(BaseModel):
     is_unlocked: bool
     elements: list[StudentTopicControlElementRead] = Field(default_factory=list)
     current_task: StudentAssignedTaskRead | None = None
+
+
+class StudentTrajectoryMasteryElementRead(BaseModel):
+    element_id: UUID
+    threshold: int
+    mastery_value: int
+
+
+class StudentTrajectoryMasteryTopicRead(BaseModel):
+    topic_id: UUID
+    position: int
+    threshold: int
+    mastery_value: int
+    is_unlocked: bool
+    elements: list[StudentTrajectoryMasteryElementRead] = Field(default_factory=list)
+
+
+class StudentTrajectoryMasteryRead(BaseModel):
+    student_id: UUID
+    trajectory_id: UUID
+    topics: list[StudentTrajectoryMasteryTopicRead] = Field(default_factory=list)

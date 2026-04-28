@@ -15,6 +15,7 @@ import type {
   Student,
   StudentAssignedTask,
   StudentLearningTrajectorySummary,
+  StudentTrajectoryMastery,
   StudentTopicControl,
   Subgroup,
   Teacher,
@@ -134,6 +135,17 @@ export function fetchStudents(signal?: AbortSignal) {
   return request<Student[]>("/students/", { signal });
 }
 
+export function fetchStudentsByGroup(groupId: string, signal?: AbortSignal) {
+  return request<Student[]>(
+    `/students/?group_id=${encodeURIComponent(groupId)}`,
+    { signal },
+  );
+}
+
+export function fetchStudent(studentId: string, signal?: AbortSignal) {
+  return request<Student>(`/students/${studentId}`, { signal });
+}
+
 export function createStudent(payload: {
   name: string;
   group_id: string;
@@ -147,6 +159,10 @@ export function createStudent(payload: {
 
 export function fetchTeachers(signal?: AbortSignal) {
   return request<Teacher[]>("/teachers/", { signal });
+}
+
+export function fetchTeacher(teacherId: string, signal?: AbortSignal) {
+  return request<Teacher>(`/teachers/${teacherId}`, { signal });
 }
 
 export function createTeacher(payload: { name: string; group_ids?: string[] }) {
@@ -470,6 +486,29 @@ export function fetchStudentTopicControl(
 ) {
   return request<StudentTopicControl>(
     `/students/${studentId}/trajectories/${trajectoryId}/control/${topicId}`,
+    { signal },
+  );
+}
+
+export function fetchStudentTopicControlByPosition(
+  studentId: string,
+  trajectoryId: string,
+  topicPosition: number,
+  signal?: AbortSignal,
+) {
+  return request<StudentTopicControl>(
+    `/students/${studentId}/trajectories/${trajectoryId}/control/steps/${topicPosition}`,
+    { signal },
+  );
+}
+
+export function fetchStudentTrajectoryMastery(
+  studentId: string,
+  trajectoryId: string,
+  signal?: AbortSignal,
+) {
+  return request<StudentTrajectoryMastery>(
+    `/students/${studentId}/trajectories/${trajectoryId}/mastery`,
     { signal },
   );
 }

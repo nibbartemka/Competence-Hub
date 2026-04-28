@@ -5,7 +5,8 @@ import { Link, useNavigate, useParams } from "react-router-dom";
 import {
   fetchDisciplines,
   fetchGroups,
-  fetchStudents,
+  fetchStudentsByGroup,
+  fetchTeacher,
   fetchTeachers,
   isAbortError,
 } from "./api";
@@ -23,7 +24,7 @@ export default function TeacherDashboardPage() {
   const { teacherId } = useParams<{ teacherId: string }>();
   const navigate = useNavigate();
 
-  const [teachers, setTeachers] = useState<Teacher[]>([]);
+  const [teacher, setTeacher] = useState<Teacher | null>(null);
   const [disciplines, setDisciplines] = useState<Discipline[]>([]);
   const [groups, setGroups] = useState<Group[]>([]);
   const [students, setStudents] = useState<Student[]>([]);
@@ -37,13 +38,21 @@ export default function TeacherDashboardPage() {
       try {
         setLoading(true);
         setError("");
-        const [nextTeachers, nextDisciplines, nextGroups, nextStudents] = await Promise.all([
-          fetchTeachers(controller.signal),
+        const [nextTeacher, nextDisciplines, nextGroups] = await Promise.all([
+          teacherId ? fetchTeacher(teacherId, controller.signal) : fetchTeachers(controller.signal).then((items) => items[0]),
           fetchDisciplines(controller.signal),
           fetchGroups(controller.signal),
-          fetchStudents(controller.signal),
         ]);
-        setTeachers(nextTeachers);
+
+        const nextStudents = (
+          await Promise.all(
+            (nextTeacher?.group_ids ?? []).map((groupId) =>
+              fetchStudentsByGroup(groupId, controller.signal),
+            ),
+          )
+        ).flat();
+
+        setTeacher(nextTeacher ?? null);
         setDisciplines(nextDisciplines);
         setGroups(nextGroups);
         setStudents(nextStudents);
@@ -56,9 +65,8 @@ export default function TeacherDashboardPage() {
 
     void load();
     return () => controller.abort();
-  }, []);
+  }, [teacherId]);
 
-  const teacher = teachers.find((item) => item.id === teacherId);
   const teacherGroups = useMemo(
     () => groups.filter((group) => teacher?.group_ids.includes(group.id)),
     [groups, teacher],

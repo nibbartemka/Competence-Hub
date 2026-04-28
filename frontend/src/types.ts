@@ -298,6 +298,27 @@ export type StudentTopicControl = {
   current_task: StudentAssignedTask | null;
 };
 
+export type StudentTrajectoryMasteryElement = {
+  element_id: string;
+  threshold: number;
+  mastery_value: number;
+};
+
+export type StudentTrajectoryMasteryTopic = {
+  topic_id: string;
+  position: number;
+  threshold: number;
+  mastery_value: number;
+  is_unlocked: boolean;
+  elements: StudentTrajectoryMasteryElement[];
+};
+
+export type StudentTrajectoryMastery = {
+  student_id: string;
+  trajectory_id: string;
+  topics: StudentTrajectoryMasteryTopic[];
+};
+
 export type ViewMode =
   | {
       level: "topics";

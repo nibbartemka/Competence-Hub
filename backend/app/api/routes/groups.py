@@ -13,43 +13,47 @@ router = APIRouter(prefix="/groups", tags=["Groups"])
 
 
 @router.get("/", response_model=list[GroupRead])
-async def list_groups(session: DbSession) -> list[Group]:
-    result = await session.execute(select(Group).order_by(Group.name))
-    return list(result.scalars().all())
+async def list_groups(session: DbSession) -> list[GroupRead]:
+    result = await session.execute(select(Group.id, Group.name).order_by(Group.name))
+    return [GroupRead(id=group_id, name=name) for group_id, name in result.all()]
 
 
 @router.post("/", response_model=GroupRead, status_code=status.HTTP_201_CREATED)
-async def create_group(payload: GroupCreate, session: DbSession) -> Group:
+async def create_group(payload: GroupCreate, session: DbSession) -> GroupRead:
     group = Group(name=payload.name)
     session.add(group)
     await commit_or_409(session)
     await session.refresh(group)
-    return group
+    return GroupRead(id=group.id, name=group.name)
 
 
 @router.get("/{group_id}", response_model=GroupRead)
-async def get_group(group_id: UUID, session: DbSession) -> Group:
-    group = await session.get(Group, group_id)
-    if group is None:
+async def get_group(group_id: UUID, session: DbSession) -> GroupRead:
+    result = await session.execute(select(Group.id, Group.name).where(Group.id == group_id))
+    row = result.one_or_none()
+    if row is None:
         raise not_found("Group", group_id)
-    return group
+    return GroupRead(id=row.id, name=row.name)
 
 
 @router.get("/{group_id}/subgroups", response_model=list[SubgroupRead])
 async def list_group_subgroups(
     group_id: UUID,
     session: DbSession,
-) -> list[Subgroup]:
-    group = await session.get(Group, group_id)
-    if group is None:
+) -> list[SubgroupRead]:
+    group_exists = await session.execute(select(Group.id).where(Group.id == group_id))
+    if group_exists.scalar_one_or_none() is None:
         raise not_found("Group", group_id)
 
     result = await session.execute(
-        select(Subgroup)
+        select(Subgroup.id, Subgroup.group_id, Subgroup.subgroup_num)
         .where(Subgroup.group_id == group_id)
         .order_by(Subgroup.subgroup_num)
     )
-    return list(result.scalars().all())
+    return [
+        SubgroupRead(id=subgroup_id, group_id=row_group_id, subgroup_num=subgroup_num)
+        for subgroup_id, row_group_id, subgroup_num in result.all()
+    ]
 
 
 @router.post(
@@ -61,19 +65,23 @@ async def create_group_subgroup(
     group_id: UUID,
     payload: SubgroupCreate,
     session: DbSession,
-) -> Subgroup:
+) -> SubgroupRead:
     if payload.group_id != group_id:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Payload group_id must match URL group_id.",
         )
 
-    group = await session.get(Group, group_id)
-    if group is None:
+    group_exists = await session.execute(select(Group.id).where(Group.id == group_id))
+    if group_exists.scalar_one_or_none() is None:
         raise not_found("Group", group_id)
 
     subgroup = Subgroup(group_id=group_id, subgroup_num=payload.subgroup_num)
     session.add(subgroup)
     await commit_or_409(session)
     await session.refresh(subgroup)
-    return subgroup
+    return SubgroupRead(
+        id=subgroup.id,
+        group_id=subgroup.group_id,
+        subgroup_num=subgroup.subgroup_num,
+    )

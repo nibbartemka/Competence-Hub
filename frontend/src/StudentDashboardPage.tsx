@@ -5,8 +5,8 @@ import { Link, useNavigate, useParams } from "react-router-dom";
 import {
   fetchDisciplines,
   fetchGroups,
+  fetchStudent,
   fetchStudentLearningTrajectories,
-  fetchStudents,
   fetchSubgroups,
   isAbortError,
 } from "./api";
@@ -30,7 +30,7 @@ export default function StudentDashboardPage() {
   const { studentId } = useParams<{ studentId: string }>();
   const navigate = useNavigate();
 
-  const [students, setStudents] = useState<Student[]>([]);
+  const [student, setStudent] = useState<Student | null>(null);
   const [groups, setGroups] = useState<Group[]>([]);
   const [subgroups, setSubgroups] = useState<Subgroup[]>([]);
   const [disciplines, setDisciplines] = useState<Discipline[]>([]);
@@ -48,13 +48,13 @@ export default function StudentDashboardPage() {
         setLoading(true);
         setError("");
 
-        const [nextStudents, nextGroups, nextDisciplines] = await Promise.all([
-          fetchStudents(controller.signal),
+        const [nextStudentRecord, nextGroups, nextDisciplines] = await Promise.all([
+          fetchStudent(currentStudentId, controller.signal),
           fetchGroups(controller.signal),
           fetchDisciplines(controller.signal),
         ]);
 
-        const nextStudent = nextStudents.find((item) => item.id === currentStudentId);
+        const nextStudent = nextStudentRecord;
         let nextTrajectories: StudentLearningTrajectorySummary[] = [];
 
         if (nextStudent) {
@@ -70,11 +70,11 @@ export default function StudentDashboardPage() {
           }
         }
 
-        const nextSubgroups = (
-          await Promise.all(nextGroups.map((group) => fetchSubgroups(group.id, controller.signal)))
-        ).flat();
+        const nextSubgroups = nextStudent?.group_id
+          ? await fetchSubgroups(nextStudent.group_id, controller.signal)
+          : [];
 
-        setStudents(nextStudents);
+        setStudent(nextStudent);
         setGroups(nextGroups);
         setDisciplines(nextDisciplines);
         setTrajectories(nextTrajectories);
@@ -96,7 +96,6 @@ export default function StudentDashboardPage() {
     return () => controller.abort();
   }, [studentId]);
 
-  const student = students.find((item) => item.id === studentId);
   const groupById = useMemo(() => new Map(groups.map((group) => [group.id, group])), [groups]);
   const subgroupById = useMemo(
     () => new Map(subgroups.map((subgroup) => [subgroup.id, subgroup])),

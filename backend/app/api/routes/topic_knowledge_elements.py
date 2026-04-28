@@ -2,6 +2,7 @@ from uuid import UUID
 
 from fastapi import APIRouter, HTTPException, status
 from sqlalchemy import select
+from sqlalchemy.orm import lazyload
 
 from app.api.crud import commit_or_409, flush_or_409, not_found
 from app.api.deps import DbSession
@@ -26,7 +27,7 @@ async def list_topic_knowledge_elements(
     element_id: UUID | None = None,
     role: TopicKnowledgeElementRole | None = None,
 ) -> list[TopicKnowledgeElement]:
-    query = select(TopicKnowledgeElement)
+    query = select(TopicKnowledgeElement).options(lazyload("*"))
     if topic_id is not None:
         query = query.where(TopicKnowledgeElement.topic_id == topic_id)
     if element_id is not None:
@@ -48,11 +49,19 @@ async def create_topic_knowledge_element(
     payload: TopicKnowledgeElementCreate,
     session: DbSession,
 ) -> TopicKnowledgeElement:
-    topic = await session.get(Topic, payload.topic_id)
+    topic_result = await session.execute(
+        select(Topic).options(lazyload("*")).where(Topic.id == payload.topic_id)
+    )
+    topic = topic_result.scalar_one_or_none()
     if topic is None:
         raise not_found("Topic", payload.topic_id)
 
-    element = await session.get(KnowledgeElement, payload.element_id)
+    element_result = await session.execute(
+        select(KnowledgeElement)
+        .options(lazyload("*"))
+        .where(KnowledgeElement.id == payload.element_id)
+    )
+    element = element_result.scalar_one_or_none()
     if element is None:
         raise not_found("Knowledge element", payload.element_id)
 
@@ -80,10 +89,18 @@ async def create_topic_knowledge_element(
 
 @router.delete("/{topic_element_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_topic_knowledge_element(topic_element_id: UUID, session: DbSession) -> None:
-    topic_element = await session.get(TopicKnowledgeElement, topic_element_id)
+    topic_element_result = await session.execute(
+        select(TopicKnowledgeElement)
+        .options(lazyload("*"))
+        .where(TopicKnowledgeElement.id == topic_element_id)
+    )
+    topic_element = topic_element_result.scalar_one_or_none()
     if topic_element is None:
         raise not_found("Topic knowledge element", topic_element_id)
-    topic = await session.get(Topic, topic_element.topic_id)
+    topic_result = await session.execute(
+        select(Topic).options(lazyload("*")).where(Topic.id == topic_element.topic_id)
+    )
+    topic = topic_result.scalar_one_or_none()
     discipline_id = topic.discipline_id if topic is not None else None
     await ensure_topic_element_link_can_be_removed(session, topic_element.topic_id)
 

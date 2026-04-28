@@ -2,55 +2,87 @@ from uuid import UUID
 
 from fastapi import APIRouter, status
 from sqlalchemy import select
-from sqlalchemy.orm import selectinload
 
 from app.api.crud import commit_or_409, not_found
 from app.api.deps import DbSession
-from app.models import Group, Teacher, TeacherGroup
+from app.models import Group, Teacher, TeacherDiscipline, TeacherGroup
 from app.schemas import TeacherCreate, TeacherRead
 
 
 router = APIRouter(prefix="/teachers", tags=["Teachers"])
 
 
-def _teacher_read_options():
-    return (
-        selectinload(Teacher.discipline_links),
-        selectinload(Teacher.group_links),
+async def _build_teacher_reads(
+    rows: list[tuple[UUID, str]],
+    session: DbSession,
+) -> list[TeacherRead]:
+    if not rows:
+        return []
+
+    teacher_ids = [row[0] for row in rows]
+    discipline_links_result = await session.execute(
+        select(
+            TeacherDiscipline.teacher_id,
+            TeacherDiscipline.discipline_id,
+        ).where(TeacherDiscipline.teacher_id.in_(teacher_ids))
+    )
+    group_links_result = await session.execute(
+        select(
+            TeacherGroup.teacher_id,
+            TeacherGroup.group_id,
+        ).where(TeacherGroup.teacher_id.in_(teacher_ids))
     )
 
+    discipline_ids_by_teacher: dict[UUID, list[UUID]] = {
+        teacher_id: [] for teacher_id in teacher_ids
+    }
+    group_ids_by_teacher: dict[UUID, list[UUID]] = {
+        teacher_id: [] for teacher_id in teacher_ids
+    }
 
-async def get_teacher_for_read(teacher_id: UUID, session: DbSession) -> Teacher:
+    for teacher_id, discipline_id in discipline_links_result.all():
+        discipline_ids_by_teacher.setdefault(teacher_id, []).append(discipline_id)
+    for teacher_id, group_id in group_links_result.all():
+        group_ids_by_teacher.setdefault(teacher_id, []).append(group_id)
+
+    return [
+        TeacherRead(
+            id=teacher_id,
+            name=name,
+            discipline_ids=discipline_ids_by_teacher.get(teacher_id, []),
+            group_ids=group_ids_by_teacher.get(teacher_id, []),
+        )
+        for teacher_id, name in rows
+    ]
+
+
+async def get_teacher_for_read(teacher_id: UUID, session: DbSession) -> TeacherRead:
     result = await session.execute(
-        select(Teacher)
-        .options(*_teacher_read_options())
-        .where(Teacher.id == teacher_id)
+        select(Teacher.id, Teacher.name).where(Teacher.id == teacher_id)
     )
-    teacher = result.scalar_one_or_none()
-    if teacher is None:
+    row = result.one_or_none()
+    if row is None:
         raise not_found("Teacher", teacher_id)
-    return teacher
+    return (await _build_teacher_reads([row], session))[0]
 
 
 @router.get("/", response_model=list[TeacherRead])
-async def list_teachers(session: DbSession) -> list[Teacher]:
+async def list_teachers(session: DbSession) -> list[TeacherRead]:
     result = await session.execute(
-        select(Teacher)
-        .options(*_teacher_read_options())
-        .order_by(Teacher.name)
+        select(Teacher.id, Teacher.name).order_by(Teacher.name)
     )
-    return list(result.scalars().all())
+    return await _build_teacher_reads(list(result.all()), session)
 
 
 @router.post("/", response_model=TeacherRead, status_code=status.HTTP_201_CREATED)
-async def create_teacher(payload: TeacherCreate, session: DbSession) -> Teacher:
+async def create_teacher(payload: TeacherCreate, session: DbSession) -> TeacherRead:
     teacher = Teacher(name=payload.name)
     session.add(teacher)
 
     group_ids = list(dict.fromkeys(payload.group_ids))
     for group_id in group_ids:
-        group = await session.get(Group, group_id)
-        if group is None:
+        group_exists = await session.execute(select(Group.id).where(Group.id == group_id))
+        if group_exists.scalar_one_or_none() is None:
             raise not_found("Group", group_id)
 
     await session.flush()
@@ -62,5 +94,5 @@ async def create_teacher(payload: TeacherCreate, session: DbSession) -> Teacher:
 
 
 @router.get("/{teacher_id}", response_model=TeacherRead)
-async def get_teacher(teacher_id: UUID, session: DbSession) -> Teacher:
+async def get_teacher(teacher_id: UUID, session: DbSession) -> TeacherRead:
     return await get_teacher_for_read(teacher_id, session)

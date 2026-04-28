@@ -2,6 +2,7 @@ from uuid import UUID
 
 from fastapi import APIRouter, status
 from sqlalchemy import select
+from sqlalchemy.orm import lazyload
 
 from app.api.crud import commit_or_409, flush_or_409, not_found
 from app.api.deps import DbSession
@@ -23,7 +24,7 @@ async def list_topics(
     session: DbSession,
     discipline_id: UUID | None = None,
 ) -> list[Topic]:
-    query = select(Topic).order_by(Topic.name)
+    query = select(Topic).options(lazyload("*")).order_by(Topic.name)
     if discipline_id is not None:
         query = query.where(Topic.discipline_id == discipline_id)
     result = await session.execute(query)
@@ -32,8 +33,10 @@ async def list_topics(
 
 @router.post("/", response_model=TopicRead, status_code=status.HTTP_201_CREATED)
 async def create_topic(payload: TopicCreate, session: DbSession) -> Topic:
-    discipline = await session.get(Discipline, payload.discipline_id)
-    if discipline is None:
+    discipline_exists = await session.execute(
+        select(Discipline.id).where(Discipline.id == payload.discipline_id)
+    )
+    if discipline_exists.scalar_one_or_none() is None:
         raise not_found("Discipline", payload.discipline_id)
 
     topic = Topic(
@@ -53,7 +56,8 @@ async def create_topic(payload: TopicCreate, session: DbSession) -> Topic:
 
 @router.get("/{topic_id}", response_model=TopicRead)
 async def get_topic(topic_id: UUID, session: DbSession) -> Topic:
-    topic = await session.get(Topic, topic_id)
+    result = await session.execute(select(Topic).options(lazyload("*")).where(Topic.id == topic_id))
+    topic = result.scalar_one_or_none()
     if topic is None:
         raise not_found("Topic", topic_id)
     return topic
@@ -65,7 +69,8 @@ async def update_topic(
     payload: TopicUpdate,
     session: DbSession,
 ) -> Topic:
-    topic = await session.get(Topic, topic_id)
+    result = await session.execute(select(Topic).options(lazyload("*")).where(Topic.id == topic_id))
+    topic = result.scalar_one_or_none()
     if topic is None:
         raise not_found("Topic", topic_id)
 
@@ -82,7 +87,8 @@ async def update_topic(
 
 @router.delete("/{topic_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_topic(topic_id: UUID, session: DbSession) -> None:
-    topic = await session.get(Topic, topic_id)
+    result = await session.execute(select(Topic).options(lazyload("*")).where(Topic.id == topic_id))
+    topic = result.scalar_one_or_none()
     if topic is None:
         raise not_found("Topic", topic_id)
     await ensure_topic_can_be_removed(session, topic_id)

@@ -2,6 +2,7 @@ from uuid import UUID
 
 from fastapi import APIRouter, HTTPException, status
 from sqlalchemy import or_, select
+from sqlalchemy.orm import lazyload
 
 from app.api.crud import commit_or_409, flush_or_409, not_found
 from app.api.deps import DbSession
@@ -54,7 +55,7 @@ async def list_knowledge_element_relations(
     session: DbSession,
     element_id: UUID | None = None,
 ) -> list[KnowledgeElementRelation]:
-    query = select(KnowledgeElementRelation)
+    query = select(KnowledgeElementRelation).options(lazyload("*"))
     if element_id is not None:
         query = query.where(
             or_(
@@ -75,11 +76,21 @@ async def create_knowledge_element_relation(
     payload: KnowledgeElementRelationCreate,
     session: DbSession,
 ) -> KnowledgeElementRelation:
-    source_element = await session.get(KnowledgeElement, payload.source_element_id)
+    source_result = await session.execute(
+        select(KnowledgeElement)
+        .options(lazyload("*"))
+        .where(KnowledgeElement.id == payload.source_element_id)
+    )
+    source_element = source_result.scalar_one_or_none()
     if source_element is None:
         raise not_found("Knowledge element", payload.source_element_id)
 
-    target_element = await session.get(KnowledgeElement, payload.target_element_id)
+    target_result = await session.execute(
+        select(KnowledgeElement)
+        .options(lazyload("*"))
+        .where(KnowledgeElement.id == payload.target_element_id)
+    )
+    target_element = target_result.scalar_one_or_none()
     if target_element is None:
         raise not_found("Knowledge element", payload.target_element_id)
 
@@ -124,15 +135,30 @@ async def update_knowledge_element_relation(
     payload: KnowledgeElementRelationUpdate,
     session: DbSession,
 ) -> KnowledgeElementRelation:
-    relation = await session.get(KnowledgeElementRelation, relation_id)
+    relation_result = await session.execute(
+        select(KnowledgeElementRelation)
+        .options(lazyload("*"))
+        .where(KnowledgeElementRelation.id == relation_id)
+    )
+    relation = relation_result.scalar_one_or_none()
     if relation is None:
         raise not_found("Knowledge element relation", relation_id)
 
-    source_element = await session.get(KnowledgeElement, payload.source_element_id)
+    source_result = await session.execute(
+        select(KnowledgeElement)
+        .options(lazyload("*"))
+        .where(KnowledgeElement.id == payload.source_element_id)
+    )
+    source_element = source_result.scalar_one_or_none()
     if source_element is None:
         raise not_found("Knowledge element", payload.source_element_id)
 
-    target_element = await session.get(KnowledgeElement, payload.target_element_id)
+    target_result = await session.execute(
+        select(KnowledgeElement)
+        .options(lazyload("*"))
+        .where(KnowledgeElement.id == payload.target_element_id)
+    )
+    target_element = target_result.scalar_one_or_none()
     if target_element is None:
         raise not_found("Knowledge element", payload.target_element_id)
 
@@ -175,10 +201,20 @@ async def update_knowledge_element_relation(
 
 @router.delete("/{relation_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_knowledge_element_relation(relation_id: UUID, session: DbSession) -> None:
-    relation = await session.get(KnowledgeElementRelation, relation_id)
+    relation_result = await session.execute(
+        select(KnowledgeElementRelation)
+        .options(lazyload("*"))
+        .where(KnowledgeElementRelation.id == relation_id)
+    )
+    relation = relation_result.scalar_one_or_none()
     if relation is None:
         raise not_found("Knowledge element relation", relation_id)
-    source_element = await session.get(KnowledgeElement, relation.source_element_id)
+    source_result = await session.execute(
+        select(KnowledgeElement)
+        .options(lazyload("*"))
+        .where(KnowledgeElement.id == relation.source_element_id)
+    )
+    source_element = source_result.scalar_one_or_none()
     discipline_id = source_element.discipline_id if source_element is not None else None
     await session.delete(relation)
     await flush_or_409(session)

@@ -2,6 +2,7 @@ from uuid import UUID
 
 from fastapi import APIRouter, status
 from sqlalchemy import select
+from sqlalchemy.orm import lazyload
 
 from app.api.crud import commit_or_409, flush_or_409, not_found
 from app.api.deps import DbSession
@@ -26,7 +27,7 @@ async def list_knowledge_elements(
     session: DbSession,
     discipline_id: UUID | None = None,
 ) -> list[KnowledgeElement]:
-    query = select(KnowledgeElement)
+    query = select(KnowledgeElement).options(lazyload("*"))
     if discipline_id is not None:
         query = query.where(KnowledgeElement.discipline_id == discipline_id)
 
@@ -44,8 +45,10 @@ async def create_knowledge_element(
     payload: KnowledgeElementCreate,
     session: DbSession,
 ) -> KnowledgeElement:
-    discipline = await session.get(Discipline, payload.discipline_id)
-    if discipline is None:
+    discipline_exists = await session.execute(
+        select(Discipline.id).where(Discipline.id == payload.discipline_id)
+    )
+    if discipline_exists.scalar_one_or_none() is None:
         raise not_found("Discipline", payload.discipline_id)
 
     element = KnowledgeElement(
@@ -64,7 +67,10 @@ async def create_knowledge_element(
 
 @router.get("/{element_id}", response_model=KnowledgeElementRead)
 async def get_knowledge_element(element_id: UUID, session: DbSession) -> KnowledgeElement:
-    element = await session.get(KnowledgeElement, element_id)
+    result = await session.execute(
+        select(KnowledgeElement).options(lazyload("*")).where(KnowledgeElement.id == element_id)
+    )
+    element = result.scalar_one_or_none()
     if element is None:
         raise not_found("Knowledge element", element_id)
     return element
@@ -76,7 +82,10 @@ async def update_knowledge_element(
     payload: KnowledgeElementUpdate,
     session: DbSession,
 ) -> KnowledgeElement:
-    element = await session.get(KnowledgeElement, element_id)
+    result = await session.execute(
+        select(KnowledgeElement).options(lazyload("*")).where(KnowledgeElement.id == element_id)
+    )
+    element = result.scalar_one_or_none()
     if element is None:
         raise not_found("Knowledge element", element_id)
 
@@ -92,7 +101,10 @@ async def update_knowledge_element(
 
 @router.delete("/{element_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_knowledge_element(element_id: UUID, session: DbSession) -> None:
-    element = await session.get(KnowledgeElement, element_id)
+    result = await session.execute(
+        select(KnowledgeElement).options(lazyload("*")).where(KnowledgeElement.id == element_id)
+    )
+    element = result.scalar_one_or_none()
     if element is None:
         raise not_found("Knowledge element", element_id)
     await ensure_element_can_be_removed(session, element_id)

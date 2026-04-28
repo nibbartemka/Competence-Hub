@@ -2,7 +2,7 @@ from uuid import UUID
 
 from fastapi import APIRouter, status
 from sqlalchemy import and_, select
-from sqlalchemy.orm import selectinload
+from sqlalchemy.orm import lazyload
 
 from app.api.crud import commit_or_409, delete_and_commit, not_found
 from app.api.deps import DbSession
@@ -34,40 +34,84 @@ from app.schemas import (
 router = APIRouter(prefix="/disciplines", tags=["Disciplines"])
 
 
-def _discipline_read_options():
-    return (
-        selectinload(Discipline.teacher_links),
-        selectinload(Discipline.group_links),
+async def _build_discipline_reads(
+    rows: list[tuple[UUID, str, int]],
+    session: DbSession,
+) -> list[DisciplineRead]:
+    if not rows:
+        return []
+
+    discipline_ids = [row[0] for row in rows]
+    teacher_links_result = await session.execute(
+        select(
+            TeacherDiscipline.discipline_id,
+            TeacherDiscipline.teacher_id,
+        ).where(TeacherDiscipline.discipline_id.in_(discipline_ids))
     )
+    group_links_result = await session.execute(
+        select(
+            GroupDiscipline.discipline_id,
+            GroupDiscipline.group_id,
+        ).where(GroupDiscipline.discipline_id.in_(discipline_ids))
+    )
+
+    teacher_ids_by_discipline: dict[UUID, list[UUID]] = {
+        discipline_id: [] for discipline_id in discipline_ids
+    }
+    group_ids_by_discipline: dict[UUID, list[UUID]] = {
+        discipline_id: [] for discipline_id in discipline_ids
+    }
+
+    for discipline_id, teacher_id in teacher_links_result.all():
+        teacher_ids_by_discipline.setdefault(discipline_id, []).append(teacher_id)
+    for discipline_id, group_id in group_links_result.all():
+        group_ids_by_discipline.setdefault(discipline_id, []).append(group_id)
+
+    return [
+        DisciplineRead(
+            id=discipline_id,
+            name=name,
+            knowledge_graph_version=knowledge_graph_version,
+            teacher_ids=teacher_ids_by_discipline.get(discipline_id, []),
+            group_ids=group_ids_by_discipline.get(discipline_id, []),
+        )
+        for discipline_id, name, knowledge_graph_version in rows
+    ]
 
 
 async def get_discipline_for_read(
     discipline_id: UUID,
     session: DbSession,
-) -> Discipline:
+) -> DisciplineRead:
     result = await session.execute(
-        select(Discipline)
-        .options(*_discipline_read_options())
+        select(
+            Discipline.id,
+            Discipline.name,
+            Discipline.knowledge_graph_version,
+        )
         .where(Discipline.id == discipline_id)
     )
-    discipline = result.scalar_one_or_none()
-    if discipline is None:
+    row = result.one_or_none()
+    if row is None:
         raise not_found("Discipline", discipline_id)
-    return discipline
+    return (await _build_discipline_reads([row], session))[0]
 
 
 @router.get("/", response_model=list[DisciplineRead])
-async def list_disciplines(session: DbSession) -> list[Discipline]:
+async def list_disciplines(session: DbSession) -> list[DisciplineRead]:
     result = await session.execute(
-        select(Discipline)
-        .options(*_discipline_read_options())
+        select(
+            Discipline.id,
+            Discipline.name,
+            Discipline.knowledge_graph_version,
+        )
         .order_by(Discipline.name)
     )
-    return list(result.scalars().all())
+    return await _build_discipline_reads(list(result.all()), session)
 
 
 @router.post("/", response_model=DisciplineRead, status_code=status.HTTP_201_CREATED)
-async def create_discipline(payload: DisciplineCreate, session: DbSession) -> Discipline:
+async def create_discipline(payload: DisciplineCreate, session: DbSession) -> DisciplineRead:
     discipline = Discipline(name=payload.name)
     session.add(discipline)
 
@@ -112,7 +156,7 @@ async def create_discipline(payload: DisciplineCreate, session: DbSession) -> Di
 
 
 @router.get("/{discipline_id}", response_model=DisciplineRead)
-async def get_discipline(discipline_id: UUID, session: DbSession) -> Discipline:
+async def get_discipline(discipline_id: UUID, session: DbSession) -> DisciplineRead:
     return await get_discipline_for_read(discipline_id, session)
 
 
@@ -128,6 +172,7 @@ async def get_discipline_knowledge_graph(
 
     topics_result = await session.execute(
         select(Topic)
+        .options(lazyload("*"))
         .where(Topic.discipline_id == discipline_id)
         .order_by(Topic.name)
     )
@@ -142,6 +187,7 @@ async def get_discipline_knowledge_graph(
     if topic_ids:
         dependencies_result = await session.execute(
             select(TopicDependency)
+            .options(lazyload("*"))
             .where(
                 and_(
                     TopicDependency.prerequisite_topic_id.in_(topic_ids),
@@ -154,6 +200,7 @@ async def get_discipline_knowledge_graph(
 
         topic_elements_result = await session.execute(
             select(TopicKnowledgeElement)
+            .options(lazyload("*"))
             .where(TopicKnowledgeElement.topic_id.in_(topic_ids))
             .order_by(TopicKnowledgeElement.topic_id, TopicKnowledgeElement.id)
         )
@@ -163,6 +210,7 @@ async def get_discipline_knowledge_graph(
         if element_ids:
             elements_result = await session.execute(
                 select(KnowledgeElement)
+                .options(lazyload("*"))
                 .where(
                     and_(
                         KnowledgeElement.id.in_(element_ids),
@@ -178,6 +226,7 @@ async def get_discipline_knowledge_graph(
 
             relations_result = await session.execute(
                 select(KnowledgeElementRelation)
+                .options(lazyload("*"))
                 .where(
                     and_(
                         KnowledgeElementRelation.source_element_id.in_(element_ids),
@@ -206,7 +255,7 @@ async def get_discipline_knowledge_graph(
     #     ],
     # ))
     return DisciplineKnowledgeGraphRead(
-        discipline=DisciplineRead.model_validate(discipline),
+        discipline=discipline,
         topics=[TopicRead.model_validate(item) for item in topics],
         topic_dependencies=[
             TopicDependencyRead.model_validate(item) for item in topic_dependencies

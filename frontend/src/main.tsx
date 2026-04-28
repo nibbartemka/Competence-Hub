@@ -27,6 +27,10 @@ const router = createBrowserRouter([
     path: "/students/:studentId/trajectories/:trajectoryId/control/:topicId",
     element: <StudentTopicControlPage />,
   },
+  {
+    path: "/learn/:trajectoryId/step/:topicPosition",
+    element: <StudentTopicControlPage />,
+  },
 ]);
 
 ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(

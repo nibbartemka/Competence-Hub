@@ -3,7 +3,7 @@ from uuid import UUID
 
 from fastapi import APIRouter, HTTPException, status
 from sqlalchemy import and_, func, or_, select
-from sqlalchemy.orm import selectinload
+from sqlalchemy.orm import lazyload, selectinload
 
 from app.api.crud import commit_or_409, flush_or_409, not_found
 from app.api.deps import DbSession
@@ -50,15 +50,20 @@ def _bad_request(detail: str) -> HTTPException:
 
 def _trajectory_read_options():
     return (
-        selectinload(LearningTrajectory.discipline),
-        selectinload(LearningTrajectory.topics).selectinload(
-            LearningTrajectoryTopic.elements
+        lazyload("*"),
+        selectinload(LearningTrajectory.discipline).options(lazyload("*")),
+        selectinload(LearningTrajectory.topics).options(
+            lazyload("*"),
+            selectinload(LearningTrajectoryTopic.elements).options(lazyload("*")),
         ),
     )
 
 
 def _trajectory_summary_options():
-    return (selectinload(LearningTrajectory.discipline),)
+    return (
+        lazyload("*"),
+        selectinload(LearningTrajectory.discipline).options(lazyload("*")),
+    )
 
 
 def _build_trajectory_summary(
@@ -399,19 +404,22 @@ async def list_student_learning_trajectories(
 ) -> list[StudentLearningTrajectorySummaryRead]:
     from app.models import LearningTrajectoryTask, Student, StudentTaskProgress
 
-    student = await session.get(Student, student_id)
-    if student is None:
+    student_result = await session.execute(
+        select(Student.group_id, Student.subgroup_id).where(Student.id == student_id)
+    )
+    student_row = student_result.one_or_none()
+    if student_row is None:
         raise not_found("Student", student_id)
 
-    target_filter = LearningTrajectory.group_id == student.group_id
-    if student.subgroup_id is None:
+    target_filter = LearningTrajectory.group_id == student_row.group_id
+    if student_row.subgroup_id is None:
         target_filter = and_(target_filter, LearningTrajectory.subgroup_id.is_(None))
     else:
         target_filter = and_(
             target_filter,
             or_(
                 LearningTrajectory.subgroup_id.is_(None),
-                LearningTrajectory.subgroup_id == student.subgroup_id,
+                LearningTrajectory.subgroup_id == student_row.subgroup_id,
             ),
         )
 
@@ -462,7 +470,7 @@ async def list_student_learning_trajectories(
             StudentTaskProgress,
             and_(
                 StudentTaskProgress.task_id == LearningTrajectoryTask.id,
-                StudentTaskProgress.student_id == student.id,
+                StudentTaskProgress.student_id == student_id,
                 StudentTaskProgress.status == StudentTaskProgressStatus.COMPLETED,
             ),
         )

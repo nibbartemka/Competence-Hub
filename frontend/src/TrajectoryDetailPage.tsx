@@ -16,6 +16,7 @@ import {
   fetchLearningTrajectoryTasks,
   fetchRecommendedStudentTask,
   fetchStudentTasks,
+  fetchStudentTrajectoryMastery,
   isAbortError,
   submitStudentTaskScore,
   updateLearningTrajectoryTask,
@@ -39,6 +40,7 @@ import type {
   LearningTrajectoryTopic,
   SceneNodeData,
   StudentAssignedTask,
+  StudentTrajectoryMastery,
   Topic,
   ViewMode,
 } from "./types";
@@ -699,6 +701,8 @@ export default function TrajectoryDetailPage() {
   const [tasksModalSection, setTasksModalSection] = useState<"list" | "create">("list");
   const [studentTasks, setStudentTasks] = useState<StudentAssignedTask[]>([]);
   const [recommendedStudentTask, setRecommendedStudentTask] = useState<StudentAssignedTask | null>(null);
+  const [studentTrajectoryMastery, setStudentTrajectoryMastery] =
+    useState<StudentTrajectoryMastery | null>(null);
   const [studentTaskAnswers, setStudentTaskAnswers] = useState<Record<string, Record<string, unknown>>>({});
   const [savingStudentTaskId, setSavingStudentTaskId] = useState("");
   const [studentDataLoading, setStudentDataLoading] = useState(false);
@@ -729,6 +733,7 @@ export default function TrajectoryDetailPage() {
     if (!showStudentView) {
       setStudentTaskModalOpen(false);
       setStudentDataLoading(false);
+      setStudentTrajectoryMastery(null);
       return;
     }
     setStudentView({ level: "topics" });
@@ -763,16 +768,20 @@ export default function TrajectoryDetailPage() {
         setTopicOrder(nextOrder);
         setSelectedNodeId(nextOrder[0] ? `topic:${nextOrder[0]}` : "");
 
-        try {
-          const nextTasks = await fetchLearningTrajectoryTasks(trajectoryId!, controller.signal);
-          setTasks(nextTasks);
-        } catch (error) {
-          if (!isAbortError(error)) {
-            setTasks([]);
-            pushNotification(
-              "error",
-              "Не удалось загрузить задания траектории. Сам граф открыт, но блок заданий временно недоступен.",
-            );
+        if (isStudentMode) {
+          setTasks([]);
+        } else {
+          try {
+            const nextTasks = await fetchLearningTrajectoryTasks(trajectoryId!, controller.signal);
+            setTasks(nextTasks);
+          } catch (error) {
+            if (!isAbortError(error)) {
+              setTasks([]);
+              pushNotification(
+                "error",
+                "Не удалось загрузить задания траектории. Сам граф открыт, но блок заданий временно недоступен.",
+              );
+            }
           }
         }
       } catch (error) {
@@ -787,34 +796,25 @@ export default function TrajectoryDetailPage() {
     void load();
 
     return () => controller.abort();
-  }, [disciplineId, trajectoryId]);
+  }, [disciplineId, isStudentMode, trajectoryId]);
 
   useEffect(() => {
     if (!showStudentView || !studentIdFromQuery || !disciplineId || !trajectoryId) return;
+    const currentTrajectoryId = trajectoryId;
     const controller = new AbortController();
 
-    async function loadStudentTasks() {
+    async function loadStudentMastery() {
       try {
         setStudentDataLoading(true);
-        const nextTasks = await fetchStudentTasks(
+        const nextMastery = await fetchStudentTrajectoryMastery(
           studentIdFromQuery,
+          currentTrajectoryId,
           controller.signal,
-          disciplineId,
-          trajectoryId,
         );
-        const filteredTasks = nextTasks.filter((task) => task.trajectory_id === trajectoryId);
-        const nextRecommendedTask = await fetchRecommendedStudentTask(
-          studentIdFromQuery,
-          controller.signal,
-          disciplineId,
-          trajectoryId,
-          studentView.level === "elements" ? studentView.topicId : undefined,
-        );
-        setStudentTasks(filteredTasks);
-        setRecommendedStudentTask(nextRecommendedTask);
-        setStudentTaskAnswers(
-          Object.fromEntries(filteredTasks.map((task) => [task.id, buildStudentTaskAnswerDraft(task)])),
-        );
+        setStudentTrajectoryMastery(nextMastery);
+        setStudentTasks([]);
+        setRecommendedStudentTask(null);
+        setStudentTaskAnswers({});
       } catch (error) {
         if (!isAbortError(error)) {
           pushNotification("error", extractErrorMessage(error));
@@ -826,9 +826,9 @@ export default function TrajectoryDetailPage() {
       }
     }
 
-    void loadStudentTasks();
+    void loadStudentMastery();
     return () => controller.abort();
-  }, [disciplineId, showStudentView, studentIdFromQuery, studentView, trajectoryId]);
+  }, [showStudentView, studentIdFromQuery, trajectoryId]);
 
   const topicById = useMemo(
     () => new Map((graph?.topics ?? []).map((topic) => [topic.id, topic])),
@@ -845,6 +845,15 @@ export default function TrajectoryDetailPage() {
   const studentMasteryByElementId = useMemo(() => {
     const mastery = new Map<string, number>();
 
+    if (studentTrajectoryMastery) {
+      for (const topic of studentTrajectoryMastery.topics) {
+        for (const element of topic.elements) {
+          mastery.set(element.element_id, element.mastery_value);
+        }
+      }
+      return mastery;
+    }
+
     for (const task of studentTasks) {
       mastery.set(task.primary_element.element_id, task.primary_element.mastery_value);
       for (const relatedElement of task.related_elements) {
@@ -853,7 +862,7 @@ export default function TrajectoryDetailPage() {
     }
 
     return mastery;
-  }, [studentTasks]);
+  }, [studentTasks, studentTrajectoryMastery]);
   const knowElementsByTrajectoryTopicId = useMemo(() => {
     const result = new Map<string, KnowledgeElement[]>();
     if (!trajectory) return result;
@@ -1283,7 +1292,11 @@ export default function TrajectoryDetailPage() {
         }
 
         if (isStudentMode && trajectoryId) {
-          navigate(`/students/${studentIdFromQuery}/trajectories/${trajectoryId}/control/${topicId}`);
+          const trajectoryTopic = trajectory?.topics.find((item) => item.topic_id === topicId);
+          if (studentIdFromQuery) {
+            localStorage.setItem("competence-hub:last-student-id", studentIdFromQuery);
+          }
+          navigate(`/learn/${trajectoryId}/step/${trajectoryTopic?.position ?? 1}`);
           return false;
         }
         setStudentView({ level: "elements", topicId });

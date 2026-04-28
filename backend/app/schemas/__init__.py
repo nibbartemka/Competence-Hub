@@ -35,6 +35,9 @@ from .learning_trajectory_tasks import (
     StudentTaskProgressRead,
 )
 from .learning_control import (
+    StudentTrajectoryMasteryElementRead,
+    StudentTrajectoryMasteryRead,
+    StudentTrajectoryMasteryTopicRead,
     StudentTopicControlElementRead,
     StudentTopicControlRead,
 )
@@ -86,6 +89,9 @@ __all__ = [
     "StudentTaskAnswerSubmit",
     "StudentTaskElementStateRead",
     "StudentTaskProgressRead",
+    "StudentTrajectoryMasteryElementRead",
+    "StudentTrajectoryMasteryRead",
+    "StudentTrajectoryMasteryTopicRead",
     "StudentTopicControlElementRead",
     "StudentTopicControlRead",
     "TopicKnowledgeElementCreate",

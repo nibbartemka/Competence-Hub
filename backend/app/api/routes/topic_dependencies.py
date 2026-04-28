@@ -2,6 +2,7 @@ from uuid import UUID
 
 from fastapi import APIRouter
 from sqlalchemy import or_, select
+from sqlalchemy.orm import lazyload
 
 from app.api.deps import DbSession
 from app.models import TopicDependency
@@ -16,7 +17,7 @@ async def list_topic_dependencies(
     session: DbSession,
     topic_id: UUID | None = None,
 ) -> list[TopicDependency]:
-    query = select(TopicDependency)
+    query = select(TopicDependency).options(lazyload("*"))
     if topic_id is not None:
         query = query.where(
             or_(

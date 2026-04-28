@@ -1,23 +1,42 @@
 import { useEffect, useState } from "react";
-import { useNavigate, useParams } from "react-router-dom";
+import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 
 import {
   fetchStudentTopicControl,
+  fetchStudentTopicControlByPosition,
   isAbortError,
   submitStudentTaskScore,
 } from "./api";
 import type { StudentAssignedTask, StudentTopicControl } from "./types";
 
+const LAST_STUDENT_STORAGE_KEY = "competence-hub:last-student-id";
+
 const TASK_TYPE_LABELS: Record<StudentAssignedTask["task_type"], string> = {
   single_choice: "Один выбор",
-  multiple_choice: "Несколько выборов",
-  matching: "Сопоставление",
+  multiple_choice: "Несколько вариантов",
+  matching: "Установление соответствия",
   ordering: "Правильная последовательность",
 };
 
 function extractErrorMessage(error: unknown) {
   if (error instanceof Error) return error.message;
   return "Не удалось выполнить действие.";
+}
+
+function getStoredStudentId() {
+  try {
+    return localStorage.getItem(LAST_STUDENT_STORAGE_KEY) ?? "";
+  } catch {
+    return "";
+  }
+}
+
+function rememberStudentId(studentId: string) {
+  try {
+    localStorage.setItem(LAST_STUDENT_STORAGE_KEY, studentId);
+  } catch {
+    // localStorage может быть недоступен в приватном режиме, это не должно ломать контроль.
+  }
 }
 
 function emptyAnswer(task: StudentAssignedTask) {
@@ -32,7 +51,20 @@ function emptyAnswer(task: StudentAssignedTask) {
 
 export default function StudentTopicControlPage() {
   const navigate = useNavigate();
-  const { studentId = "", trajectoryId = "", topicId = "" } = useParams();
+  const {
+    studentId: studentIdFromPath = "",
+    trajectoryId = "",
+    topicId = "",
+    topicPosition = "",
+  } = useParams<{
+    studentId?: string;
+    trajectoryId?: string;
+    topicId?: string;
+    topicPosition?: string;
+  }>();
+  const [searchParams] = useSearchParams();
+  const studentId = studentIdFromPath || searchParams.get("student") || getStoredStudentId();
+
   const [control, setControl] = useState<StudentTopicControl | null>(null);
   const [answer, setAnswer] = useState<Record<string, unknown>>({});
   const [loading, setLoading] = useState(true);
@@ -40,8 +72,28 @@ export default function StudentTopicControlPage() {
   const [error, setError] = useState("");
 
   async function loadControl(signal?: AbortSignal) {
-    if (!studentId || !trajectoryId || !topicId) return;
-    const nextControl = await fetchStudentTopicControl(studentId, trajectoryId, topicId, signal);
+    if (!studentId || !trajectoryId) {
+      throw new Error("Не удалось определить студента или траекторию.");
+    }
+
+    rememberStudentId(studentId);
+
+    let nextControl: StudentTopicControl;
+    if (topicId) {
+      nextControl = await fetchStudentTopicControl(studentId, trajectoryId, topicId, signal);
+    } else {
+      const position = Number(topicPosition);
+      if (!Number.isInteger(position) || position < 1) {
+        throw new Error("Не удалось определить номер темы в траектории.");
+      }
+      nextControl = await fetchStudentTopicControlByPosition(
+        studentId,
+        trajectoryId,
+        position,
+        signal,
+      );
+    }
+
     setControl(nextControl);
     setAnswer(nextControl.current_task ? emptyAnswer(nextControl.current_task) : {});
   }
@@ -67,16 +119,18 @@ export default function StudentTopicControlPage() {
 
     void load();
     return () => controller.abort();
-  }, [studentId, trajectoryId, topicId]);
+  }, [studentId, trajectoryId, topicId, topicPosition]);
 
   function toggleChoice(task: StudentAssignedTask, optionId: string, checked: boolean) {
     const currentIds = Array.isArray(answer.selected_option_ids)
       ? (answer.selected_option_ids as string[])
       : [];
+
     if (task.task_type === "single_choice") {
       setAnswer({ selected_option_ids: checked ? [optionId] : [] });
       return;
     }
+
     setAnswer({
       selected_option_ids: checked
         ? [...new Set([...currentIds, optionId])]
@@ -105,6 +159,11 @@ export default function StudentTopicControlPage() {
   }
 
   async function submitAnswer(task: StudentAssignedTask) {
+    if (!studentId) {
+      setError("Не удалось определить студента.");
+      return;
+    }
+
     try {
       setSaving(true);
       setError("");
@@ -143,6 +202,7 @@ export default function StudentTopicControlPage() {
       const selectedIds = Array.isArray(answer.selected_option_ids)
         ? (answer.selected_option_ids as string[])
         : [];
+
       return (
         <div className="student-task-answer">
           {(task.content.options ?? []).map((option) => (
@@ -163,6 +223,7 @@ export default function StudentTopicControlPage() {
       const pairings = Array.isArray(answer.pairings)
         ? (answer.pairings as Array<{ left_id: string; right_id: string }>)
         : [];
+
       return (
         <div className="student-task-answer">
           {(task.content.left_items ?? []).map((item) => (
@@ -286,8 +347,8 @@ export default function StudentTopicControlPage() {
           ) : (
             <div className="status-view immersive-page__status student-control-task__status">
               <div className="status-view__pulse" />
-              <h3>Подбираю следующее задание</h3>
-              <p>Система ищет подходящее задание по текущему уровню освоения темы.</p>
+              <h3>Нет доступного задания</h3>
+              <p>Для этой темы пока нет задания, которое подходит текущему состоянию студента.</p>
             </div>
           )}
         </section>
