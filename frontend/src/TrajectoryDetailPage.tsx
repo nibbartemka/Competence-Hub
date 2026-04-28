@@ -23,7 +23,22 @@ import {
   updateLearningTrajectoryStatus,
   updateLearningTrajectoryTopicOrder,
 } from "./api";
-import { GraphNode } from "./components/GraphNode";
+import {
+  GraphNode,
+  GraphNodeRuntimeStateProvider,
+  type GraphNodeRuntimeState,
+} from "./components/GraphNode";
+import {
+  buildFocusedScene,
+  hasConcreteNodeSelection,
+  NO_NODE_SELECTION,
+} from "./graphFocus";
+import {
+  buildRelatedElementNames,
+  isBidirectionalRelation,
+  isSupportedElementRelation,
+  relationLabel,
+} from "./graphScene";
 import { applySceneWithViewportMemory } from "./graphViewport";
 import type {
   DetailCard,
@@ -163,6 +178,12 @@ function estimateTrajectoryNodeHeight(topic: Topic) {
 function estimateTrajectoryElementNodeHeight(element: KnowledgeElement) {
   const text = element.description?.trim() || "Описание элемента пока не добавлено.";
   return Math.min(260, 176 + Math.ceil(text.length / 28) * 14);
+}
+
+function competenceLabel(type: KnowledgeElement["competence_type"]) {
+  if (type === "know") return "Знать";
+  if (type === "can") return "Уметь";
+  return "Владеть";
 }
 
 function topicName(topicById: Map<string, Topic>, topicId: string) {
@@ -553,6 +574,7 @@ function buildStudentTrajectoryElementsScene(
       (item): item is { trajectoryElement: typeof trajectoryTopic.elements[number]; element: KnowledgeElement } =>
         Boolean(item.element),
     );
+  const selectedElementIds = new Set(selectedElements.map((item) => item.element.id));
 
   const nodes: JsonNode[] = [
     {
@@ -596,6 +618,7 @@ function buildStudentTrajectoryElementsScene(
     const nodeId = `element:${topic.id}:${element.id}`;
     const col = index % 3;
     const row = Math.floor(index / 3);
+    const relatedElementNames = buildRelatedElementNames(graph, element.id, selectedElementIds);
 
     nodes.push({
       id: nodeId,
@@ -643,10 +666,53 @@ function buildStudentTrajectoryElementsScene(
       subtitle: "Формируемый элемент",
       description: element.description ?? "Описание элемента пока не добавлено.",
       chips: [{ label: `Порог элемента: ${trajectoryElement.threshold}`, tone: "formed" }],
-      stats: [{ label: "Компетенция", value: element.competence_type }],
+      stats: [
+        { label: "Компетенция", value: competenceLabel(element.competence_type) },
+        {
+          label: "Связи с элементами",
+          value: relatedElementNames.length
+            ? relatedElementNames
+            : "В текущем графе траектории связей нет.",
+        },
+      ],
       footnote: "Студент изучает этот элемент в рамках выбранной темы.",
     };
   });
+
+  for (const relation of graph.knowledge_element_relations) {
+    if (
+      !selectedElementIds.has(relation.source_element_id) ||
+      !selectedElementIds.has(relation.target_element_id)
+    ) {
+      continue;
+    }
+
+    const sourceElement = elementById.get(relation.source_element_id);
+    const targetElement = elementById.get(relation.target_element_id);
+    if (
+      !isSupportedElementRelation(
+        sourceElement?.competence_type,
+        targetElement?.competence_type,
+        relation.relation_type,
+      )
+    ) {
+      continue;
+    }
+
+    lines.push({
+      from: `element:${topic.id}:${relation.source_element_id}`,
+      to: `element:${topic.id}:${relation.target_element_id}`,
+      text: relationLabel(relation.relation_type),
+      color: "#d37b34",
+      fontColor: "#91521c",
+      lineWidth: 2,
+      dashType: 4,
+      animation: 3,
+      textOffset_y: -16,
+      showStartArrow: isBidirectionalRelation(relation.relation_type),
+      showEndArrow: true,
+    });
+  }
 
   return {
     key: `student-trajectory-elements:${trajectory.id}:${topic.id}`,
@@ -903,34 +969,52 @@ export default function TrajectoryDetailPage() {
     }
     return [...byId.values()].sort((left, right) => left.name.localeCompare(right.name, "ru"));
   }, [knowElementsByTrajectoryTopicId]);
-  const scene = useMemo(() => {
-    if (!graph || !trajectory) return null;
+  const { scene, dimmedNodeIds } = useMemo(() => {
+    if (!graph || !trajectory) {
+      return {
+        scene: null as ReturnType<typeof buildTrajectoryScene> | null,
+        dimmedNodeIds: new Set<string>(),
+      };
+    }
+
+    let baseScene: ReturnType<typeof buildTrajectoryScene>;
     if (showStudentView) {
       if (studentView.level === "elements") {
-        return buildStudentTrajectoryElementsScene(
+        baseScene = buildStudentTrajectoryElementsScene(
           graph,
           trajectory,
           studentView.topicId,
           elementById,
         );
+      } else {
+        baseScene = buildStudentTrajectoryTopicsScene(
+          graph,
+          trajectory,
+          topicOrder,
+          studentMasteryByElementId,
+        );
       }
-      return buildStudentTrajectoryTopicsScene(
-        graph,
-        trajectory,
-        topicOrder,
-        studentMasteryByElementId,
-      );
+    } else {
+      baseScene = buildTrajectoryScene(graph, trajectory, topicOrder);
     }
-    return buildTrajectoryScene(graph, trajectory, topicOrder);
+
+    return buildFocusedScene(baseScene, selectedNodeId);
   }, [
     elementById,
     graph,
+    selectedNodeId,
     showStudentView,
     studentMasteryByElementId,
     studentView,
     topicOrder,
     trajectory,
   ]);
+  const graphNodeRuntimeState = useMemo<GraphNodeRuntimeState>(
+    () => ({
+      dimmedNodeIds,
+    }),
+    [dimmedNodeIds],
+  );
   const canEditTrajectory = trajectory?.status === "draft" && trajectory.is_actual;
 
   const availablePrimaryElements = useMemo(
@@ -1180,8 +1264,15 @@ export default function TrajectoryDetailPage() {
   }, [scene]);
 
   useEffect(() => {
-    if (!selectedNodeId || !graphRef.current) return;
-    graphRef.current.getInstance().setCheckedNode(selectedNodeId);
+    if (!graphRef.current) return;
+
+    const graphInstance = graphRef.current.getInstance();
+    if (!hasConcreteNodeSelection(selectedNodeId)) {
+      graphInstance.setCheckedNode("");
+      return;
+    }
+
+    graphInstance.setCheckedNode(selectedNodeId);
   }, [selectedNodeId]);
 
   async function persistTopicOrder(nextOrder: string[]) {
@@ -1321,6 +1412,10 @@ export default function TrajectoryDetailPage() {
 
     setSelectedNodeId(node.id);
     return false;
+  }
+
+  function handleCanvasClick() {
+    setSelectedNodeId(NO_NODE_SELECTION);
   }
 
   async function handleStatusChange(status: LearningTrajectory["status"]) {
@@ -2285,12 +2380,15 @@ export default function TrajectoryDetailPage() {
               </div>
             ) : (
               <div className="graph-frame">
-                <RelationGraph
-                  ref={graphRef}
-                  options={GRAPH_OPTIONS}
-                  nodeSlot={GraphNode}
-                  onNodeClick={handleNodeClick}
-                />
+                <GraphNodeRuntimeStateProvider value={graphNodeRuntimeState}>
+                  <RelationGraph
+                    ref={graphRef}
+                    options={GRAPH_OPTIONS}
+                    nodeSlot={GraphNode}
+                    onCanvasClick={handleCanvasClick}
+                    onNodeClick={handleNodeClick}
+                  />
+                </GraphNodeRuntimeStateProvider>
               </div>
             )}
           </div>

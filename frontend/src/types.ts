@@ -335,7 +335,7 @@ export type DetailChip = {
 
 export type DetailStat = {
   label: string;
-  value: string;
+  value: string | string[];
 };
 
 export type DetailCard = {

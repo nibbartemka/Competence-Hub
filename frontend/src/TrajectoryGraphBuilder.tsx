@@ -20,10 +20,16 @@ import {
   GraphNodeRuntimeStateProvider,
   type GraphNodeRuntimeState,
 } from "./components/GraphNode";
+import {
+  buildFocusedScene,
+  hasConcreteNodeSelection,
+  NO_NODE_SELECTION,
+} from "./graphFocus";
 import { applySceneWithViewportMemory } from "./graphViewport";
 import { buildElementScene, buildTopicScene } from "./graphScene";
 import type {
   CompetenceType,
+  DetailCard,
   Discipline,
   DisciplineKnowledgeGraph,
   GraphScene,
@@ -180,6 +186,10 @@ function waitForPaint() {
   return new Promise<void>((resolve) => {
     requestAnimationFrame(() => requestAnimationFrame(() => resolve()));
   });
+}
+
+function buildDetailValueKey(label: string, value: string) {
+  return `${label}:${value}`;
 }
 
 function isCompetenceType(value: unknown): value is CompetenceType {
@@ -495,13 +505,25 @@ export default function TrajectoryGraphBuilder() {
     trajectoryName,
   ]);
 
-  const scene = useMemo(() => {
-    if (!graph) return null;
+  const { scene, dimmedNodeIds } = useMemo(() => {
+    if (!graph) {
+      return {
+        scene: null as GraphScene | null,
+        dimmedNodeIds: new Set<string>(),
+      };
+    }
 
     const baseScene =
       view.level === "topics"
-        ? buildTopicScene(graph, selectedNodeId || undefined)
-        : buildElementScene(graph, view.topicId, selectedNodeId || undefined);
+        ? buildTopicScene(
+            graph,
+            hasConcreteNodeSelection(selectedNodeId) ? selectedNodeId : undefined,
+          )
+        : buildElementScene(
+            graph,
+            view.topicId,
+            hasConcreteNodeSelection(selectedNodeId) ? selectedNodeId : undefined,
+          );
 
     const nextNodes = baseScene.nodes.map((node) => {
       const data = node.data as SceneNodeData | undefined;
@@ -602,9 +624,11 @@ export default function TrajectoryGraphBuilder() {
       lines: nextLines,
     };
 
-    return view.level === "elements"
+    const filteredScene = view.level === "elements"
       ? filterElementSceneByCompetence(nextScene, competenceFilters)
       : nextScene;
+
+    return buildFocusedScene(filteredScene, selectedNodeId);
   }, [
     competenceFilters,
     graph,
@@ -661,10 +685,12 @@ export default function TrajectoryGraphBuilder() {
             disabledNodeIds.add(nodeId);
           }
 
+          cardActionByNodeId.set(nodeId, () => setSelectedNodeId(nodeId));
           lockStateByNodeId.set(nodeId, isBlocked ? "locked" : "open");
           hintByNodeId.set(nodeId, isBlocked ? "Почему закрыто" : isSelected ? "Убрать" : "Выбрать");
           hintActionByNodeId.set(nodeId, () => {
             if (isBlocked) {
+              setSelectedNodeId(nodeId);
               pushNotification({
                 kind: "error",
                 text: buildMissingElementsMessage(topic.id, missingElements),
@@ -694,6 +720,7 @@ export default function TrajectoryGraphBuilder() {
           selectedNodeIds.add(focusNodeId);
         }
 
+        cardActionByNodeId.set(focusNodeId, () => setSelectedNodeId(focusNodeId));
         lockStateByNodeId.set(focusNodeId, "open");
         hintByNodeId.set(focusNodeId, "К темам");
         hintActionByNodeId.set(focusNodeId, () => setView({ level: "topics" }));
@@ -731,22 +758,28 @@ export default function TrajectoryGraphBuilder() {
             disabledNodeIds.add(nodeId);
           }
 
+          cardActionByNodeId.set(nodeId, () => setSelectedNodeId(nodeId));
           lockStateByNodeId.set(nodeId, isBlocked ? "locked" : "open");
           hintByNodeId.set(
             nodeId,
             isBlocked ? "Почему закрыто" : isSelected ? "Убрать" : "Выбрать",
           );
           if (isBlocked) {
-            const showBlockedReason = () =>
+            const showBlockedReason = () => {
+              setSelectedNodeId(nodeId);
               showElementBlockedMessage(
                 element?.name ?? link.element_id,
                 missingPrerequisites,
                 isFormed,
               );
+            };
             cardActionByNodeId.set(nodeId, showBlockedReason);
             hintActionByNodeId.set(nodeId, showBlockedReason);
           } else {
-            hintActionByNodeId.set(nodeId, toggleCurrentElement);
+            hintActionByNodeId.set(nodeId, () => {
+              setSelectedNodeId(nodeId);
+              toggleCurrentElement();
+            });
           }
         }
       }
@@ -755,6 +788,7 @@ export default function TrajectoryGraphBuilder() {
     return {
       selectedNodeIds,
       disabledNodeIds,
+      dimmedNodeIds,
       lockStateByNodeId,
       hintByNodeId,
       secondaryHintByNodeId,
@@ -764,6 +798,7 @@ export default function TrajectoryGraphBuilder() {
       secondaryHintActionByNodeId,
     };
   }, [
+    dimmedNodeIds,
     elementThresholds,
     elementById,
     formedElementsByTopic,
@@ -774,6 +809,11 @@ export default function TrajectoryGraphBuilder() {
     selectedTopicSet,
     view,
   ]);
+
+  const detail: DetailCard | null =
+    selectedNodeId === NO_NODE_SELECTION
+      ? null
+      : scene?.detailsByNodeId[selectedNodeId || scene.defaultSelectedNodeId] ?? null;
 
   useEffect(() => {
     if (!disciplineId) {
@@ -1579,6 +1619,48 @@ export default function TrajectoryGraphBuilder() {
           </section>
 
           <section className="card card--soft">
+            <p className="card__eyebrow">Выбранная вершина</p>
+            {detail ? (
+              <>
+                <h2>{detail.title}</h2>
+                {detail.subtitle ? <p className="card__lead">{detail.subtitle}</p> : null}
+                {detail.description ? <p className="card__text">{detail.description}</p> : null}
+
+                <div className="chip-row">
+                  {detail.chips.map((chip) => (
+                    <span className={`chip chip--${chip.tone}`} key={chip.label}>
+                      {chip.label}
+                    </span>
+                  ))}
+                </div>
+
+                <div className="stat-grid">
+                  {detail.stats.map((stat) => (
+                    <div className="stat" key={stat.label}>
+                      <span>{stat.label}</span>
+                      {Array.isArray(stat.value) ? (
+                        <ul className="stat__value-list">
+                          {stat.value.map((value) => (
+                            <li key={buildDetailValueKey(stat.label, value)}>{value}</li>
+                          ))}
+                        </ul>
+                      ) : (
+                        <strong>{stat.value}</strong>
+                      )}
+                    </div>
+                  ))}
+                </div>
+
+                {detail.footnote ? <p className="card__footnote">{detail.footnote}</p> : null}
+              </>
+            ) : (
+              <p className="card__text">
+                Выдели тему или элемент на графе, чтобы увидеть детали и список связанных вершин.
+              </p>
+            )}
+          </section>
+
+          <section className="card card--soft">
             <p className="card__eyebrow">Сохраненные</p>
             {trajectories.length ? (
               <div className="trajectory-saved-list">
@@ -1664,6 +1746,7 @@ export default function TrajectoryGraphBuilder() {
                       ref={graphRef}
                       options={GRAPH_OPTIONS}
                       nodeSlot={GraphNode}
+                      onCanvasClick={() => setSelectedNodeId(NO_NODE_SELECTION)}
                     />
                   </GraphNodeRuntimeStateProvider>
                 </div>

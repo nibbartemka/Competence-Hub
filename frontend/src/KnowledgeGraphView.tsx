@@ -12,7 +12,16 @@ import {
     fetchTopicKnowledgeElements,
 } from "./api";
 import { GraphEditor } from "./components/GraphEditor";
-import { GraphNode } from "./components/GraphNode";
+import {
+    GraphNode,
+    GraphNodeRuntimeStateProvider,
+    type GraphNodeRuntimeState,
+} from "./components/GraphNode";
+import {
+    buildFocusedScene,
+    hasConcreteNodeSelection,
+    NO_NODE_SELECTION,
+} from "./graphFocus";
 import { applySceneWithViewportMemory } from "./graphViewport";
 import { buildElementScene, buildTopicScene } from "./graphScene";
 import { actionHoverMotion, cardHoverMotion, revealMotion } from "./motionPresets";
@@ -130,6 +139,10 @@ function isCompetenceType(value: unknown): value is CompetenceType {
     return value === "know" || value === "can" || value === "master";
 }
 
+function buildDetailValueKey(label: string, value: string) {
+    return `${label}:${value}`;
+}
+
 function filterElementSceneByCompetence(
     scene: GraphScene,
     filters: Record<CompetenceType, boolean>,
@@ -236,18 +249,24 @@ export function KnowledgeGraphView({ disciplineId }: KnowledgeGraphViewProps) {
         );
     }, [allElements, disciplineId, topicKnowledgeLinks]);
 
-    const scene = useMemo(() => {
+    const { scene, dimmedNodeIds } = useMemo(() => {
         if (!graphData) {
-            return null;
+            return {
+                scene: null as GraphScene | null,
+                dimmedNodeIds: new Set<string>(),
+            };
         }
 
-        const baseScene = buildSceneFromView(graphData, view, selectedNodeId || undefined);
+        const preferredNodeId = hasConcreteNodeSelection(selectedNodeId)
+            ? selectedNodeId
+            : undefined;
+        const baseScene = buildSceneFromView(graphData, view, preferredNodeId);
 
         const nextScene = {
             ...baseScene,
             nodes: baseScene.nodes.map((node) => {
                 const data = node.data as any;
-                
+
                 if (!data?.entity) {
                     return node;
                 }
@@ -295,10 +314,19 @@ export function KnowledgeGraphView({ disciplineId }: KnowledgeGraphViewProps) {
             }),
         };
 
-        return view.level === "elements"
+        const filteredScene = view.level === "elements"
             ? filterElementSceneByCompetence(nextScene, competenceFilters)
             : nextScene;
+
+        return buildFocusedScene(filteredScene, selectedNodeId);
     }, [competenceFilters, graphData, selectedNodeId, view]);
+
+    const graphNodeRuntimeState = useMemo<GraphNodeRuntimeState>(
+        () => ({
+            dimmedNodeIds,
+        }),
+        [dimmedNodeIds],
+    );
 
     // Загрузка списка дисциплин
     useEffect(() => {
@@ -403,6 +431,10 @@ export function KnowledgeGraphView({ disciplineId }: KnowledgeGraphViewProps) {
     useEffect(() => {
         if (!scene) return;
 
+        if (selectedNodeId === NO_NODE_SELECTION) {
+            return;
+        }
+
         if (!selectedNodeId || !scene.detailsByNodeId[selectedNodeId]) {
             if (scene.defaultSelectedNodeId && scene.defaultSelectedNodeId !== selectedNodeId) {
                 setSelectedNodeId(scene.defaultSelectedNodeId);
@@ -422,8 +454,15 @@ export function KnowledgeGraphView({ disciplineId }: KnowledgeGraphViewProps) {
     }, [scene]);
 
     useEffect(() => {
-        if (!selectedNodeId || !graphRef.current) return;
-        graphRef.current.getInstance().setCheckedNode(selectedNodeId);
+        if (!graphRef.current) return;
+
+        const graphInstance = graphRef.current.getInstance();
+        if (!hasConcreteNodeSelection(selectedNodeId)) {
+            graphInstance.setCheckedNode("");
+            return;
+        }
+
+        graphInstance.setCheckedNode(selectedNodeId);
     }, [selectedNodeId]);
 
     async function applyView(nextView: ViewMode, preferredNodeId?: string) {
@@ -451,6 +490,10 @@ export function KnowledgeGraphView({ disciplineId }: KnowledgeGraphViewProps) {
     function handleNodeClick(node: RGNode) {
         setSelectedNodeId(node.id);
         return false;
+    }
+
+    function handleCanvasClick() {
+        setSelectedNodeId(NO_NODE_SELECTION);
     }
 
     function toggleCompetenceFilter(competenceType: CompetenceType) {
@@ -509,7 +552,10 @@ export function KnowledgeGraphView({ disciplineId }: KnowledgeGraphViewProps) {
         }
     }
 
-    const detail: DetailCard | null = scene?.detailsByNodeId[selectedNodeId || scene.defaultSelectedNodeId] ?? null;
+    const detail: DetailCard | null =
+        selectedNodeId === NO_NODE_SELECTION
+            ? null
+            : scene?.detailsByNodeId[selectedNodeId || scene.defaultSelectedNodeId] ?? null;
     const overlayLegendSections = view.level === "topics" ? TOPIC_LEGEND_SECTIONS : ELEMENT_LEGEND_SECTIONS;
 
     return (
@@ -633,7 +679,15 @@ export function KnowledgeGraphView({ disciplineId }: KnowledgeGraphViewProps) {
                                     {detail.stats.map((stat) => (
                                         <div className="stat" key={stat.label}>
                                             <span>{stat.label}</span>
-                                            <strong>{stat.value}</strong>
+                                            {Array.isArray(stat.value) ? (
+                                                <ul className="stat__value-list">
+                                                    {stat.value.map((value) => (
+                                                        <li key={buildDetailValueKey(stat.label, value)}>{value}</li>
+                                                    ))}
+                                                </ul>
+                                            ) : (
+                                                <strong>{stat.value}</strong>
+                                            )}
                                         </div>
                                     ))}
                                 </div>
@@ -702,12 +756,15 @@ export function KnowledgeGraphView({ disciplineId }: KnowledgeGraphViewProps) {
                                         animate={{ opacity: 1 }}
                                         transition={{ duration: 0.32 }}
                                     >
-                                        <RelationGraph
-                                            ref={graphRef}
-                                            options={GRAPH_OPTIONS}
-                                            nodeSlot={GraphNode}
-                                            onNodeClick={handleNodeClick}
-                                        />
+                                        <GraphNodeRuntimeStateProvider value={graphNodeRuntimeState}>
+                                            <RelationGraph
+                                                ref={graphRef}
+                                                options={GRAPH_OPTIONS}
+                                                nodeSlot={GraphNode}
+                                                onCanvasClick={handleCanvasClick}
+                                                onNodeClick={handleNodeClick}
+                                            />
+                                        </GraphNodeRuntimeStateProvider>
                                     </motion.div>
 
                                     <motion.aside

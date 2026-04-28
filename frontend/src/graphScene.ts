@@ -21,7 +21,7 @@ function roleLabel(role: string) {
   return role === "required" ? "Требуется" : "Формируется";
 }
 
-function relationLabel(type: string) {
+export function relationLabel(type: string) {
   const labels: Record<string, string> = {
     requires: "Требует",
     builds_on: "Строится на",
@@ -40,7 +40,7 @@ function relationLabel(type: string) {
   return labels[type] ?? type;
 }
 
-function isSupportedElementRelation(
+export function isSupportedElementRelation(
   sourceType: string | undefined,
   targetType: string | undefined,
   relationType: string,
@@ -71,8 +71,54 @@ function isSupportedElementRelation(
   return false;
 }
 
-function isBidirectionalRelation(type: string) {
+export function isBidirectionalRelation(type: string) {
   return type === "similar" || type === "contrasts_with" || type === "used_with";
+}
+
+export function buildRelatedElementNames(
+  graph: DisciplineKnowledgeGraph,
+  elementId: string,
+  scopedElementIds?: ReadonlySet<string>,
+) {
+  const elementById = new Map(graph.knowledge_elements.map((element) => [element.id, element]));
+  const relatedNames = new Set<string>();
+
+  for (const relation of graph.knowledge_element_relations) {
+    const isSourceMatch = relation.source_element_id === elementId;
+    const isTargetMatch = relation.target_element_id === elementId;
+
+    if (!isSourceMatch && !isTargetMatch) {
+      continue;
+    }
+
+    const otherElementId = isSourceMatch
+      ? relation.target_element_id
+      : relation.source_element_id;
+
+    if (scopedElementIds && !scopedElementIds.has(otherElementId)) {
+      continue;
+    }
+
+    const sourceElement = elementById.get(relation.source_element_id);
+    const targetElement = elementById.get(relation.target_element_id);
+
+    if (
+      !isSupportedElementRelation(
+        sourceElement?.competence_type,
+        targetElement?.competence_type,
+        relation.relation_type,
+      )
+    ) {
+      continue;
+    }
+
+    const relatedName = elementById.get(otherElementId)?.name;
+    if (relatedName) {
+      relatedNames.add(relatedName);
+    }
+  }
+
+  return [...relatedNames].sort((left, right) => left.localeCompare(right, "ru"));
 }
 
 function fullText(value: string | null | undefined, fallback: string) {
@@ -469,11 +515,12 @@ function buildElementDetailCard(
   graph: DisciplineKnowledgeGraph,
 ): DetailCard {
   const element = graph.knowledge_elements.find((item) => item.id === link.element_id);
-  const relatedCount = graph.knowledge_element_relations.filter(
-    (relation) =>
-      relation.source_element_id === link.element_id ||
-      relation.target_element_id === link.element_id,
-  ).length;
+  const topicElementIds = new Set(
+    graph.topic_knowledge_elements
+      .filter((item) => item.topic_id === topic.id)
+      .map((item) => item.element_id),
+  );
+  const relatedElementNames = buildRelatedElementNames(graph, link.element_id, topicElementIds);
 
   return {
     title: element?.name ?? "Элемент",
@@ -492,7 +539,12 @@ function buildElementDetailCard(
     stats: [
       { label: "Роль в теме", value: roleLabel(link.role) },
       { label: "Тип компетенции", value: competenceLabel(element?.competence_type ?? "know") },
-      { label: "Связей с элементами", value: String(relatedCount) },
+      {
+        label: "Связи с элементами",
+        value: relatedElementNames.length
+          ? relatedElementNames
+          : "В текущем графе темы связей нет.",
+      },
       { label: "Текущая тема", value: topic.name },
     ],
     footnote:

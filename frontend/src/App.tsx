@@ -157,6 +157,10 @@ function extractErrorMessage(error: unknown) {
   return "Не удалось загрузить данные графа.";
 }
 
+function buildDetailValueKey(label: string, value: string) {
+  return `${label}:${value}`;
+}
+
 function parseDisciplineIdFromPath(pathname: string) {
   const match = pathname.match(KNOWLEDGE_PATH_PATTERN);
   return match?.[1] ?? "";
@@ -706,7 +710,15 @@ export default function App() {
                   {detail.stats.map((stat) => (
                     <div className="stat" key={stat.label}>
                       <span>{stat.label}</span>
-                      <strong>{stat.value}</strong>
+                      {Array.isArray(stat.value) ? (
+                        <ul className="stat__value-list">
+                          {stat.value.map((value) => (
+                            <li key={buildDetailValueKey(stat.label, value)}>{value}</li>
+                          ))}
+                        </ul>
+                      ) : (
+                        <strong>{stat.value}</strong>
+                      )}
                     </div>
                   ))}
                 </div>

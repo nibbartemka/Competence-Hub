@@ -722,6 +722,19 @@ textarea {
   font-size: 1rem;
 }
 
+.stat__value-list {
+  margin: 8px 0 0;
+  padding-left: 18px;
+  display: grid;
+  gap: 6px;
+}
+
+.stat__value-list li {
+  color: var(--ink);
+  font-size: 0.94rem;
+  line-height: 1.35;
+}
+
 .graph-stage {
   display: grid;
   grid-template-rows: auto minmax(0, 1fr);
@@ -897,6 +910,12 @@ textarea {
   flex-direction: column;
   gap: 8px;
   overflow: visible;
+  transition:
+    opacity 0.18s ease,
+    filter 0.18s ease,
+    border-color 0.18s ease,
+    background 0.18s ease,
+    box-shadow 0.18s ease;
 }
 
 .graph-node__sequence {
@@ -943,6 +962,11 @@ textarea {
 .graph-node--disabled {
   opacity: 0.7;
   filter: grayscale(0.18);
+}
+
+.graph-node--dimmed {
+  opacity: 0.34 !important;
+  filter: saturate(0.42) grayscale(0.18) !important;
 }
 
 .graph-node--topic,

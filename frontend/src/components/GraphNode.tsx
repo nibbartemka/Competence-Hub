@@ -12,6 +12,7 @@ import type { SceneNodeData } from "../types";
 export type GraphNodeRuntimeState = {
   selectedNodeIds?: ReadonlySet<string>;
   disabledNodeIds?: ReadonlySet<string>;
+  dimmedNodeIds?: ReadonlySet<string>;
   lockStateByNodeId?: ReadonlyMap<string, "locked" | "open">;
   hintByNodeId?: ReadonlyMap<string, string | undefined>;
   secondaryHintByNodeId?: ReadonlyMap<string, string | undefined>;
@@ -78,6 +79,7 @@ export function GraphNode({ node }: RGNodeSlotProps) {
     : data.metrics;
   const isSelected = runtimeState?.selectedNodeIds?.has(node.id) ?? data.isSelected;
   const isDisabled = runtimeState?.disabledNodeIds?.has(node.id) ?? data.isDisabled;
+  const isDimmed = runtimeState?.dimmedNodeIds?.has(node.id) ?? false;
   const lockState = runtimeState?.lockStateByNodeId?.has(node.id)
     ? runtimeState.lockStateByNodeId.get(node.id)
     : data.lockState;
@@ -137,7 +139,9 @@ export function GraphNode({ node }: RGNodeSlotProps) {
         data.accentTone ?? data.tone
       }${isSelected ? " graph-node--selected" : ""}${
         isDisabled ? " graph-node--disabled" : ""
-      }${isCardClickable ? " graph-node--clickable" : ""}`}
+      }${isDimmed ? " graph-node--dimmed" : ""}${
+        isCardClickable ? " graph-node--clickable" : ""
+      }`}
       onClick={handleCardClick}
       onKeyDown={handleCardKeyDown}
       role={isCardClickable ? "button" : undefined}
