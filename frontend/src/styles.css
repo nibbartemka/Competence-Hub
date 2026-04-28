@@ -16,6 +16,9 @@
   --master: #8e3f2f;
   --relation: #b96b2f;
   --line: #456187;
+  --page-side-gutter: clamp(24px, 8vw, 220px);
+  --page-max-width: 1440px;
+  --page-content-width: min(var(--page-max-width), calc(100vw - (var(--page-side-gutter) * 2)));
 }
 
 * {
@@ -48,6 +51,13 @@ textarea {
 .page-shell {
   min-height: 100vh;
   padding: 28px;
+}
+
+.page-shell__inner {
+  width: var(--page-content-width);
+  margin: 0 auto;
+  display: grid;
+  gap: 22px;
 }
 
 .immersive-page {
@@ -127,7 +137,7 @@ textarea {
 .immersive-page__hero,
 .immersive-page__grid,
 .immersive-page__status {
-  width: min(1180px, 100%);
+  width: var(--page-content-width);
   margin-left: auto;
   margin-right: auto;
 }
@@ -137,11 +147,11 @@ textarea {
 }
 
 .immersive-page__grid--wide {
-  width: min(1280px, 100%);
+  width: var(--page-content-width);
 }
 
 .immersive-page__grid--knowledge {
-  width: min(1380px, 100%);
+  width: var(--page-content-width);
 }
 
 .hero {
@@ -1539,7 +1549,8 @@ textarea {
   gap: 24px;
   align-items: stretch;
   margin: 0 auto 22px;
-  max-width: 1480px;
+  width: var(--page-content-width);
+  max-width: none;
   position: relative;
   z-index: 1;
   padding: 28px 30px;
@@ -1606,7 +1617,8 @@ textarea {
 }
 
 .home-feedback {
-  max-width: 1480px;
+  width: var(--page-content-width);
+  max-width: none;
   margin: 0 auto 16px;
   border-radius: 18px;
   padding: 14px 18px;
@@ -1729,7 +1741,8 @@ textarea {
 
 .home-grid--triad {
   width: 100%;
-  max-width: 1480px;
+  max-width: none;
+  width: var(--page-content-width);
   margin: 0 auto;
 }
 
@@ -1755,7 +1768,7 @@ textarea {
 }
 
 .home-section {
-  width: min(1480px, 100%);
+  width: var(--page-content-width);
   margin: 0 auto;
   display: grid;
   gap: 0;
@@ -1780,7 +1793,7 @@ textarea {
 }
 
 .home-card--wide {
-  max-width: 1480px;
+  max-width: none;
   margin: 0 auto;
   width: 100%;
 }
@@ -2022,7 +2035,7 @@ textarea {
 .role-page > .home-feedback,
 .role-page > .overview-grid,
 .role-page > .status-view {
-  width: min(1080px, 100%);
+  width: var(--page-content-width);
   margin-left: auto;
   margin-right: auto;
 }
@@ -3395,7 +3408,7 @@ textarea {
 }
 
 .student-dashboard-shell {
-  width: min(1180px, 100%);
+  width: var(--page-content-width);
   margin: 0 auto;
   display: grid;
   gap: 22px;
