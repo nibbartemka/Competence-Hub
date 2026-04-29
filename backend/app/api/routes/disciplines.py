@@ -2,7 +2,7 @@ from uuid import UUID
 
 from fastapi import APIRouter, status
 from sqlalchemy import and_, select
-from sqlalchemy.orm import lazyload
+from sqlalchemy.orm import lazyload, selectinload
 
 from app.api.crud import commit_or_409, delete_and_commit, not_found
 from app.api.deps import DbSession
@@ -226,7 +226,7 @@ async def get_discipline_knowledge_graph(
 
             relations_result = await session.execute(
                 select(KnowledgeElementRelation)
-                .options(lazyload("*"))
+                .options(selectinload(KnowledgeElementRelation.relation))
                 .where(
                     and_(
                         KnowledgeElementRelation.source_element_id.in_(element_ids),

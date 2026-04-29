@@ -5,6 +5,7 @@ from .knowledge_graph import (
     TopicDependency,
     KnowledgeElement,
     TopicKnowledgeElement,
+    Relation,
     KnowledgeElementRelation,
 )
 from .groups import Group, Subgroup
@@ -39,6 +40,7 @@ __all__ = [
     "TopicDependency",
     "KnowledgeElement",
     "TopicKnowledgeElement",
+    "Relation",
     "KnowledgeElementRelation",
     "Group",
     "Subgroup",

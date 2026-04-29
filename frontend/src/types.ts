@@ -16,6 +16,7 @@ export type KnowledgeElementRelationType =
   | "used_with"
   | "implements"
   | "automates";
+export type RelationDirectionType = "one_direction" | "two_direction";
 
 export type Discipline = {
   id: string;
@@ -82,11 +83,19 @@ export type TopicKnowledgeElement = {
   note: string | null;
 };
 
+export type Relation = {
+  id: string;
+  relation_type: KnowledgeElementRelationType;
+  direction: RelationDirectionType;
+};
+
 export type KnowledgeElementRelation = {
   id: string;
   source_element_id: string;
   target_element_id: string;
+  relation_id: string;
   relation_type: KnowledgeElementRelationType;
+  relation: Relation;
   description: string | null;
 };
 

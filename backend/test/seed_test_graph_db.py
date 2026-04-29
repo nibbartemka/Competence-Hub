@@ -24,6 +24,7 @@ from app.models import (
     GroupDiscipline,
     KnowledgeElement,
     KnowledgeElementRelation,
+    Relation,
     LearningTrajectory,
     LearningTrajectoryElement,
     LearningTrajectoryTask,
@@ -51,6 +52,7 @@ from app.models.enums import (
     LearningTrajectoryStatus,
     LearningTrajectoryTaskTemplateKind,
     LearningTrajectoryTaskType,
+    RelationDirectionType,
     StudentTaskProgressStatus,
     TopicDependencyRelationType,
     TopicDependencySource,
@@ -113,6 +115,21 @@ TOPIC_BLUEPRINTS: list[TopicBlueprint] = [
 
 assert len(TOPIC_BLUEPRINTS) == 34
 
+RELATION_DIRECTION_BY_TYPE: dict[KnowledgeElementRelationType, RelationDirectionType] = {
+    KnowledgeElementRelationType.REQUIRES: RelationDirectionType.ONE_DIRECTION,
+    KnowledgeElementRelationType.BUILDS_ON: RelationDirectionType.ONE_DIRECTION,
+    KnowledgeElementRelationType.CONTAINS: RelationDirectionType.ONE_DIRECTION,
+    KnowledgeElementRelationType.PART_OF: RelationDirectionType.ONE_DIRECTION,
+    KnowledgeElementRelationType.PROPERTY_OF: RelationDirectionType.ONE_DIRECTION,
+    KnowledgeElementRelationType.REFINES: RelationDirectionType.ONE_DIRECTION,
+    KnowledgeElementRelationType.GENERALIZES: RelationDirectionType.ONE_DIRECTION,
+    KnowledgeElementRelationType.IMPLEMENTS: RelationDirectionType.ONE_DIRECTION,
+    KnowledgeElementRelationType.AUTOMATES: RelationDirectionType.ONE_DIRECTION,
+    KnowledgeElementRelationType.SIMILAR: RelationDirectionType.TWO_DIRECTION,
+    KnowledgeElementRelationType.CONTRASTS_WITH: RelationDirectionType.TWO_DIRECTION,
+    KnowledgeElementRelationType.USED_WITH: RelationDirectionType.TWO_DIRECTION,
+}
+
 
 def recreate_database() -> None:
     if DB_PATH.exists():
@@ -133,12 +150,30 @@ def utcnow_naive() -> datetime:
     return datetime.now(UTC).replace(tzinfo=None)
 
 
+def seed_relation_catalog(session: Session) -> dict[KnowledgeElementRelationType, Relation]:
+    relations: dict[KnowledgeElementRelationType, Relation] = {}
+    for relation_type, direction in RELATION_DIRECTION_BY_TYPE.items():
+        relation = Relation(
+            relation_type=relation_type,
+            direction=direction,
+        )
+        session.add(relation)
+        relations[relation_type] = relation
+    session.flush()
+    return relations
+
+
 def seed_data(session: Session) -> None:
     discipline = Discipline(name="Теория графов. Демонстрационный контур", knowledge_graph_version=1)
     session.add(discipline)
     session.flush()
 
-    topics_by_index, elements_by_topic = build_knowledge_graph(session, discipline)
+    relation_definitions = seed_relation_catalog(session)
+    topics_by_index, elements_by_topic = build_knowledge_graph(
+        session,
+        discipline,
+        relation_definitions,
+    )
     build_topic_dependencies(session, topics_by_index)
 
     people = build_people_and_group_data(session, discipline)
@@ -161,6 +196,7 @@ def seed_data(session: Session) -> None:
 def build_knowledge_graph(
     session: Session,
     discipline: Discipline,
+    relation_definitions: dict[KnowledgeElementRelationType, Relation],
 ) -> tuple[dict[int, Topic], dict[int, dict[str, KnowledgeElement]]]:
     topics_by_index: dict[int, Topic] = {}
     elements_by_topic: dict[int, dict[str, KnowledgeElement]] = {}
@@ -230,13 +266,14 @@ def build_knowledge_graph(
         session.add_all(topic_links)
         session.flush()
 
-    session.add_all(build_knowledge_relations(elements_by_topic))
+    session.add_all(build_knowledge_relations(elements_by_topic, relation_definitions))
     session.flush()
     return topics_by_index, elements_by_topic
 
 
 def build_knowledge_relations(
     elements_by_topic: dict[int, dict[str, KnowledgeElement]],
+    relation_definitions: dict[KnowledgeElementRelationType, Relation],
 ) -> list[KnowledgeElementRelation]:
     relations: list[KnowledgeElementRelation] = []
 
@@ -247,19 +284,19 @@ def build_knowledge_relations(
                 KnowledgeElementRelation(
                     source_element_id=current["know_detail"].id,
                     target_element_id=current["know_core"].id,
-                    relation_type=KnowledgeElementRelationType.REFINES,
+                    relation_id=relation_definitions[KnowledgeElementRelationType.REFINES].id,
                     description="Уточняющее понятие конкретизирует базовое.",
                 ),
                 KnowledgeElementRelation(
                     source_element_id=current["can"].id,
                     target_element_id=current["know_core"].id,
-                    relation_type=KnowledgeElementRelationType.IMPLEMENTS,
+                    relation_id=relation_definitions[KnowledgeElementRelationType.IMPLEMENTS].id,
                     description="Теоретическое знание выражается в действии.",
                 ),
                 KnowledgeElementRelation(
                     source_element_id=current["master"].id,
                     target_element_id=current["can"].id,
-                    relation_type=KnowledgeElementRelationType.AUTOMATES,
+                    relation_id=relation_definitions[KnowledgeElementRelationType.AUTOMATES].id,
                     description="Устойчивый навык вырастает из освоенного умения.",
                 ),
             ]
@@ -272,19 +309,19 @@ def build_knowledge_relations(
                     KnowledgeElementRelation(
                         source_element_id=current["know_core"].id,
                         target_element_id=prerequisite["know_core"].id,
-                        relation_type=KnowledgeElementRelationType.REQUIRES,
+                        relation_id=relation_definitions[KnowledgeElementRelationType.REQUIRES].id,
                         description="Новое понятие опирается на базу предыдущей темы.",
                     ),
                     KnowledgeElementRelation(
                         source_element_id=current["know_detail"].id,
                         target_element_id=prerequisite["know_detail"].id,
-                        relation_type=KnowledgeElementRelationType.BUILDS_ON,
+                        relation_id=relation_definitions[KnowledgeElementRelationType.BUILDS_ON].id,
                         description="Уточнение строится на ранее изученном уточнении.",
                     ),
                     KnowledgeElementRelation(
                         source_element_id=current["know_core"].id,
                         target_element_id=prerequisite["know_detail"].id,
-                        relation_type=KnowledgeElementRelationType.USED_WITH,
+                        relation_id=relation_definitions[KnowledgeElementRelationType.USED_WITH].id,
                         description="Понятия часто используются совместно в решении задач.",
                     ),
                 ]

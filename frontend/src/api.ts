@@ -8,6 +8,8 @@ import type {
   KnowledgeElement,
   KnowledgeElementRelation,
   KnowledgeElementRelationType,
+  Relation,
+  RelationDirectionType,
   LearningTrajectory,
   LearningTrajectorySummary,
   LearningTrajectoryTaskContent,
@@ -310,10 +312,43 @@ export function createTopicDependency(payload: {
   });
 }
 
+export function fetchRelations(signal?: AbortSignal) {
+  return request<Relation[]>("/relations/", { signal });
+}
+
+export function createRelation(payload: {
+  relation_type: KnowledgeElementRelationType;
+  direction: RelationDirectionType;
+}) {
+  return request<Relation>("/relations/", {
+    method: "POST",
+    body: payload,
+  });
+}
+
+export function updateRelation(
+  relationId: string,
+  payload: {
+    relation_type: KnowledgeElementRelationType;
+    direction: RelationDirectionType;
+  },
+) {
+  return request<Relation>(`/relations/${relationId}`, {
+    method: "PUT",
+    body: payload,
+  });
+}
+
+export function deleteRelation(relationId: string) {
+  return request<void>(`/relations/${relationId}`, {
+    method: "DELETE",
+  });
+}
+
 export function createKnowledgeElementRelation(payload: {
   source_element_id: string;
   target_element_id: string;
-  relation_type: KnowledgeElementRelationType;
+  relation_id: string;
   description: string;
 }) {
   return request<KnowledgeElementRelation>("/knowledge-element-relations/", {
@@ -327,7 +362,7 @@ export function updateKnowledgeElementRelation(
   payload: {
     source_element_id: string;
     target_element_id: string;
-    relation_type: KnowledgeElementRelationType;
+    relation_id: string;
     description: string;
   },
 ) {

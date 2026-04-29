@@ -25,6 +25,21 @@ Base = declarative_base()
 async_engine: AsyncEngine | None = None
 AsyncSessionLocal: async_sessionmaker[AsyncSession] | None = None
 
+SQLITE_RELATION_DIRECTIONS: dict[str, str] = {
+    "requires": "one_direction",
+    "builds_on": "one_direction",
+    "contains": "one_direction",
+    "part_of": "one_direction",
+    "property_of": "one_direction",
+    "refines": "one_direction",
+    "generalizes": "one_direction",
+    "implements": "one_direction",
+    "automates": "one_direction",
+    "similar": "two_direction",
+    "contrasts_with": "two_direction",
+    "used_with": "two_direction",
+}
+
 
 def get_async_engine() -> AsyncEngine:
     global async_engine
@@ -246,16 +261,18 @@ def _rebuild_knowledge_elements_table(connection) -> None:
                 description TEXT,
                 source_element_id CHAR(32) NOT NULL,
                 target_element_id CHAR(32) NOT NULL,
-                relation_type VARCHAR(14) NOT NULL,
+                relation_id CHAR(32) NOT NULL,
                 PRIMARY KEY (id),
                 CONSTRAINT uq_knowledge_element_relation
-                    UNIQUE (source_element_id, target_element_id, relation_type),
+                    UNIQUE (source_element_id, target_element_id, relation_id),
                 CONSTRAINT ck_knowledge_element_relation_not_self
                     CHECK (source_element_id != target_element_id),
                 FOREIGN KEY(source_element_id)
                     REFERENCES knowledge_elements (id) ON DELETE CASCADE,
                 FOREIGN KEY(target_element_id)
-                    REFERENCES knowledge_elements (id) ON DELETE CASCADE
+                    REFERENCES knowledge_elements (id) ON DELETE CASCADE,
+                FOREIGN KEY(relation_id)
+                    REFERENCES relations (id) ON DELETE CASCADE
             )
             """
         )
@@ -268,14 +285,14 @@ def _rebuild_knowledge_elements_table(connection) -> None:
                 description,
                 source_element_id,
                 target_element_id,
-                relation_type
+                relation_id
             )
             SELECT
                 lower(hex(randomblob(16))),
                 knowledge_element_relations.description,
                 source_map.new_id,
                 target_map.new_id,
-                knowledge_element_relations.relation_type
+                relations.id
             FROM knowledge_element_relations
             JOIN knowledge_element_discipline_map AS source_map
                 ON source_map.old_id =
@@ -283,6 +300,8 @@ def _rebuild_knowledge_elements_table(connection) -> None:
             JOIN knowledge_element_discipline_map AS target_map
                 ON target_map.old_id =
                 knowledge_element_relations.target_element_id
+            JOIN relations
+                ON relations.relation_type = knowledge_element_relations.relation_type
             WHERE source_map.new_id != target_map.new_id
                 AND (
                     source_map.discipline_id = target_map.discipline_id
@@ -308,6 +327,94 @@ def _rebuild_knowledge_elements_table(connection) -> None:
     connection.execute(text("DROP TABLE knowledge_element_discipline_map"))
 
 
+def _seed_relations_table(connection) -> None:
+    if not _sqlite_has_table(connection, "relations"):
+        return
+
+    for relation_type, direction in SQLITE_RELATION_DIRECTIONS.items():
+        connection.execute(
+            text(
+                """
+                INSERT OR IGNORE INTO relations (id, relation_type, direction)
+                VALUES (lower(hex(randomblob(16))), :relation_type, :direction)
+                """
+            ),
+            {
+                "relation_type": relation_type,
+                "direction": direction,
+            },
+        )
+        connection.execute(
+            text(
+                """
+                UPDATE relations
+                SET direction = :direction
+                WHERE relation_type = :relation_type
+                """
+            ),
+            {
+                "relation_type": relation_type,
+                "direction": direction,
+            },
+        )
+
+
+def _rebuild_knowledge_element_relations_table(connection) -> None:
+    connection.execute(
+        text(
+            """
+            CREATE TABLE knowledge_element_relations_new (
+                id CHAR(32) NOT NULL,
+                description TEXT,
+                source_element_id CHAR(32) NOT NULL,
+                target_element_id CHAR(32) NOT NULL,
+                relation_id CHAR(32) NOT NULL,
+                PRIMARY KEY (id),
+                CONSTRAINT uq_knowledge_element_relation
+                    UNIQUE (source_element_id, target_element_id, relation_id),
+                CONSTRAINT ck_knowledge_element_relation_not_self
+                    CHECK (source_element_id != target_element_id),
+                FOREIGN KEY(source_element_id)
+                    REFERENCES knowledge_elements (id) ON DELETE CASCADE,
+                FOREIGN KEY(target_element_id)
+                    REFERENCES knowledge_elements (id) ON DELETE CASCADE,
+                FOREIGN KEY(relation_id)
+                    REFERENCES relations (id) ON DELETE CASCADE
+            )
+            """
+        )
+    )
+    connection.execute(
+        text(
+            """
+            INSERT OR IGNORE INTO knowledge_element_relations_new (
+                id,
+                description,
+                source_element_id,
+                target_element_id,
+                relation_id
+            )
+            SELECT
+                knowledge_element_relations.id,
+                knowledge_element_relations.description,
+                knowledge_element_relations.source_element_id,
+                knowledge_element_relations.target_element_id,
+                relations.id
+            FROM knowledge_element_relations
+            JOIN relations
+                ON relations.relation_type = knowledge_element_relations.relation_type
+            """
+        )
+    )
+    connection.execute(text("DROP TABLE knowledge_element_relations"))
+    connection.execute(
+        text(
+            "ALTER TABLE knowledge_element_relations_new "
+            "RENAME TO knowledge_element_relations"
+        )
+    )
+
+
 def _sync_sqlite_schema(connection) -> None:
     # Keep local SQLite schema compatible with the current SQLAlchemy models.
     if not _sqlite_has_column(connection, "topics", "description"):
@@ -330,10 +437,15 @@ def _sync_sqlite_schema(connection) -> None:
             connection.execute(
                 text("ALTER TABLE teacher_subgroups ADD COLUMN subgroup_id CHAR(32)")
             )
+    _seed_relations_table(connection)
     if _sqlite_has_table(connection, "knowledge_elements") and not _sqlite_has_column(
         connection, "knowledge_elements", "discipline_id"
     ):
         _rebuild_knowledge_elements_table(connection)
+    elif _sqlite_has_table(connection, "knowledge_element_relations") and not _sqlite_has_column(
+        connection, "knowledge_element_relations", "relation_id"
+    ):
+        _rebuild_knowledge_element_relations_table(connection)
     if _sqlite_has_table(connection, "disciplines") and not _sqlite_has_column(
         connection, "disciplines", "knowledge_graph_version"
     ):

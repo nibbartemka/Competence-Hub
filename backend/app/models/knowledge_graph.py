@@ -229,6 +229,13 @@ class Relation(Base):
         nullable=False,
     )
 
+    element_relations: Mapped[list["KnowledgeElementRelation"]] = relationship(
+        "KnowledgeElementRelation",
+        back_populates="relation",
+        cascade="all, delete-orphan",
+        lazy="selectin",
+    )
+
 
 class KnowledgeElementRelation(Base):
     __tablename__ = "knowledge_element_relations"
@@ -279,5 +286,14 @@ class KnowledgeElementRelation(Base):
     relation: Mapped["Relation"] = relationship(
         "Relation",
         foreign_keys=[relation_id],
+        back_populates="element_relations",
         lazy="selectin",
     )
+
+    @property
+    def relation_type(self) -> KnowledgeElementRelationType:
+        return self.relation.relation_type
+
+    @property
+    def direction(self) -> RelationDirectionType:
+        return self.relation.direction

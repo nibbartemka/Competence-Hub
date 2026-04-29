@@ -6,6 +6,7 @@ from .knowledge_element_relations import (
     KnowledgeElementRelationRead,
     KnowledgeElementRelationUpdate,
 )
+from .relations import RelationCreate, RelationRead, RelationUpdate
 from .knowledge_graph_view import DisciplineKnowledgeGraphRead
 from .knowledge_elements import (
     KnowledgeElementCreate,
@@ -103,4 +104,7 @@ __all__ = [
     "KnowledgeElementRelationCreate",
     "KnowledgeElementRelationRead",
     "KnowledgeElementRelationUpdate",
+    "RelationCreate",
+    "RelationRead",
+    "RelationUpdate",
 ]
