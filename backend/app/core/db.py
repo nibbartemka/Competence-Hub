@@ -26,18 +26,18 @@ async_engine: AsyncEngine | None = None
 AsyncSessionLocal: async_sessionmaker[AsyncSession] | None = None
 
 SQLITE_RELATION_DIRECTIONS: dict[str, str] = {
-    "requires": "one_direction",
-    "builds_on": "one_direction",
-    "contains": "one_direction",
-    "part_of": "one_direction",
-    "property_of": "one_direction",
-    "refines": "one_direction",
-    "generalizes": "one_direction",
-    "implements": "one_direction",
-    "automates": "one_direction",
-    "similar": "two_direction",
-    "contrasts_with": "two_direction",
-    "used_with": "two_direction",
+    "REQUIRES": "ONE_DIRECTION",
+    "BUILDS_ON": "ONE_DIRECTION",
+    "CONTAINS": "ONE_DIRECTION",
+    "PART_OF": "ONE_DIRECTION",
+    "PROPERTY_OF": "ONE_DIRECTION",
+    "REFINES": "ONE_DIRECTION",
+    "GENERALIZES": "ONE_DIRECTION",
+    "IMPLEMENTS": "ONE_DIRECTION",
+    "AUTOMATES": "ONE_DIRECTION",
+    "SIMILAR": "TWO_DIRECTION",
+    "CONTRASTS_WITH": "TWO_DIRECTION",
+    "USED_WITH": "TWO_DIRECTION",
 }
 
 
@@ -301,7 +301,7 @@ def _rebuild_knowledge_elements_table(connection) -> None:
                 ON target_map.old_id =
                 knowledge_element_relations.target_element_id
             JOIN relations
-                ON relations.relation_type = knowledge_element_relations.relation_type
+                ON upper(relations.relation_type) = upper(knowledge_element_relations.relation_type)
             WHERE source_map.new_id != target_map.new_id
                 AND (
                     source_map.discipline_id = target_map.discipline_id
@@ -359,6 +359,141 @@ def _seed_relations_table(connection) -> None:
         )
 
 
+def _normalize_relations_and_links(connection) -> None:
+    if not _sqlite_has_table(connection, "relations"):
+        return
+
+    has_relation_links = _sqlite_has_table(
+        connection, "knowledge_element_relations"
+    ) and _sqlite_has_column(connection, "knowledge_element_relations", "relation_id")
+
+    connection.execute(text("DROP TABLE IF EXISTS relation_normalization_map"))
+    connection.execute(
+        text(
+            """
+            CREATE TEMP TABLE relation_normalization_map AS
+            WITH normalized AS (
+                SELECT
+                    id AS old_id,
+                    upper(relation_type) AS normalized_relation_type,
+                    CASE upper(direction)
+                        WHEN 'ONE_DIRECTION' THEN 'ONE_DIRECTION'
+                        WHEN 'TWO_DIRECTION' THEN 'TWO_DIRECTION'
+                        ELSE upper(direction)
+                    END AS normalized_direction
+                FROM relations
+            ),
+            canonical AS (
+                SELECT
+                    normalized_relation_type,
+                    MIN(old_id) AS canonical_id
+                FROM normalized
+                GROUP BY normalized_relation_type
+            )
+            SELECT
+                normalized.old_id,
+                canonical.canonical_id,
+                normalized.normalized_relation_type,
+                normalized.normalized_direction
+            FROM normalized
+            JOIN canonical
+                ON canonical.normalized_relation_type = normalized.normalized_relation_type
+            """
+        )
+    )
+
+    connection.execute(text("DROP TABLE IF EXISTS relations_new"))
+    connection.execute(
+        text(
+            """
+            CREATE TABLE relations_new (
+                id CHAR(32) NOT NULL,
+                relation_type VARCHAR(32) NOT NULL,
+                direction VARCHAR(32) NOT NULL,
+                PRIMARY KEY (id),
+                UNIQUE (relation_type)
+            )
+            """
+        )
+    )
+    connection.execute(
+        text(
+            """
+            INSERT OR IGNORE INTO relations_new (id, relation_type, direction)
+            SELECT
+                canonical_id,
+                normalized_relation_type,
+                normalized_direction
+            FROM relation_normalization_map
+            GROUP BY canonical_id, normalized_relation_type, normalized_direction
+            """
+        )
+    )
+
+    if has_relation_links:
+        connection.execute(text("DROP TABLE IF EXISTS knowledge_element_relations_new"))
+        connection.execute(
+            text(
+                """
+                CREATE TABLE knowledge_element_relations_new (
+                    id CHAR(32) NOT NULL,
+                    description TEXT,
+                    source_element_id CHAR(32) NOT NULL,
+                    target_element_id CHAR(32) NOT NULL,
+                    relation_id CHAR(32) NOT NULL,
+                    PRIMARY KEY (id),
+                    CONSTRAINT uq_knowledge_element_relation
+                        UNIQUE (source_element_id, target_element_id, relation_id),
+                    CONSTRAINT ck_knowledge_element_relation_not_self
+                        CHECK (source_element_id != target_element_id),
+                    FOREIGN KEY(source_element_id)
+                        REFERENCES knowledge_elements (id) ON DELETE CASCADE,
+                    FOREIGN KEY(target_element_id)
+                        REFERENCES knowledge_elements (id) ON DELETE CASCADE,
+                    FOREIGN KEY(relation_id)
+                        REFERENCES relations (id) ON DELETE CASCADE
+                )
+                """
+            )
+        )
+        connection.execute(
+            text(
+                """
+                INSERT OR IGNORE INTO knowledge_element_relations_new (
+                    id,
+                    description,
+                    source_element_id,
+                    target_element_id,
+                    relation_id
+                )
+                SELECT
+                    ker.id,
+                    ker.description,
+                    ker.source_element_id,
+                    ker.target_element_id,
+                    map.canonical_id
+                FROM knowledge_element_relations AS ker
+                JOIN relation_normalization_map AS map
+                    ON map.old_id = ker.relation_id
+                """
+            )
+        )
+        connection.execute(text("DROP TABLE knowledge_element_relations"))
+
+    connection.execute(text("DROP TABLE relations"))
+    connection.execute(text("ALTER TABLE relations_new RENAME TO relations"))
+
+    if has_relation_links:
+        connection.execute(
+            text(
+                "ALTER TABLE knowledge_element_relations_new "
+                "RENAME TO knowledge_element_relations"
+            )
+        )
+
+    connection.execute(text("DROP TABLE relation_normalization_map"))
+
+
 def _rebuild_knowledge_element_relations_table(connection) -> None:
     connection.execute(
         text(
@@ -402,7 +537,7 @@ def _rebuild_knowledge_element_relations_table(connection) -> None:
                 relations.id
             FROM knowledge_element_relations
             JOIN relations
-                ON relations.relation_type = knowledge_element_relations.relation_type
+                ON upper(relations.relation_type) = upper(knowledge_element_relations.relation_type)
             """
         )
     )
@@ -437,6 +572,7 @@ def _sync_sqlite_schema(connection) -> None:
             connection.execute(
                 text("ALTER TABLE teacher_subgroups ADD COLUMN subgroup_id CHAR(32)")
             )
+    _normalize_relations_and_links(connection)
     _seed_relations_table(connection)
     if _sqlite_has_table(connection, "knowledge_elements") and not _sqlite_has_column(
         connection, "knowledge_elements", "discipline_id"

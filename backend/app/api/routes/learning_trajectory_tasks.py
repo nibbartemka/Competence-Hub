@@ -90,6 +90,9 @@ def _task_read_options(
             lazyload("*"),
             selectinload(LearningTrajectoryTaskRelation.relation).options(
                 lazyload("*"),
+                selectinload(KnowledgeElementRelation.relation).options(
+                    lazyload("*")
+                ),
                 selectinload(KnowledgeElementRelation.source_element).options(
                     lazyload("*")
                 ),
@@ -313,7 +316,12 @@ async def _load_relation_map(
 
     result = await session.execute(
         select(KnowledgeElementRelation)
-        .options(lazyload("*"))
+        .options(
+            lazyload("*"),
+            selectinload(KnowledgeElementRelation.relation).options(
+                lazyload("*")
+            ),
+        )
         .join(
             KnowledgeElement,
             KnowledgeElement.id == KnowledgeElementRelation.source_element_id,
@@ -339,6 +347,9 @@ async def _validate_checked_relations(
     result = await session.execute(
         select(KnowledgeElementRelation)
         .options(
+            selectinload(KnowledgeElementRelation.relation).options(
+                lazyload("*")
+            ),
             selectinload(KnowledgeElementRelation.source_element),
             selectinload(KnowledgeElementRelation.target_element),
         )
