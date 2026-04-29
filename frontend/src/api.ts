@@ -2,6 +2,8 @@ import type {
   CompetenceType,
   Discipline,
   DisciplineKnowledgeGraph,
+  GraphLayout,
+  GraphLayoutPayload,
   Group,
   KnowledgeElement,
   KnowledgeElementRelation,
@@ -96,6 +98,34 @@ async function request<T>(path: string, options: RequestOptions = {}): Promise<T
 
 export function fetchDisciplines(signal?: AbortSignal) {
   return request<Discipline[]>("/disciplines/", { signal });
+}
+
+export function fetchGraphLayouts(
+  scopeType: string,
+  scopeId: string,
+  signal?: AbortSignal,
+) {
+  return request<GraphLayout[]>(
+    `/graph-layouts/${encodeURIComponent(scopeType)}/${encodeURIComponent(scopeId)}`,
+    { signal },
+  );
+}
+
+export function saveGraphLayout(
+  scopeType: string,
+  scopeId: string,
+  payload: {
+    scene_key: string;
+    payload: GraphLayoutPayload;
+  },
+) {
+  return request<GraphLayout>(
+    `/graph-layouts/${encodeURIComponent(scopeType)}/${encodeURIComponent(scopeId)}`,
+    {
+      method: "PUT",
+      body: payload,
+    },
+  );
 }
 
 export function createDiscipline(payload: {

@@ -1,4 +1,4 @@
-import type { MutableRefObject } from "react";
+import { useEffect, useMemo, useRef, useState, type MutableRefObject } from "react";
 import type {
   JsonLine,
   JsonNode,
@@ -6,12 +6,8 @@ import type {
   RelationGraphInstance,
 } from "relation-graph-react";
 
-type SceneViewportSnapshot = {
-  offsetX: number;
-  offsetY: number;
-  positions: Map<string, { x: number; y: number }>;
-  zoom: number | undefined;
-};
+import { fetchGraphLayouts, isAbortError, saveGraphLayout } from "./api";
+import type { GraphLayoutPayload } from "./types";
 
 type ViewportScene = {
   key: string;
@@ -21,75 +17,269 @@ type ViewportScene = {
   defaultSelectedNodeId: string;
 };
 
-function captureSceneViewport(
+type PersistedViewportOptions = {
+  enabled?: boolean;
+  graphRef: MutableRefObject<RelationGraphComponent | undefined>;
+  scene: ViewportScene | null;
+  scopeId?: string;
+  scopeType: string;
+};
+
+const SAVE_DEBOUNCE_MS = 450;
+
+function clonePayload(payload: GraphLayoutPayload): GraphLayoutPayload {
+  return {
+    offset_x: payload.offset_x,
+    offset_y: payload.offset_y,
+    zoom: payload.zoom,
+    positions: Object.fromEntries(
+      Object.entries(payload.positions).map(([nodeId, position]) => [
+        nodeId,
+        { x: position.x, y: position.y },
+      ]),
+    ),
+  };
+}
+
+function captureGraphLayout(
   graphInstance: RelationGraphInstance,
-): SceneViewportSnapshot {
-  const positions = new Map<string, { x: number; y: number }>();
+): GraphLayoutPayload {
+  const positions: GraphLayoutPayload["positions"] = {};
+
   for (const node of graphInstance.getNodes()) {
-    positions.set(node.id, { x: node.x, y: node.y });
+    positions[node.id] = { x: node.x, y: node.y };
   }
 
   const offset = graphInstance.getGraphOffet();
 
   return {
     positions,
-    offsetX: offset?.offset_x ?? 0,
-    offsetY: offset?.offset_y ?? 0,
-    zoom: graphInstance.options.canvasZoom,
+    offset_x: offset?.offset_x ?? 0,
+    offset_y: offset?.offset_y ?? 0,
+    zoom:
+      typeof graphInstance.options.canvasZoom === "number"
+        ? graphInstance.options.canvasZoom
+        : null,
   };
 }
 
-export function applySceneWithViewportMemory(
-  graphComponent: RelationGraphComponent,
+function buildSceneGraphData(
   scene: ViewportScene,
-  currentSceneKeyRef: MutableRefObject<string>,
-  sceneViewportRef: MutableRefObject<Map<string, SceneViewportSnapshot>>,
+  layout: GraphLayoutPayload | undefined,
 ) {
-  const graphInstance = graphComponent.getInstance();
-  const currentSceneKey = currentSceneKeyRef.current;
-
-  if (currentSceneKey) {
-    sceneViewportRef.current.set(
-      currentSceneKey,
-      captureSceneViewport(graphInstance),
-    );
-  }
-
-  const savedViewport = sceneViewportRef.current.get(scene.key);
-  const nodes = savedViewport
+  const nodes = layout
     ? scene.nodes.map((node) => {
-        const position = savedViewport.positions.get(node.id);
+        const position = layout.positions[node.id];
         return position ? { ...node, x: position.x, y: position.y } : node;
       })
     : scene.nodes;
 
-  const graphData = {
+  return {
     rootId: scene.rootId,
     nodes,
     lines: scene.lines,
   };
+}
 
-  const afterRefresh = (nextGraphInstance: RelationGraphInstance) => {
-    if (savedViewport) {
-      nextGraphInstance.setCanvasOffset(
-        savedViewport.offsetX,
-        savedViewport.offsetY,
-      );
-      if (typeof savedViewport.zoom === "number") {
-        nextGraphInstance.setZoom(savedViewport.zoom);
+function restoreSceneLayout(
+  graphComponent: RelationGraphComponent,
+  scene: ViewportScene,
+  layout: GraphLayoutPayload | undefined,
+) {
+  const graphData = buildSceneGraphData(scene, layout);
+
+  const afterRefresh = (graphInstance: RelationGraphInstance) => {
+    if (layout) {
+      graphInstance.setCanvasOffset(layout.offset_x, layout.offset_y);
+      if (typeof layout.zoom === "number") {
+        graphInstance.setZoom(layout.zoom);
       }
     }
 
     if (scene.defaultSelectedNodeId) {
-      nextGraphInstance.setCheckedNode(scene.defaultSelectedNodeId);
+      graphInstance.setCheckedNode(scene.defaultSelectedNodeId);
     }
   };
 
-  if (savedViewport) {
+  if (layout) {
     graphComponent.setJsonData(graphData, false, afterRefresh);
-  } else {
-    graphComponent.setJsonData(graphData, afterRefresh);
+    return;
   }
 
-  currentSceneKeyRef.current = scene.key;
+  graphComponent.setJsonData(graphData, afterRefresh);
+}
+
+async function persistLayoutPayload(
+  scopeType: string,
+  scopeId: string,
+  sceneKey: string,
+  payload: GraphLayoutPayload,
+  persistedLayoutsRef: MutableRefObject<Map<string, GraphLayoutPayload>>,
+) {
+  const savedLayout = await saveGraphLayout(scopeType, scopeId, {
+    scene_key: sceneKey,
+    payload,
+  });
+  persistedLayoutsRef.current.set(
+    savedLayout.scene_key,
+    clonePayload(savedLayout.payload),
+  );
+}
+
+export function usePersistedGraphViewport({
+  enabled = true,
+  graphRef,
+  scene,
+  scopeId,
+  scopeType,
+}: PersistedViewportOptions) {
+  const [layoutLoading, setLayoutLoading] = useState(Boolean(enabled && scopeId));
+  const [layoutError, setLayoutError] = useState("");
+  const [layoutVersion, setLayoutVersion] = useState(0);
+  const persistedLayoutsRef = useRef<Map<string, GraphLayoutPayload>>(new Map());
+  const runtimeLayoutsRef = useRef<Map<string, GraphLayoutPayload>>(new Map());
+  const currentSceneKeyRef = useRef("");
+  const saveTimerRef = useRef<number | null>(null);
+
+  useEffect(() => {
+    if (!enabled || !scopeId) {
+      persistedLayoutsRef.current = new Map();
+      runtimeLayoutsRef.current = new Map();
+      currentSceneKeyRef.current = "";
+      setLayoutError("");
+      setLayoutLoading(false);
+      setLayoutVersion((current) => current + 1);
+      return;
+    }
+
+    const controller = new AbortController();
+    const scopeKey = scopeId;
+    setLayoutLoading(true);
+    setLayoutError("");
+    currentSceneKeyRef.current = "";
+
+    async function loadLayouts() {
+      try {
+        const items = await fetchGraphLayouts(scopeType, scopeKey, controller.signal);
+        const nextMap = new Map<string, GraphLayoutPayload>();
+        for (const item of items) {
+          nextMap.set(item.scene_key, clonePayload(item.payload));
+        }
+        persistedLayoutsRef.current = nextMap;
+        runtimeLayoutsRef.current = new Map(nextMap);
+        setLayoutVersion((current) => current + 1);
+      } catch (error) {
+        if (!isAbortError(error)) {
+          setLayoutError(
+            error instanceof Error
+              ? error.message
+              : "Не удалось загрузить сохраненное положение графа.",
+          );
+        }
+      } finally {
+        if (!controller.signal.aborted) {
+          setLayoutLoading(false);
+        }
+      }
+    }
+
+    void loadLayouts();
+
+    return () => {
+      controller.abort();
+    };
+  }, [enabled, scopeId, scopeType]);
+
+  useEffect(() => {
+    if (!enabled || !scene || !graphRef.current || layoutLoading) {
+      return;
+    }
+
+    const graphComponent = graphRef.current;
+    const graphInstance = graphComponent.getInstance();
+    const previousSceneKey = currentSceneKeyRef.current;
+
+    if (previousSceneKey) {
+      runtimeLayoutsRef.current.set(
+        previousSceneKey,
+        captureGraphLayout(graphInstance),
+      );
+    }
+
+    const layout =
+      runtimeLayoutsRef.current.get(scene.key) ??
+      persistedLayoutsRef.current.get(scene.key);
+
+    restoreSceneLayout(graphComponent, scene, layout);
+    currentSceneKeyRef.current = scene.key;
+  }, [enabled, graphRef, layoutLoading, layoutVersion, scene]);
+
+  useEffect(() => {
+    return () => {
+      if (
+        saveTimerRef.current !== null &&
+        enabled &&
+        scopeId &&
+        graphRef.current
+      ) {
+        window.clearTimeout(saveTimerRef.current);
+        const graphInstance = graphRef.current.getInstance();
+        const sceneKey = currentSceneKeyRef.current;
+        if (sceneKey) {
+          const payload = captureGraphLayout(graphInstance);
+          runtimeLayoutsRef.current.set(sceneKey, payload);
+          void persistLayoutPayload(
+            scopeType,
+            scopeId,
+            sceneKey,
+            payload,
+            persistedLayoutsRef,
+          );
+        }
+      }
+    };
+  }, [enabled, graphRef, scopeId, scopeType]);
+
+  const schedulePersist = useMemo(() => {
+    return () => {
+      if (!enabled || !scopeId || !graphRef.current) {
+        return;
+      }
+
+      const graphInstance = graphRef.current.getInstance();
+      const sceneKey = currentSceneKeyRef.current || scene?.key;
+      if (!sceneKey) {
+        return;
+      }
+
+      const payload = captureGraphLayout(graphInstance);
+      runtimeLayoutsRef.current.set(sceneKey, payload);
+
+      if (saveTimerRef.current !== null) {
+        window.clearTimeout(saveTimerRef.current);
+      }
+
+      saveTimerRef.current = window.setTimeout(() => {
+        void persistLayoutPayload(
+          scopeType,
+          scopeId,
+          sceneKey,
+          payload,
+          persistedLayoutsRef,
+        ).catch(() => {
+          // Silent failure: the graph remains usable and runtime cache still holds the layout.
+        });
+      }, SAVE_DEBOUNCE_MS);
+    };
+  }, [enabled, graphRef, scene?.key, scopeId, scopeType]);
+
+  return {
+    layoutError,
+    layoutLoading,
+    onCanvasDragEnd: schedulePersist,
+    onCanvasDragging: schedulePersist,
+    onNodeDragEnd: schedulePersist,
+    onNodeDragging: schedulePersist,
+    onZoomEnd: schedulePersist,
+  };
 }

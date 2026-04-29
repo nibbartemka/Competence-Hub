@@ -22,7 +22,7 @@ import {
     hasConcreteNodeSelection,
     NO_NODE_SELECTION,
 } from "./graphFocus";
-import { applySceneWithViewportMemory } from "./graphViewport";
+import { usePersistedGraphViewport } from "./graphViewport";
 import { buildElementScene, buildTopicScene } from "./graphScene";
 import { actionHoverMotion, cardHoverMotion, revealMotion } from "./motionPresets";
 import type {
@@ -211,18 +211,6 @@ interface KnowledgeGraphViewProps {
 export function KnowledgeGraphView({ disciplineId }: KnowledgeGraphViewProps) {
     const navigate = useNavigate();
     const graphRef = useRef<RelationGraphComponent>();
-    const currentSceneKeyRef = useRef("");
-    const sceneViewportRef = useRef<
-        Map<
-            string,
-            {
-                offsetX: number;
-                offsetY: number;
-                positions: Map<string, { x: number; y: number }>;
-                zoom: number | undefined;
-            }
-        >
-    >(new Map());
 
     const [disciplines, setDisciplines] = useState<Discipline[]>([]);
     const [graphData, setGraphData] = useState<DisciplineKnowledgeGraph | null>(null);
@@ -327,6 +315,20 @@ export function KnowledgeGraphView({ disciplineId }: KnowledgeGraphViewProps) {
         }),
         [dimmedNodeIds],
     );
+    const {
+        layoutLoading,
+        onCanvasDragEnd,
+        onCanvasDragging,
+        onNodeDragEnd,
+        onNodeDragging,
+        onZoomEnd,
+    } = usePersistedGraphViewport({
+        graphRef,
+        scene,
+        scopeId: disciplineId,
+        scopeType: "discipline-knowledge",
+    });
+    const graphLoading = loading || layoutLoading;
 
     // Загрузка списка дисциплин
     useEffect(() => {
@@ -441,17 +443,6 @@ export function KnowledgeGraphView({ disciplineId }: KnowledgeGraphViewProps) {
             }
         }
     }, [scene, selectedNodeId]);
-
-    useEffect(() => {
-        if (!scene || !graphRef.current) return;
-
-        applySceneWithViewportMemory(
-            graphRef.current,
-            scene,
-            currentSceneKeyRef,
-            sceneViewportRef,
-        );
-    }, [scene]);
 
     useEffect(() => {
         if (!graphRef.current) return;
@@ -730,7 +721,7 @@ export function KnowledgeGraphView({ disciplineId }: KnowledgeGraphViewProps) {
                             <div className="graph-surface__ambient graph-surface__ambient--primary" />
                             <div className="graph-surface__ambient graph-surface__ambient--secondary" />
                             <div className="graph-surface__grid" />
-                            {loading ? (
+                            {graphLoading ? (
                                 <div className="status-view">
                                     <div className="status-view__pulse" />
                                     <h3>Загружаю граф</h3>
@@ -762,7 +753,12 @@ export function KnowledgeGraphView({ disciplineId }: KnowledgeGraphViewProps) {
                                                 options={GRAPH_OPTIONS}
                                                 nodeSlot={GraphNode}
                                                 onCanvasClick={handleCanvasClick}
+                                                onCanvasDragEnd={onCanvasDragEnd}
+                                                onCanvasDragging={onCanvasDragging}
                                                 onNodeClick={handleNodeClick}
+                                                onNodeDragEnd={onNodeDragEnd}
+                                                onNodeDragging={onNodeDragging}
+                                                onZoomEnd={onZoomEnd}
                                             />
                                         </GraphNodeRuntimeStateProvider>
                                     </motion.div>

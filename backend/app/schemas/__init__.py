@@ -1,4 +1,5 @@
 from .disciplines import DisciplineCreate, DisciplineRead
+from .graph_layouts import GraphLayoutPayload, GraphLayoutRead, GraphLayoutUpsert
 from .groups import GroupCreate, GroupRead, SubgroupCreate, SubgroupRead
 from .knowledge_element_relations import (
     KnowledgeElementRelationCreate,
@@ -53,6 +54,9 @@ from .teachers import TeacherCreate, TeacherRead
 __all__ = [
     "DisciplineCreate",
     "DisciplineRead",
+    "GraphLayoutPayload",
+    "GraphLayoutRead",
+    "GraphLayoutUpsert",
     "GroupCreate",
     "GroupRead",
     "SubgroupCreate",

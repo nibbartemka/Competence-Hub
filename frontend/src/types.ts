@@ -328,6 +328,27 @@ export type ViewMode =
       topicId: string;
     };
 
+export type GraphLayoutNodePosition = {
+  x: number;
+  y: number;
+};
+
+export type GraphLayoutPayload = {
+  offset_x: number;
+  offset_y: number;
+  zoom: number | null;
+  positions: Record<string, GraphLayoutNodePosition>;
+};
+
+export type GraphLayout = {
+  id: string;
+  scope_type: string;
+  scope_id: string;
+  scene_key: string;
+  payload: GraphLayoutPayload;
+  updated_at: string;
+};
+
 export type DetailChip = {
   label: string;
   tone: "topic" | "required" | "formed" | "relation";

@@ -1,4 +1,5 @@
 from .disciplines import Discipline
+from .graph_layouts import GraphLayout
 from .knowledge_graph import (
     Topic,
     TopicDependency,
@@ -33,6 +34,7 @@ from .bindings import (
 
 __all__ = [
     "Discipline",
+    "GraphLayout",
     "Topic",
     "TopicDependency",
     "KnowledgeElement",

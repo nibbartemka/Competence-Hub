@@ -39,7 +39,7 @@ import {
   isSupportedElementRelation,
   relationLabel,
 } from "./graphScene";
-import { applySceneWithViewportMemory } from "./graphViewport";
+import { usePersistedGraphViewport } from "./graphViewport";
 import type {
   DetailCard,
   DisciplineKnowledgeGraph,
@@ -736,18 +736,6 @@ export default function TrajectoryDetailPage() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const graphRef = useRef<RelationGraphComponent>();
-  const currentSceneKeyRef = useRef("");
-  const sceneViewportRef = useRef<
-    Map<
-      string,
-      {
-        offsetX: number;
-        offsetY: number;
-        positions: Map<string, { x: number; y: number }>;
-        zoom: number | undefined;
-      }
-    >
-  >(new Map());
 
   const [graph, setGraph] = useState<DisciplineKnowledgeGraph | null>(null);
   const [trajectory, setTrajectory] = useState<LearningTrajectory | null>(null);
@@ -1024,6 +1012,25 @@ export default function TrajectoryDetailPage() {
       ? null
       : scene?.detailsByNodeId[selectedNodeId || scene?.defaultSelectedNodeId] ?? null;
   const canEditTrajectory = trajectory?.status === "draft" && trajectory.is_actual;
+  const graphLayoutScopeType = isStudentMode
+    ? "trajectory-student"
+    : showStudentView
+      ? "trajectory-preview"
+      : "trajectory-detail";
+  const {
+    layoutLoading,
+    onCanvasDragEnd,
+    onCanvasDragging,
+    onNodeDragEnd,
+    onNodeDragging,
+    onZoomEnd,
+  } = usePersistedGraphViewport({
+    enabled: Boolean(trajectoryId),
+    graphRef,
+    scene,
+    scopeId: trajectoryId,
+    scopeType: graphLayoutScopeType,
+  });
 
   const availablePrimaryElements = useMemo(
     () => knowElementsByTrajectoryTopicId.get(taskTopicId) ?? [],
@@ -1080,7 +1087,7 @@ export default function TrajectoryDetailPage() {
       null
     );
   }, [isStudentMode, recommendedStudentTask, selectedTopicId, selectedTopicStudentTasks]);
-  const graphLoading = loading || (showStudentView && studentDataLoading);
+  const graphLoading = loading || layoutLoading || (showStudentView && studentDataLoading);
 
   function resetTaskTemplate(nextType: LearningTrajectoryTaskType = "single_choice") {
     setTaskType(nextType);
@@ -1259,17 +1266,6 @@ export default function TrajectoryDetailPage() {
       setTaskSingleCorrectElementId(taskPrimaryElementId);
     }
   }, [taskPrimaryElementId, taskRelatedElementIds, taskSingleCorrectElementId]);
-
-  useEffect(() => {
-    if (!scene || !graphRef.current) return;
-
-    applySceneWithViewportMemory(
-      graphRef.current,
-      scene,
-      currentSceneKeyRef,
-      sceneViewportRef,
-    );
-  }, [scene]);
 
   useEffect(() => {
     if (!graphRef.current) return;
@@ -2394,7 +2390,12 @@ export default function TrajectoryDetailPage() {
                     options={GRAPH_OPTIONS}
                     nodeSlot={GraphNode}
                     onCanvasClick={handleCanvasClick}
+                    onCanvasDragEnd={onCanvasDragEnd}
+                    onCanvasDragging={onCanvasDragging}
                     onNodeClick={handleNodeClick}
+                    onNodeDragEnd={onNodeDragEnd}
+                    onNodeDragging={onNodeDragging}
+                    onZoomEnd={onZoomEnd}
                   />
                 </GraphNodeRuntimeStateProvider>
               </div>

@@ -25,7 +25,7 @@ import {
   hasConcreteNodeSelection,
   NO_NODE_SELECTION,
 } from "./graphFocus";
-import { applySceneWithViewportMemory } from "./graphViewport";
+import { usePersistedGraphViewport } from "./graphViewport";
 import { buildElementScene, buildTopicScene } from "./graphScene";
 import type {
   CompetenceType,
@@ -234,18 +234,6 @@ export default function TrajectoryGraphBuilder() {
   const { disciplineId } = useParams<{ disciplineId: string }>();
   const navigate = useNavigate();
   const graphRef = useRef<RelationGraphComponent>();
-  const currentSceneKeyRef = useRef("");
-  const sceneViewportRef = useRef<
-    Map<
-      string,
-      {
-        offsetX: number;
-        offsetY: number;
-        positions: Map<string, { x: number; y: number }>;
-        zoom: number | undefined;
-      }
-    >
-  >(new Map());
 
   const [disciplines, setDisciplines] = useState<Discipline[]>([]);
   const [groups, setGroups] = useState<Group[]>([]);
@@ -814,6 +802,21 @@ export default function TrajectoryGraphBuilder() {
     selectedNodeId === NO_NODE_SELECTION
       ? null
       : scene?.detailsByNodeId[selectedNodeId || scene.defaultSelectedNodeId] ?? null;
+  const {
+    layoutLoading,
+    onCanvasDragEnd,
+    onCanvasDragging,
+    onNodeDragEnd,
+    onNodeDragging,
+    onZoomEnd,
+  } = usePersistedGraphViewport({
+    enabled: Boolean(disciplineId),
+    graphRef,
+    scene,
+    scopeId: disciplineId,
+    scopeType: "trajectory-builder",
+  });
+  const graphPageLoading = loading || layoutLoading;
 
   useEffect(() => {
     if (!disciplineId) {
@@ -1015,17 +1018,6 @@ export default function TrajectoryGraphBuilder() {
 
     return () => controller.abort();
   }, [disciplineId, selectedGroupId, selectedTeacherId]);
-
-  useEffect(() => {
-    if (!scene || !graphRef.current) return;
-
-    applySceneWithViewportMemory(
-      graphRef.current,
-      scene,
-      currentSceneKeyRef,
-      sceneViewportRef,
-    );
-  }, [scene]);
 
   function hasSelectedElementForCompetence(competenceType: CompetenceType) {
     for (const topicId of selectedTopicIds) {
@@ -1728,7 +1720,7 @@ export default function TrajectoryGraphBuilder() {
             </div>
 
             <div className="graph-surface">
-              {loading ? (
+              {graphPageLoading ? (
                 <div className="status-view">
                   <div className="status-view__pulse" />
                   <h3>Загружаю граф</h3>
@@ -1747,6 +1739,11 @@ export default function TrajectoryGraphBuilder() {
                       options={GRAPH_OPTIONS}
                       nodeSlot={GraphNode}
                       onCanvasClick={() => setSelectedNodeId(NO_NODE_SELECTION)}
+                      onCanvasDragEnd={onCanvasDragEnd}
+                      onCanvasDragging={onCanvasDragging}
+                      onNodeDragEnd={onNodeDragEnd}
+                      onNodeDragging={onNodeDragging}
+                      onZoomEnd={onZoomEnd}
                     />
                   </GraphNodeRuntimeStateProvider>
                 </div>
