@@ -27,6 +27,11 @@ class KnowledgeElementRelationType(StrEnum):
     AUTOMATES = "automates"
 
 
+class RelationDirectionType(StrEnum):
+    ONE_DIRECTION = 'one_direction'
+    TWO_DIRECTION = 'two_direction'
+
+
 class TopicDependencyRelationType(StrEnum):
     REQUIRES = "requires"
     POSSIBLE_FLOW = "possible_flow"

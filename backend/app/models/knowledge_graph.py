@@ -10,6 +10,7 @@ from .enums import (
     TopicKnowledgeElementRole,
     TopicDependencyRelationType,
     TopicDependencySource,
+    RelationDirectionType,
 )
 
 
@@ -209,13 +210,33 @@ class TopicKnowledgeElement(Base):
     )
 
 
+class Relation(Base):
+    __tablename__ = 'relations'
+
+    id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
+
+    relation_type: Mapped[KnowledgeElementRelationType] = mapped_column(
+        Enum(KnowledgeElementRelationType, name="relation_type_enum"),
+        nullable=False,
+        unique=True,
+    )
+
+    direction: Mapped[RelationDirectionType] = mapped_column(
+        Enum(
+            RelationDirectionType,
+            name="direction_enum",
+        ),
+        nullable=False,
+    )
+
+
 class KnowledgeElementRelation(Base):
     __tablename__ = "knowledge_element_relations"
     __table_args__ = (
         UniqueConstraint(
             "source_element_id",
             "target_element_id",
-            "relation_type",
+            "relation_id",
             name="uq_knowledge_element_relation",
         ),
         CheckConstraint(
@@ -235,12 +256,9 @@ class KnowledgeElementRelation(Base):
         ForeignKey("knowledge_elements.id", ondelete="CASCADE"),
         nullable=False,
     )
-
-    relation_type: Mapped[KnowledgeElementRelationType] = mapped_column(
-        Enum(
-            KnowledgeElementRelationType,
-            name="knowledge_element_relation_type_enum",
-        ),
+    
+    relation_id: Mapped[UUID] = mapped_column(
+        ForeignKey("relations.id", ondelete="CASCADE"),
         nullable=False,
     )
 
@@ -255,5 +273,11 @@ class KnowledgeElementRelation(Base):
         "KnowledgeElement",
         foreign_keys=[target_element_id],
         back_populates="incoming_relations",
+        lazy="selectin",
+    )
+    
+    relation: Mapped["Relation"] = relationship(
+        "Relation",
+        foreign_keys=[relation_id],
         lazy="selectin",
     )
