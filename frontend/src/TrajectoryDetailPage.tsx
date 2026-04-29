@@ -28,6 +28,7 @@ import {
   GraphNodeRuntimeStateProvider,
   type GraphNodeRuntimeState,
 } from "./components/GraphNode";
+import { disciplinePathValue } from "./disciplineRouting";
 import {
   buildFocusedScene,
   hasConcreteNodeSelection,
@@ -99,9 +100,10 @@ const TASK_TYPE_LABELS: Record<LearningTrajectoryTaskType, string> = {
 const TASK_TEMPLATE_LABELS: Record<LearningTrajectoryTaskTemplateKind, string> = {
   definition_choice: "Выбрать правильное определение",
   term_choice: "Выбрать понятие по определению",
+  property_multiple: "Выбор характеристик объекта",
   relation_choice: "Выбрать отношение между элементами",
   requires_ordering: "Расположить от базового к производному",
-  contains_multiple: "Выбрать элементы, входящие в понятие",
+  contains_multiple: "Определить части целого",
   matching_definition: "Сопоставить понятия и определения",
   contrast_choice: "Выбрать верное различие",
   manual: "Ручной шаблон",
@@ -110,6 +112,7 @@ const TASK_TEMPLATE_LABELS: Record<LearningTrajectoryTaskTemplateKind, string> =
 const TASK_TEMPLATE_TYPE: Record<LearningTrajectoryTaskTemplateKind, LearningTrajectoryTaskType> = {
   definition_choice: "single_choice",
   term_choice: "single_choice",
+  property_multiple: "multiple_choice",
   relation_choice: "single_choice",
   requires_ordering: "ordering",
   contains_multiple: "multiple_choice",
@@ -117,6 +120,21 @@ const TASK_TEMPLATE_TYPE: Record<LearningTrajectoryTaskTemplateKind, LearningTra
   contrast_choice: "single_choice",
   manual: "single_choice",
 };
+
+const VISIBLE_TASK_TEMPLATE_KINDS: LearningTrajectoryTaskTemplateKind[] = [
+  "definition_choice",
+  "term_choice",
+  "property_multiple",
+  "contains_multiple",
+  "matching_definition",
+  "manual",
+];
+
+const MANUAL_TASK_TYPE_OPTIONS: LearningTrajectoryTaskType[] = [
+  "single_choice",
+  "multiple_choice",
+  "matching",
+];
 
 const CHECKED_TASK_RELATION_LABELS: Partial<Record<KnowledgeElementRelationType, string>> = {
   requires: "требует",
@@ -206,6 +224,77 @@ function checkedRelationLabel(
   const targetName = elementName(elementById, relation.target_element_id);
   const label = CHECKED_TASK_RELATION_LABELS[relation.relation_type] ?? relation.relation_type;
   return `${sourceName} ${label} ${targetName}`;
+}
+
+function templateUsesDefinitions(templateKind: LearningTrajectoryTaskTemplateKind) {
+  return (
+    templateKind === "definition_choice" ||
+    templateKind === "term_choice" ||
+    templateKind === "matching_definition"
+  );
+}
+
+function isElementDirectlyRelated(
+  graph: DisciplineKnowledgeGraph | null,
+  primaryElementId: string,
+  elementId: string,
+) {
+  if (!graph || !primaryElementId || !elementId) return false;
+  return graph.knowledge_element_relations.some(
+    (relation) =>
+      (relation.source_element_id === primaryElementId && relation.target_element_id === elementId) ||
+      (relation.source_element_id === elementId && relation.target_element_id === primaryElementId),
+  );
+}
+
+function buildAutoMultipleChoiceBuckets(
+  graph: DisciplineKnowledgeGraph | null,
+  templateKind: LearningTrajectoryTaskTemplateKind,
+  primaryElementId: string,
+  selectedElementIds: string[],
+) {
+  const correctIds = new Set<string>();
+  const distractorIds = new Set<string>();
+
+  if (!graph || !primaryElementId) {
+    return { correctIds: [] as string[], distractorIds: selectedElementIds };
+  }
+
+  for (const elementId of selectedElementIds) {
+    const isCorrect = graph.knowledge_element_relations.some((relation) => {
+      if (templateKind === "property_multiple") {
+        return (
+          relation.relation_type === "property_of" &&
+          relation.source_element_id === elementId &&
+          relation.target_element_id === primaryElementId
+        );
+      }
+
+      if (templateKind === "contains_multiple") {
+        return (
+          (relation.relation_type === "contains" &&
+            relation.source_element_id === primaryElementId &&
+            relation.target_element_id === elementId) ||
+          (relation.relation_type === "part_of" &&
+            relation.source_element_id === elementId &&
+            relation.target_element_id === primaryElementId)
+        );
+      }
+
+      return false;
+    });
+
+    if (isCorrect) {
+      correctIds.add(elementId);
+    } else {
+      distractorIds.add(elementId);
+    }
+  }
+
+  return {
+    correctIds: [...correctIds],
+    distractorIds: [...distractorIds],
+  };
 }
 
 function statusLabel(status: LearningTrajectory["status"]) {
@@ -447,6 +536,7 @@ function buildStudentTrajectoryTopicsScene(
   const nodes: JsonNode[] = [];
   const lines: JsonLine[] = [];
   const detailsByNodeId: Record<string, DetailCard> = {};
+  const sequentialLineKeys = new Set<string>();
   let defaultSelectedNodeId = "";
 
   topicOrder.forEach((topicId, index) => {
@@ -523,9 +613,18 @@ function buildStudentTrajectoryTopicsScene(
   });
 
   for (let index = 0; index < topicOrder.length - 1; index += 1) {
+    const fromId = `topic:${topicOrder[index]}`;
+    const toId = `topic:${topicOrder[index + 1]}`;
+    const lineId = `student-step:${topicOrder[index]}:${topicOrder[index + 1]}`;
+    if (sequentialLineKeys.has(lineId)) {
+      continue;
+    }
+    sequentialLineKeys.add(lineId);
+
     lines.push({
-      from: `topic:${topicOrder[index]}`,
-      to: `topic:${topicOrder[index + 1]}`,
+      id: lineId,
+      from: fromId,
+      to: toId,
       text: "дальше",
       color: "#178364",
       fontColor: "#146c53",
@@ -728,6 +827,19 @@ function buildStudentTrajectoryElementsScene(
   };
 }
 
+function buildTrajectoryElementsScene(
+  graph: DisciplineKnowledgeGraph,
+  trajectory: LearningTrajectory,
+  topicId: string,
+  elementById: Map<string, KnowledgeElement>,
+) {
+  const scene = buildStudentTrajectoryElementsScene(graph, trajectory, topicId, elementById);
+  return {
+    ...scene,
+    key: `trajectory-elements:${trajectory.id}:${topicId}`,
+  };
+}
+
 export default function TrajectoryDetailPage() {
   const { disciplineId, trajectoryId } = useParams<{
     disciplineId: string;
@@ -740,6 +852,7 @@ export default function TrajectoryDetailPage() {
   const [graph, setGraph] = useState<DisciplineKnowledgeGraph | null>(null);
   const [trajectory, setTrajectory] = useState<LearningTrajectory | null>(null);
   const [topicOrder, setTopicOrder] = useState<string[]>([]);
+  const [view, setView] = useState<ViewMode>({ level: "topics" });
   const [selectedNodeId, setSelectedNodeId] = useState("");
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -760,6 +873,7 @@ export default function TrajectoryDetailPage() {
   const [taskPrompt, setTaskPrompt] = useState("");
   const [taskDifficulty, setTaskDifficulty] = useState(30);
   const [taskType, setTaskType] = useState<LearningTrajectoryTaskType>("single_choice");
+  const [taskPreviewOpen, setTaskPreviewOpen] = useState(false);
   const [taskOptions, setTaskOptions] = useState<LearningTrajectoryTaskOption[]>([
     createEmptyOption(true),
     createEmptyOption(false),
@@ -786,6 +900,8 @@ export default function TrajectoryDetailPage() {
   const studentIdFromQuery = searchParams.get("student") ?? "";
   const isStudentMode = Boolean(studentIdFromQuery);
   const showStudentView = isStudentMode || studentPreviewOpen;
+  const resolvedDisciplineId = graph?.discipline.id ?? "";
+  const resolvedDisciplinePath = disciplinePathValue(graph?.discipline, disciplineId ?? "");
 
   function pushNotification(kind: ToastMessage["kind"], text: string) {
     setNotifications((current) => [
@@ -809,6 +925,7 @@ export default function TrajectoryDetailPage() {
       setStudentTaskModalOpen(false);
       setStudentDataLoading(false);
       setStudentTrajectoryMastery(null);
+      setView({ level: "topics" });
       return;
     }
     setStudentView({ level: "topics" });
@@ -987,18 +1104,105 @@ export default function TrajectoryDetailPage() {
         );
       }
     } else {
-      baseScene = buildTrajectoryScene(graph, trajectory, topicOrder);
+      if (view.level === "elements") {
+        baseScene = buildTrajectoryElementsScene(
+          graph,
+          trajectory,
+          view.topicId,
+          elementById,
+        );
+      } else {
+        baseScene = buildTrajectoryScene(graph, trajectory, topicOrder);
+      }
     }
 
-    return buildFocusedScene(baseScene, selectedNodeId);
+    const actionScene = {
+      ...baseScene,
+      nodes: baseScene.nodes.map((node) => {
+        const data = node.data as SceneNodeData | undefined;
+        if (!data?.entity) {
+          return node;
+        }
+
+        if (showStudentView && data.entity === "topic" && data.topicId) {
+          return {
+            ...node,
+            data: {
+              ...data,
+              onHintClick: () => {
+                if (data.isDisabled) {
+                  pushNotification(
+                    "error",
+                    "Тема пока закрыта. Сначала нужно набрать порог по предыдущим темам.",
+                  );
+                  return;
+                }
+
+                if (isStudentMode && trajectoryId) {
+                  const trajectoryTopic = trajectory.topics.find(
+                    (item) => item.topic_id === data.topicId,
+                  );
+                  if (studentIdFromQuery) {
+                    localStorage.setItem("competence-hub:last-student-id", studentIdFromQuery);
+                  }
+                  navigate(`/learn/${trajectoryId}/step/${trajectoryTopic?.position ?? 1}`);
+                  return;
+                }
+
+                setStudentView({ level: "elements", topicId: data.topicId! });
+                setSelectedNodeId(`topic-focus:${data.topicId}`);
+              },
+            } satisfies SceneNodeData,
+          };
+        }
+
+        if (!showStudentView && data.entity === "topic" && data.topicId) {
+          return {
+            ...node,
+            data: {
+              ...data,
+              secondaryHint: "Элементы",
+              onSecondaryHintClick: () => {
+                setView({ level: "elements", topicId: data.topicId! });
+                setSelectedNodeId(`topic-focus:${data.topicId}`);
+              },
+            } satisfies SceneNodeData,
+          };
+        }
+
+        if (!showStudentView && data.entity === "topic-focus" && data.topicId) {
+          return {
+            ...node,
+            data: {
+              ...data,
+              hint: "К темам",
+              onHintClick: () => {
+                setView({ level: "topics" });
+                setSelectedNodeId(`topic:${data.topicId}`);
+              },
+            } satisfies SceneNodeData,
+          };
+        }
+
+        return node;
+      }),
+    };
+
+    return buildFocusedScene(actionScene, selectedNodeId);
   }, [
     elementById,
     graph,
+    isStudentMode,
+    navigate,
+    pushNotification,
     selectedNodeId,
+    studentIdFromQuery,
+    view,
     showStudentView,
     studentMasteryByElementId,
     studentView,
     topicOrder,
+    trajectoryId,
     trajectory,
   ]);
   const graphNodeRuntimeState = useMemo<GraphNodeRuntimeState>(
@@ -1036,23 +1240,43 @@ export default function TrajectoryDetailPage() {
     () => knowElementsByTrajectoryTopicId.get(taskTopicId) ?? [],
     [knowElementsByTrajectoryTopicId, taskTopicId],
   );
+  const availableTaskElements = useMemo(
+    () =>
+      availablePrimaryElements
+        .filter((element) => element.id !== taskPrimaryElementId)
+        .sort((left, right) => left.name.localeCompare(right.name, "ru")),
+    [availablePrimaryElements, taskPrimaryElementId],
+  );
+  const relevantTaskElements = useMemo(
+    () =>
+      availableTaskElements.filter((element) =>
+        isElementDirectlyRelated(graph, taskPrimaryElementId, element.id),
+      ),
+    [availableTaskElements, graph, taskPrimaryElementId],
+  );
+  const otherTaskElements = useMemo(
+    () =>
+      availableTaskElements.filter(
+        (element) => !isElementDirectlyRelated(graph, taskPrimaryElementId, element.id),
+      ),
+    [availableTaskElements, graph, taskPrimaryElementId],
+  );
   const selectedTaskElementIds = useMemo(() => {
-    if (taskType === "multiple_choice") {
-      return new Set([
-        taskPrimaryElementId,
-        ...taskMultipleCorrectRelatedElementIds,
-        ...taskDistractorElementIds,
-      ].filter(Boolean));
-    }
-
     return new Set([taskPrimaryElementId, ...taskRelatedElementIds].filter(Boolean));
   }, [
-    taskDistractorElementIds,
-    taskMultipleCorrectRelatedElementIds,
     taskPrimaryElementId,
     taskRelatedElementIds,
-    taskType,
   ]);
+  const autoMultipleChoiceBuckets = useMemo(
+    () =>
+      buildAutoMultipleChoiceBuckets(
+        graph,
+        taskTemplateKind,
+        taskPrimaryElementId,
+        taskRelatedElementIds,
+      ),
+    [graph, taskPrimaryElementId, taskRelatedElementIds, taskTemplateKind],
+  );
   const availableCheckedRelations = useMemo(() => {
     if (!graph || selectedTaskElementIds.size < 2) return [];
     return graph.knowledge_element_relations.filter(
@@ -1091,39 +1315,6 @@ export default function TrajectoryDetailPage() {
 
   function resetTaskTemplate(nextType: LearningTrajectoryTaskType = "single_choice") {
     setTaskType(nextType);
-
-    if (nextType === "single_choice") {
-      setTaskOptions([createEmptyOption(true), createEmptyOption(false)]);
-      setTaskMatchingPairs([createEmptyPair(), createEmptyPair()]);
-      setTaskAcceptedAnswers([""]);
-      setTaskTextPlaceholder("");
-      return;
-    }
-
-    if (nextType === "multiple_choice") {
-      setTaskOptions([createEmptyOption(true), createEmptyOption(true), createEmptyOption(false)]);
-      setTaskMatchingPairs([createEmptyPair(), createEmptyPair()]);
-      setTaskAcceptedAnswers([""]);
-      setTaskTextPlaceholder("");
-      return;
-    }
-
-    if (nextType === "matching") {
-      setTaskOptions([createEmptyOption(true), createEmptyOption(false)]);
-      setTaskMatchingPairs([createEmptyPair(), createEmptyPair()]);
-      setTaskAcceptedAnswers([""]);
-      setTaskTextPlaceholder("");
-      return;
-    }
-
-    if (nextType === "ordering") {
-      setTaskOptions([createEmptyOption(true), createEmptyOption(false)]);
-      setTaskMatchingPairs([createEmptyPair(), createEmptyPair()]);
-      setTaskAcceptedAnswers([""]);
-      setTaskTextPlaceholder("");
-      return;
-    }
-
     setTaskOptions([createEmptyOption(true), createEmptyOption(false)]);
     setTaskMatchingPairs([createEmptyPair(), createEmptyPair()]);
     setTaskAcceptedAnswers([""]);
@@ -1141,6 +1332,7 @@ export default function TrajectoryDetailPage() {
     setTaskSingleCorrectElementId("");
     setTaskMultipleCorrectRelatedElementIds([]);
     setTaskDistractorElementIds([]);
+    setTaskPreviewOpen(false);
     resetTaskTemplate("single_choice");
 
     const firstTopicId = trajectory?.topics.find(
@@ -1155,6 +1347,10 @@ export default function TrajectoryDetailPage() {
   }
 
   function buildTaskContentPayload(): LearningTrajectoryTaskContent {
+    if (taskTemplateKind !== "manual") {
+      return {};
+    }
+
     if (taskType === "single_choice") {
       return {
         correct_element_id: taskSingleCorrectElementId || taskPrimaryElementId,
@@ -1164,7 +1360,9 @@ export default function TrajectoryDetailPage() {
     if (taskType === "multiple_choice") {
       return {
         correct_related_element_ids: taskMultipleCorrectRelatedElementIds,
-        distractor_element_ids: taskDistractorElementIds,
+        distractor_element_ids: taskRelatedElementIds.filter(
+          (elementId) => !taskMultipleCorrectRelatedElementIds.includes(elementId),
+        ),
       };
     }
 
@@ -1182,40 +1380,57 @@ export default function TrajectoryDetailPage() {
   }
 
   function validateTaskTemplate() {
+    if (
+      taskTemplateKind === "definition_choice" ||
+      taskTemplateKind === "term_choice" ||
+      taskTemplateKind === "matching_definition"
+    ) {
+      if (!taskRelatedElementIds.length) {
+        return "Нужно выбрать минимум один дополнительный элемент темы.";
+      }
+      return "";
+    }
+
+    if (taskTemplateKind === "property_multiple" || taskTemplateKind === "contains_multiple") {
+      if (taskRelatedElementIds.length < 2) {
+        return "Для этого шаблона нужны минимум два дополнительных элемента темы.";
+      }
+      if (!autoMultipleChoiceBuckets.correctIds.length) {
+        return "Среди выбранных элементов нет ни одного подходящего правильного варианта по связям графа.";
+      }
+      if (!autoMultipleChoiceBuckets.distractorIds.length) {
+        return "Добавь хотя бы один элемент, который станет дистрактором.";
+      }
+      return "";
+    }
+
     if (taskType === "single_choice") {
       if (!taskRelatedElementIds.length) {
-        return "Для задания с одним выбором нужен минимум один связанный элемент.";
+        return "Для задания с одним выбором нужен минимум один дополнительный элемент темы.";
       }
       const allowedIds = new Set([taskPrimaryElementId, ...taskRelatedElementIds]);
       if (!allowedIds.has(taskSingleCorrectElementId || taskPrimaryElementId)) {
-        return "Правильный вариант должен быть ключевым или связанным элементом.";
+        return "Правильный вариант должен быть ключевым или выбранным элементом.";
       }
       return "";
     }
 
     if (taskType === "multiple_choice") {
-      if (!taskDistractorElementIds.length) {
-        return "Для задания с несколькими вариантами нужен минимум один дистрактор.";
+      if (taskRelatedElementIds.length < 2) {
+        return "Для задания с несколькими вариантами нужны минимум два выбранных элемента.";
       }
-      const overlap = taskMultipleCorrectRelatedElementIds.some((elementId) =>
-        taskDistractorElementIds.includes(elementId),
-      );
-      if (overlap) {
-        return "Один элемент не может быть одновременно правильным вариантом и дистрактором.";
+      if (!taskMultipleCorrectRelatedElementIds.length) {
+        return "Нужно отметить хотя бы один правильный вариант.";
+      }
+      if (taskMultipleCorrectRelatedElementIds.length === taskRelatedElementIds.length) {
+        return "Нужен хотя бы один дистрактор среди выбранных элементов.";
       }
       return "";
     }
 
     if (taskType === "matching") {
       if (!taskRelatedElementIds.length) {
-        return "Для сопоставления нужен минимум один связанный элемент.";
-      }
-      return "";
-    }
-
-    if (taskType === "ordering") {
-      if (!taskRelatedElementIds.length) {
-        return "Для порядка нужен минимум один связанный элемент.";
+        return "Для сопоставления нужен минимум один дополнительный элемент темы.";
       }
       return "";
     }
@@ -1244,16 +1459,15 @@ export default function TrajectoryDetailPage() {
 
   useEffect(() => {
     const allowedIds = new Set(
-      allKnownTrajectoryElements
+      availableTaskElements
         .map((element) => element.id)
-        .filter((elementId) => elementId !== taskPrimaryElementId),
     );
     setTaskRelatedElementIds((current) => current.filter((elementId) => allowedIds.has(elementId)));
     setTaskMultipleCorrectRelatedElementIds((current) =>
       current.filter((elementId) => allowedIds.has(elementId)),
     );
     setTaskDistractorElementIds((current) => current.filter((elementId) => allowedIds.has(elementId)));
-  }, [allKnownTrajectoryElements, taskPrimaryElementId]);
+  }, [availableTaskElements]);
 
   useEffect(() => {
     const availableIds = new Set(availableCheckedRelations.map((relation) => relation.id));
@@ -1385,32 +1599,18 @@ export default function TrajectoryDetailPage() {
       }
 
       if (node.id.startsWith("topic:")) {
-        const topicId = node.id.slice("topic:".length);
-        const nodeData = node.data as SceneNodeData | undefined;
-
-        if (nodeData?.isDisabled) {
-          pushNotification(
-            "error",
-            "Тема пока закрыта. Сначала нужно набрать порог по предыдущим темам.",
-          );
-          setSelectedNodeId(node.id);
-          return false;
-        }
-
-        if (isStudentMode && trajectoryId) {
-          const trajectoryTopic = trajectory?.topics.find((item) => item.topic_id === topicId);
-          if (studentIdFromQuery) {
-            localStorage.setItem("competence-hub:last-student-id", studentIdFromQuery);
-          }
-          navigate(`/learn/${trajectoryId}/step/${trajectoryTopic?.position ?? 1}`);
-          return false;
-        }
-        setStudentView({ level: "elements", topicId });
-        setSelectedNodeId(`topic-focus:${topicId}`);
+        setSelectedNodeId(node.id);
         return false;
       }
 
       setSelectedNodeId(node.id);
+      return false;
+    }
+
+    if (node.id.startsWith("topic-focus:")) {
+      const topicId = node.id.slice("topic-focus:".length);
+      setView({ level: "topics" });
+      setSelectedNodeId(`topic:${topicId}`);
       return false;
     }
 
@@ -1439,6 +1639,7 @@ export default function TrajectoryDetailPage() {
 
   function startTaskEditing(task: LearningTrajectoryTask) {
     setEditingTaskId(task.id);
+    setTaskPreviewOpen(false);
     setTasksModalSection("create");
     setTaskTopicId(task.topic_id);
     setTaskPrimaryElementId(task.primary_element.element_id);
@@ -1482,7 +1683,9 @@ export default function TrajectoryDetailPage() {
 
   function handleTaskTemplateKindChange(nextTemplateKind: LearningTrajectoryTaskTemplateKind) {
     setTaskTemplateKind(nextTemplateKind);
+    setTaskPreviewOpen(false);
     resetTaskTemplate(TASK_TEMPLATE_TYPE[nextTemplateKind]);
+    setTaskMultipleCorrectRelatedElementIds([]);
   }
 
   function toggleMultipleCorrectRelatedElement(elementId: string) {
@@ -1565,20 +1768,12 @@ export default function TrajectoryDetailPage() {
       const payload = {
         topic_id: taskTopicId,
         primary_element_id: taskPrimaryElementId,
-        related_element_ids:
-          taskType === "multiple_choice"
-            ? [
-                ...new Set([
-                  ...taskMultipleCorrectRelatedElementIds,
-                  ...taskDistractorElementIds,
-                ]),
-              ]
-            : taskRelatedElementIds,
+        related_element_ids: taskRelatedElementIds,
         checked_relation_ids: taskCheckedRelationIds,
         title: taskTitle.trim(),
         prompt: taskPrompt.trim(),
         difficulty: Math.max(0, Math.min(100, Number(taskDifficulty) || 0)),
-        task_type: taskType,
+        task_type: taskTemplateKind === "manual" ? taskType : TASK_TEMPLATE_TYPE[taskTemplateKind],
         template_kind: taskTemplateKind,
         content: buildTaskContentPayload(),
       };
@@ -1679,7 +1874,7 @@ export default function TrajectoryDetailPage() {
       const nextRecommendedTask = await fetchRecommendedStudentTask(
         studentIdFromQuery,
         undefined,
-        disciplineId,
+        resolvedDisciplineId || undefined,
         trajectoryId,
         selectedTopicId,
       );
@@ -1894,7 +2089,10 @@ export default function TrajectoryDetailPage() {
 
         {tasksModalSection === "create" ? (
           <>
-            <p className="card__text">Задания создаются вручную для элементов компетенции «Знать».</p>
+            <p className="card__text">
+              Шаблон задаёт структуру задания. Для всех шаблонов, кроме ручного, тип задания фиксирован.
+              Варианты ответа и пары выбираются через элементы выбранной темы.
+            </p>
 
             {allKnownTrajectoryElements.length ? (
               <div className="trajectory-task-editor">
@@ -1908,7 +2106,7 @@ export default function TrajectoryDetailPage() {
                           <option key={topic.topic_id} value={topic.topic_id}>
                             {topicName(topicById, topic.topic_id)}
                           </option>
-                        ))}
+                      ))}
                     </select>
                   </label>
                   <label className="field">
@@ -1926,25 +2124,6 @@ export default function TrajectoryDetailPage() {
                     </select>
                   </label>
                   <label className="field">
-                    <span>Сложность</span>
-                    <input min={0} max={100} type="number" value={taskDifficulty} onChange={(event) => setTaskDifficulty(Number(event.target.value))} disabled={saving} />
-                  </label>
-                </div>
-                <label className="field">
-                  <span>Заголовок задания</span>
-                  <input
-                    value={taskTitle}
-                    onChange={(event) => setTaskTitle(event.target.value)}
-                    placeholder="Например: Определение базового понятия"
-                    disabled={saving}
-                  />
-                </label>
-                <label className="field">
-                  <span>Текст задания</span>
-                  <textarea rows={4} value={taskPrompt} onChange={(event) => setTaskPrompt(event.target.value)} placeholder="Опиши задание для студента" disabled={saving} />
-                </label>
-                <div className="trajectory-task-template">
-                  <label className="field">
                     <span>Шаблон задания</span>
                     <select
                       value={taskTemplateKind}
@@ -1953,140 +2132,192 @@ export default function TrajectoryDetailPage() {
                       }
                       disabled={saving}
                     >
-                      {Object.entries(TASK_TEMPLATE_LABELS).map(([value, label]) => (
+                      {[...new Set([...VISIBLE_TASK_TEMPLATE_KINDS, taskTemplateKind])].map((value) => (
                         <option key={value} value={value}>
-                          {label}
+                          {TASK_TEMPLATE_LABELS[value]}
                         </option>
                       ))}
                     </select>
                   </label>
+                </div>
+
+                <div className="trajectory-task-editor__grid">
                   <label className="field">
                     <span>Тип задания</span>
-                    <select
-                      value={taskType}
-                      onChange={(event) => {
-                        setTaskTemplateKind("manual");
-                        resetTaskTemplate(event.target.value as LearningTrajectoryTaskType);
-                      }}
-                      disabled={saving}
-                    >
-                      {Object.entries(TASK_TYPE_LABELS).map(([value, label]) => (
-                        <option key={value} value={value}>{label}</option>
-                      ))}
-                    </select>
+                    {taskTemplateKind === "manual" ? (
+                      <select
+                        value={taskType}
+                        onChange={(event) => resetTaskTemplate(event.target.value as LearningTrajectoryTaskType)}
+                        disabled={saving}
+                      >
+                        {MANUAL_TASK_TYPE_OPTIONS.map((value) => (
+                          <option key={value} value={value}>
+                            {TASK_TYPE_LABELS[value]}
+                          </option>
+                        ))}
+                      </select>
+                    ) : (
+                      <input
+                        value={TASK_TYPE_LABELS[TASK_TEMPLATE_TYPE[taskTemplateKind]]}
+                        disabled
+                        readOnly
+                      />
+                    )}
                   </label>
+                  <label className="field">
+                    <span>Заголовок задания</span>
+                    <input
+                      value={taskTitle}
+                      onChange={(event) => setTaskTitle(event.target.value)}
+                      placeholder="Например: Определение базового понятия"
+                      disabled={saving}
+                    />
+                  </label>
+                  <label className="field">
+                    <span>Сложность</span>
+                    <input
+                      min={0}
+                      max={100}
+                      type="number"
+                      value={taskDifficulty}
+                      onChange={(event) => setTaskDifficulty(Number(event.target.value))}
+                      disabled={saving}
+                    />
+                  </label>
+                </div>
+                <label className="field">
+                  <span>Текст задания</span>
+                  <textarea
+                    rows={4}
+                    value={taskPrompt}
+                    onChange={(event) => setTaskPrompt(event.target.value)}
+                    placeholder="Опиши задание для студента"
+                    disabled={saving}
+                  />
+                </label>
+                <div className="trajectory-task-related">
+                  <strong>Релевантные связанные элементы</strong>
+                  <p className="card__text">
+                    Эти элементы напрямую связаны с ключевым элементом и обычно подходят для вариантов ответа.
+                  </p>
+                  <div className="trajectory-task-related__list">
+                    {relevantTaskElements.length ? (
+                      relevantTaskElements.map((element) => (
+                        <label className="trajectory-task-related__item" key={element.id}>
+                          <input
+                            type="checkbox"
+                            checked={taskRelatedElementIds.includes(element.id)}
+                            onChange={() => toggleTaskRelatedElement(element.id)}
+                            disabled={saving}
+                          />
+                          <span>
+                            <strong>{element.name}</strong>
+                            {templateUsesDefinitions(taskTemplateKind) && element.description ? (
+                              <> · {element.description}</>
+                            ) : null}
+                          </span>
+                        </label>
+                      ))
+                    ) : (
+                      <p className="card__text">Для ключевого элемента пока не найдено прямых связей внутри этой темы.</p>
+                    )}
+                  </div>
 
-                  {taskType === "single_choice" || taskType === "multiple_choice" ? (
-                    <div className="trajectory-task-template__list">
-                      <div className="trajectory-task-template__head">
-                        <strong>Варианты ответа</strong>
-                      </div>
-                      {taskType === "single_choice" ? (
-                        <>
-                          <p className="card__text">
-                            Варианты строятся из ключевого элемента и связанных элементов. Правильный вариант выбирает преподаватель.
-                          </p>
-                          <label className="field">
-                            <span>Правильный вариант</span>
-                            <select
-                              value={taskSingleCorrectElementId || taskPrimaryElementId}
-                              onChange={(event) => setTaskSingleCorrectElementId(event.target.value)}
+                  <strong>Другие элементы темы</strong>
+                  <p className="card__text">
+                    Эти элементы можно использовать как дополнительные варианты ответа или дистракторы.
+                  </p>
+                  <div className="trajectory-task-related__list">
+                    {otherTaskElements.length ? (
+                      otherTaskElements.map((element) => (
+                        <label className="trajectory-task-related__item" key={element.id}>
+                          <input
+                            type="checkbox"
+                            checked={taskRelatedElementIds.includes(element.id)}
+                            onChange={() => toggleTaskRelatedElement(element.id)}
+                            disabled={saving}
+                          />
+                          <span>
+                            <strong>{element.name}</strong>
+                            {templateUsesDefinitions(taskTemplateKind) && element.description ? (
+                              <> · {element.description}</>
+                            ) : null}
+                          </span>
+                        </label>
+                      ))
+                    ) : (
+                      <p className="card__text">Других элементов в этой теме нет.</p>
+                    )}
+                  </div>
+                </div>
+
+                {taskTemplateKind === "manual" && taskType === "single_choice" ? (
+                  <div className="trajectory-task-related">
+                    <strong>Правильный вариант</strong>
+                    <label className="field">
+                      <span>Выбери элемент, который будет правильным ответом</span>
+                      <select
+                        value={taskSingleCorrectElementId || taskPrimaryElementId}
+                        onChange={(event) => setTaskSingleCorrectElementId(event.target.value)}
+                        disabled={saving}
+                      >
+                        {[taskPrimaryElementId, ...taskRelatedElementIds].filter(Boolean).map((elementId) => (
+                          <option key={elementId} value={elementId}>
+                            {elementName(elementById, elementId)}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                  </div>
+                ) : null}
+
+                {taskTemplateKind === "manual" && taskType === "multiple_choice" ? (
+                  <div className="trajectory-task-related">
+                    <strong>Правильные варианты</strong>
+                    <p className="card__text">
+                      Отметь, какие из выбранных элементов должны считаться правильными. Остальные выбранные элементы станут дистракторами.
+                    </p>
+                    <div className="trajectory-task-related__list">
+                      {taskRelatedElementIds.length ? (
+                        taskRelatedElementIds.map((elementId) => (
+                          <label className="trajectory-task-related__item" key={elementId}>
+                            <input
+                              type="checkbox"
+                              checked={taskMultipleCorrectRelatedElementIds.includes(elementId)}
+                              onChange={() => toggleMultipleCorrectRelatedElement(elementId)}
                               disabled={saving}
-                            >
-                              {[
-                                taskPrimaryElementId,
-                                ...taskRelatedElementIds,
-                              ].map((elementId) => (
-                                <option key={elementId} value={elementId}>
-                                  {elementName(elementById, elementId)}
-                                </option>
-                              ))}
-                            </select>
+                            />
+                            <span>{elementName(elementById, elementId)}</span>
                           </label>
-                        </>
+                        ))
                       ) : (
-                        <p className="card__text">
-                          Ключевой элемент всегда правильный. Связанные элементы ниже разделяются на дополнительные правильные варианты и дистракторы.
-                        </p>
+                        <p className="card__text">Сначала выбери элементы темы для вариантов ответа.</p>
                       )}
                     </div>
-                  ) : null}
+                  </div>
+                ) : null}
 
-                  {taskType === "matching" ? (
-                    <div className="trajectory-task-template__list">
-                      <div className="trajectory-task-template__head">
-                        <strong>Пары для сопоставления</strong>
-                      </div>
-                      <p className="card__text">
-                        Система возьмёт названия выбранных элементов и их описания для двух столбцов.
-                      </p>
+                {(taskTemplateKind === "property_multiple" || taskTemplateKind === "contains_multiple") ? (
+                  <div className="trajectory-task-related">
+                    <strong>Автоматическое определение правильных вариантов</strong>
+                    <p className="card__text">
+                      Система сама выделит правильные ответы по связям графа. Для этого шаблона преподаватель выбирает только элементы темы.
+                    </p>
+                    <div className="trajectory-task-preview__items">
+                      {autoMultipleChoiceBuckets.correctIds.map((elementId) => (
+                        <span className="trajectory-task-preview__item trajectory-task-preview__item--correct" key={`auto-correct-${elementId}`}>
+                          {elementName(elementById, elementId)}
+                        </span>
+                      ))}
+                      {autoMultipleChoiceBuckets.distractorIds.map((elementId) => (
+                        <span className="trajectory-task-preview__item" key={`auto-distractor-${elementId}`}>
+                          {elementName(elementById, elementId)}
+                        </span>
+                      ))}
                     </div>
-                  ) : null}
+                  </div>
+                ) : null}
 
-                  {taskType === "ordering" ? (
-                    <div className="trajectory-task-template__list">
-                      <div className="trajectory-task-template__head">
-                        <strong>Эталонный порядок</strong>
-                      </div>
-                      <p className="card__text">
-                        Сейчас система ставит связанные элементы перед ключевым: от базовых понятий к производному.
-                      </p>
-                    </div>
-                  ) : null}
-
-                </div>
-                <div className="trajectory-task-related">
-                  {taskType === "multiple_choice" ? (
-                    <>
-                      <strong>Правильные связанные элементы</strong>
-                      <div className="trajectory-task-related__list">
-                        {allKnownTrajectoryElements
-                          .filter((element) => element.id !== taskPrimaryElementId)
-                          .map((element) => (
-                            <label className="trajectory-task-related__item" key={element.id}>
-                              <input
-                                type="checkbox"
-                                checked={taskMultipleCorrectRelatedElementIds.includes(element.id)}
-                                onChange={() => toggleMultipleCorrectRelatedElement(element.id)}
-                                disabled={saving}
-                              />
-                              <span>{element.name}</span>
-                            </label>
-                          ))}
-                      </div>
-                      <strong>Дистракторы</strong>
-                      <div className="trajectory-task-related__list">
-                        {allKnownTrajectoryElements
-                          .filter((element) => element.id !== taskPrimaryElementId)
-                          .map((element) => (
-                            <label className="trajectory-task-related__item" key={element.id}>
-                              <input
-                                type="checkbox"
-                                checked={taskDistractorElementIds.includes(element.id)}
-                                onChange={() => toggleTaskDistractorElement(element.id)}
-                                disabled={saving}
-                              />
-                              <span>{element.name}</span>
-                            </label>
-                          ))}
-                      </div>
-                    </>
-                  ) : (
-                    <>
-                      <strong>Связанные элементы</strong>
-                      <div className="trajectory-task-related__list">
-                        {allKnownTrajectoryElements
-                          .filter((element) => element.id !== taskPrimaryElementId)
-                          .map((element) => (
-                            <label className="trajectory-task-related__item" key={element.id}>
-                              <input type="checkbox" checked={taskRelatedElementIds.includes(element.id)} onChange={() => toggleTaskRelatedElement(element.id)} disabled={saving} />
-                              <span>{element.name}</span>
-                            </label>
-                          ))}
-                      </div>
-                    </>
-                  )}
-                </div>
                 <div className="trajectory-task-related">
                   <strong>Проверяемые связи</strong>
                   <p className="card__text">
@@ -2112,79 +2343,15 @@ export default function TrajectoryDetailPage() {
                     </p>
                   )}
                 </div>
-                <div className="trajectory-task-preview">
-                  <strong>Предпросмотр задания</strong>
-                  <p>{taskTitle || "Заголовок задания"}</p>
-                  <span>{taskPrompt || "Текст задания"}</span>
-                  {taskType === "single_choice" ? (
-                    <div className="trajectory-task-preview__items">
-                      {[taskPrimaryElementId, ...taskRelatedElementIds].filter(Boolean).map((elementId) => (
-                        <span
-                          className={
-                            elementId === (taskSingleCorrectElementId || taskPrimaryElementId)
-                              ? "trajectory-task-preview__item trajectory-task-preview__item--correct"
-                              : "trajectory-task-preview__item"
-                          }
-                          key={elementId}
-                        >
-                          {elementName(elementById, elementId)}
-                        </span>
-                      ))}
-                    </div>
-                  ) : null}
-                  {taskType === "multiple_choice" ? (
-                    <div className="trajectory-task-preview__items">
-                      {[taskPrimaryElementId, ...taskMultipleCorrectRelatedElementIds, ...taskDistractorElementIds]
-                        .filter(Boolean)
-                        .map((elementId) => (
-                          <span
-                            className={
-                              elementId === taskPrimaryElementId ||
-                              taskMultipleCorrectRelatedElementIds.includes(elementId)
-                                ? "trajectory-task-preview__item trajectory-task-preview__item--correct"
-                                : "trajectory-task-preview__item"
-                            }
-                            key={elementId}
-                          >
-                            {elementName(elementById, elementId)}
-                          </span>
-                        ))}
-                    </div>
-                  ) : null}
-                  {taskType === "matching" ? (
-                    <div className="trajectory-task-preview__items">
-                      {[taskPrimaryElementId, ...taskRelatedElementIds].filter(Boolean).map((elementId) => {
-                        const element = elementById.get(elementId);
-                        return (
-                          <span className="trajectory-task-preview__item" key={elementId}>
-                            {element?.name ?? "Элемент"} {"->"} {element?.description || element?.name || "Описание"}
-                          </span>
-                        );
-                      })}
-                    </div>
-                  ) : null}
-                  {taskType === "ordering" ? (
-                    <div className="trajectory-task-preview__items">
-                      {[...taskRelatedElementIds, taskPrimaryElementId].filter(Boolean).map((elementId, index) => (
-                        <span className="trajectory-task-preview__item" key={elementId}>
-                          {index + 1}. {elementName(elementById, elementId)}
-                        </span>
-                      ))}
-                    </div>
-                  ) : null}
-                  {taskCheckedRelationIds.length ? (
-                    <div className="trajectory-task-preview__items">
-                      {availableCheckedRelations
-                        .filter((relation) => taskCheckedRelationIds.includes(relation.id))
-                        .map((relation) => (
-                          <span className="trajectory-task-preview__item" key={relation.id}>
-                            {checkedRelationLabel(relation, elementById)}
-                          </span>
-                        ))}
-                    </div>
-                  ) : null}
-                </div>
                 <div className="trajectory-task-editor__actions">
+                  <button
+                    className="ghost-button"
+                    type="button"
+                    disabled={!taskTopicId || !taskPrimaryElementId || !taskTitle.trim() || !taskPrompt.trim()}
+                    onClick={() => setTaskPreviewOpen((current) => !current)}
+                  >
+                    {taskPreviewOpen ? "Скрыть предпросмотр" : "Предпросмотр"}
+                  </button>
                   <button className="primary-button" type="button" disabled={saving || !taskTopicId || !taskPrimaryElementId || !taskTitle.trim() || !taskPrompt.trim()} onClick={() => void handleSaveTask()}>
                     {editingTaskId ? "Сохранить задание" : "Добавить задание"}
                   </button>
@@ -2194,6 +2361,95 @@ export default function TrajectoryDetailPage() {
                     </button>
                   ) : null}
                 </div>
+                {taskPreviewOpen ? (
+                  <div className="trajectory-task-preview">
+                    <strong>Предпросмотр задания</strong>
+                    <p>{taskTitle || "Заголовок задания"}</p>
+                    <span>{taskPrompt || "Текст задания"}</span>
+
+                    {(taskTemplateKind === "definition_choice" ||
+                      taskTemplateKind === "term_choice" ||
+                      (taskTemplateKind === "manual" && taskType === "single_choice")) ? (
+                      <div className="trajectory-task-preview__items">
+                        {[taskPrimaryElementId, ...taskRelatedElementIds].filter(Boolean).map((elementId) => {
+                          const element = elementById.get(elementId);
+                          const optionText =
+                            taskTemplateKind === "definition_choice"
+                              ? element?.description || element?.name || "Определение"
+                              : element?.name || "Элемент";
+                          const isCorrect =
+                            elementId ===
+                            (taskTemplateKind === "manual"
+                              ? taskSingleCorrectElementId || taskPrimaryElementId
+                              : taskPrimaryElementId);
+                          return (
+                            <span
+                              className={
+                                isCorrect
+                                  ? "trajectory-task-preview__item trajectory-task-preview__item--correct"
+                                  : "trajectory-task-preview__item"
+                              }
+                              key={elementId}
+                            >
+                              {optionText}
+                            </span>
+                          );
+                        })}
+                      </div>
+                    ) : null}
+
+                    {(taskTemplateKind === "property_multiple" ||
+                      taskTemplateKind === "contains_multiple" ||
+                      (taskTemplateKind === "manual" && taskType === "multiple_choice")) ? (
+                      <div className="trajectory-task-preview__items">
+                        {taskRelatedElementIds.map((elementId) => {
+                          const isCorrect =
+                            taskTemplateKind === "manual"
+                              ? taskMultipleCorrectRelatedElementIds.includes(elementId)
+                              : autoMultipleChoiceBuckets.correctIds.includes(elementId);
+                          return (
+                            <span
+                              className={
+                                isCorrect
+                                  ? "trajectory-task-preview__item trajectory-task-preview__item--correct"
+                                  : "trajectory-task-preview__item"
+                              }
+                              key={elementId}
+                            >
+                              {elementName(elementById, elementId)}
+                            </span>
+                          );
+                        })}
+                      </div>
+                    ) : null}
+
+                    {(taskTemplateKind === "matching_definition" ||
+                      (taskTemplateKind === "manual" && taskType === "matching")) ? (
+                      <div className="trajectory-task-preview__items">
+                        {[taskPrimaryElementId, ...taskRelatedElementIds].filter(Boolean).map((elementId) => {
+                          const element = elementById.get(elementId);
+                          return (
+                            <span className="trajectory-task-preview__item" key={elementId}>
+                              {element?.name ?? "Элемент"} {"->"} {element?.description || element?.name || "Описание"}
+                            </span>
+                          );
+                        })}
+                      </div>
+                    ) : null}
+
+                    {taskCheckedRelationIds.length ? (
+                      <div className="trajectory-task-preview__items">
+                        {availableCheckedRelations
+                          .filter((relation) => taskCheckedRelationIds.includes(relation.id))
+                          .map((relation) => (
+                            <span className="trajectory-task-preview__item" key={relation.id}>
+                              {checkedRelationLabel(relation, elementById)}
+                            </span>
+                          ))}
+                      </div>
+                    ) : null}
+                  </div>
+                ) : null}
               </div>
             ) : (
               <p className="card__text">В этой траектории пока нет выбранных элементов «Знать».</p>
@@ -2296,16 +2552,30 @@ export default function TrajectoryDetailPage() {
             </>
           ) : (
             <>
+              {view.level === "elements" ? (
+                <button
+                  className="ghost-button"
+                  onClick={() => {
+                    setView({ level: "topics" });
+                    if (selectedTopicId) {
+                      setSelectedNodeId(`topic:${selectedTopicId}`);
+                    }
+                  }}
+                  type="button"
+                >
+                  К темам
+                </button>
+              ) : null}
               <button
                 className="ghost-button"
-                onClick={() => navigate(`/disciplines/${disciplineId}/trajectory`)}
+                onClick={() => navigate(`/disciplines/${resolvedDisciplinePath}/trajectory`)}
                 type="button"
               >
                 К списку траекторий
               </button>
               <button
                 className="ghost-button"
-                onClick={() => navigate(`/disciplines/${disciplineId}/knowledge`)}
+                onClick={() => navigate(`/disciplines/${resolvedDisciplinePath}/knowledge`)}
                 type="button"
               >
                 К графу знаний

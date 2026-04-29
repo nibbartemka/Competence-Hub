@@ -10,6 +10,7 @@ import {
   fetchTeachers,
   isAbortError,
 } from "./api";
+import { disciplinePathValue } from "./disciplineRouting";
 import { actionHoverMotion, cardHoverMotion, revealMotion } from "./motionPresets";
 import type {
   DisciplineKnowledgeGraph,
@@ -53,12 +54,15 @@ export default function DisciplineOverviewPage() {
       try {
         setLoading(true);
         setError("");
-        const [nextGraph, nextGroups, nextTeachers, nextTrajectories] = await Promise.all([
+        const [nextGraph, nextGroups, nextTeachers] = await Promise.all([
           fetchDisciplineKnowledgeGraph(currentDisciplineId, controller.signal),
           fetchGroups(controller.signal),
           fetchTeachers(controller.signal),
-          fetchLearningTrajectories({ discipline_id: currentDisciplineId }, controller.signal),
         ]);
+        const nextTrajectories = await fetchLearningTrajectories(
+          { discipline_id: nextGraph.discipline.id },
+          controller.signal,
+        );
         const nextSubgroups = (
           await Promise.all(
             nextGroups.map((group) => fetchSubgroups(group.id, controller.signal)),
@@ -116,14 +120,14 @@ export default function DisciplineOverviewPage() {
           </button>
           <MotionLink
             className="primary-button"
-            to={`/disciplines/${disciplineId}/knowledge`}
+            to={`/disciplines/${disciplinePathValue(graph?.discipline, disciplineId)}/knowledge`}
             {...actionHoverMotion}
           >
             Граф знаний
           </MotionLink>
           <MotionLink
             className="secondary-button"
-            to={`/disciplines/${disciplineId}/trajectory`}
+            to={`/disciplines/${disciplinePathValue(graph?.discipline, disciplineId)}/trajectory`}
             {...actionHoverMotion}
           >
             Траектории
@@ -213,7 +217,7 @@ export default function DisciplineOverviewPage() {
                     <MotionLink
                       className="trajectory-saved-card"
                       key={trajectory.id}
-                      to={`/disciplines/${disciplineId}/trajectories/${trajectory.id}`}
+                      to={`/disciplines/${disciplinePathValue(graph?.discipline, disciplineId)}/trajectories/${trajectory.id}`}
                       {...actionHoverMotion}
                     >
                       <strong>{trajectory.name}</strong>

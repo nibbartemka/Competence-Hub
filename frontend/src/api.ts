@@ -547,10 +547,12 @@ export function fetchStudentTopicControl(
   studentId: string,
   trajectoryId: string,
   topicId: string,
+  continuePractice = false,
   signal?: AbortSignal,
 ) {
+  const query = continuePractice ? "?continue_practice=true" : "";
   return request<StudentTopicControl>(
-    `/students/${studentId}/trajectories/${trajectoryId}/control/${topicId}`,
+    `/students/${studentId}/trajectories/${trajectoryId}/control/${topicId}${query}`,
     { signal },
   );
 }
@@ -559,10 +561,12 @@ export function fetchStudentTopicControlByPosition(
   studentId: string,
   trajectoryId: string,
   topicPosition: number,
+  continuePractice = false,
   signal?: AbortSignal,
 ) {
+  const query = continuePractice ? "?continue_practice=true" : "";
   return request<StudentTopicControl>(
-    `/students/${studentId}/trajectories/${trajectoryId}/control/steps/${topicPosition}`,
+    `/students/${studentId}/trajectories/${trajectoryId}/control/steps/${topicPosition}${query}`,
     { signal },
   );
 }

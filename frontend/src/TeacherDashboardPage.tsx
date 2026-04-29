@@ -10,6 +10,7 @@ import {
   fetchTeachers,
   isAbortError,
 } from "./api";
+import { disciplinePathValue } from "./disciplineRouting";
 import { actionHoverMotion, cardHoverMotion, revealMotion } from "./motionPresets";
 import type { Discipline, Group, Student, Teacher } from "./types";
 
@@ -119,12 +120,12 @@ export default function TeacherDashboardPage() {
                       <span>Версия графа {discipline.knowledge_graph_version}</span>
                     </div>
                     <div className="discipline-row__actions">
-                      <MotionLink className="primary-button" to={`/disciplines/${discipline.id}`} {...actionHoverMotion}>
+                      <MotionLink className="primary-button" to={`/disciplines/${disciplinePathValue(discipline, discipline.id)}`} {...actionHoverMotion}>
                         Паспорт
                       </MotionLink>
                       <MotionLink
                         className="secondary-button"
-                        to={`/disciplines/${discipline.id}/knowledge`}
+                        to={`/disciplines/${disciplinePathValue(discipline, discipline.id)}/knowledge`}
                         {...actionHoverMotion}
                       >
                         Граф

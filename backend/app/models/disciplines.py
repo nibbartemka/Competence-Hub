@@ -11,6 +11,7 @@ class Discipline(Base):
 
     id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
     name: Mapped[str] = mapped_column(String(255), nullable=False, unique=True)
+    slug: Mapped[str] = mapped_column(String(255), nullable=False, unique=True)
     knowledge_graph_version: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
 
     topics: Mapped[list["Topic"]] = relationship(

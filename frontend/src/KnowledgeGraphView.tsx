@@ -11,6 +11,7 @@ import {
     fetchKnowledgeElements,
     fetchTopicKnowledgeElements,
 } from "./api";
+import { disciplinePathValue, matchesDisciplineIdentifier } from "./disciplineRouting";
 import { GraphEditor } from "./components/GraphEditor";
 import {
     GraphNode,
@@ -227,15 +228,18 @@ export function KnowledgeGraphView({ disciplineId }: KnowledgeGraphViewProps) {
     const [exportingImage, setExportingImage] = useState(false);
     const [competenceFilters, setCompetenceFilters] = useState(DEFAULT_COMPETENCE_FILTERS);
 
-    const currentDiscipline = disciplines.find((d) => d.id === disciplineId);
+    const currentDiscipline = disciplines.find((d) => matchesDisciplineIdentifier(d, disciplineId));
+    const resolvedDiscipline = graphData?.discipline ?? currentDiscipline ?? null;
+    const resolvedDisciplineId = resolvedDiscipline?.id ?? "";
+    const resolvedDisciplinePath = disciplinePathValue(resolvedDiscipline, disciplineId);
 
     const unlinkedElements = useMemo(() => {
         const linkedElementIds = new Set(topicKnowledgeLinks.map((link) => link.element_id));
         return allElements.filter(
             (element) =>
-                element.discipline_id === disciplineId && !linkedElementIds.has(element.id),
+                element.discipline_id === resolvedDisciplineId && !linkedElementIds.has(element.id),
         );
-    }, [allElements, disciplineId, topicKnowledgeLinks]);
+    }, [allElements, resolvedDisciplineId, topicKnowledgeLinks]);
 
     const { scene, dimmedNodeIds } = useMemo(() => {
         if (!graphData) {
@@ -325,7 +329,7 @@ export function KnowledgeGraphView({ disciplineId }: KnowledgeGraphViewProps) {
     } = usePersistedGraphViewport({
         graphRef,
         scene,
-        scopeId: disciplineId,
+        scopeId: resolvedDisciplineId || disciplineId,
         scopeType: "discipline-knowledge",
     });
     const graphLoading = loading || layoutLoading;
@@ -340,9 +344,9 @@ export function KnowledgeGraphView({ disciplineId }: KnowledgeGraphViewProps) {
                 if (!cancelled) {
                     setDisciplines(items);
                     
-                    const disciplineExists = items.some((d) => d.id === disciplineId);
+                    const disciplineExists = items.some((d) => matchesDisciplineIdentifier(d, disciplineId));
                     if (!disciplineExists && items.length > 0) {
-                        navigate(`/disciplines/${items[0].id}/knowledge`, { replace: true });
+                        navigate(`/disciplines/${disciplinePathValue(items[0], items[0].id)}/knowledge`, { replace: true });
                     }
                 }
             } catch (loadError) {
@@ -368,7 +372,7 @@ export function KnowledgeGraphView({ disciplineId }: KnowledgeGraphViewProps) {
                 setUnlinkedLoading(true);
                 setUnlinkedError("");
                 const [elements, links] = await Promise.all([
-                    fetchKnowledgeElements(undefined, disciplineId),
+                    fetchKnowledgeElements(undefined, resolvedDisciplineId || undefined),
                     fetchTopicKnowledgeElements(),
                 ]);
                 if (cancelled) return;
@@ -391,7 +395,7 @@ export function KnowledgeGraphView({ disciplineId }: KnowledgeGraphViewProps) {
         return () => {
             cancelled = true;
         };
-    }, [disciplineId]);
+    }, [resolvedDisciplineId]);
 
     // Загрузка графа
     useEffect(() => {
@@ -530,7 +534,7 @@ export function KnowledgeGraphView({ disciplineId }: KnowledgeGraphViewProps) {
         try {
             setUnlinkedLoading(true);
             const [elements, links] = await Promise.all([
-                fetchKnowledgeElements(undefined, disciplineId),
+                fetchKnowledgeElements(undefined, nextGraph.discipline.id),
                 fetchTopicKnowledgeElements(),
             ]);
             setAllElements(elements);
@@ -569,12 +573,12 @@ export function KnowledgeGraphView({ disciplineId }: KnowledgeGraphViewProps) {
                     <label className="field">
                         <span>Дисциплина</span>
                         <select
-                            value={disciplineId}
+                            value={resolvedDisciplinePath}
                             onChange={(event) => handleDisciplineChange(event.target.value)}
                             disabled={!disciplines.length || loading}
                         >
                             {disciplines.map((discipline) => (
-                                <option key={discipline.id} value={discipline.id}>
+                                <option key={discipline.id} value={disciplinePathValue(discipline, discipline.id)}>
                                     {discipline.name}
                                 </option>
                             ))}
@@ -612,7 +616,7 @@ export function KnowledgeGraphView({ disciplineId }: KnowledgeGraphViewProps) {
 
                             <button
                                 className="secondary-button"
-                                onClick={() => navigate(`/disciplines/${disciplineId}/trajectory`)}
+                                onClick={() => navigate(`/disciplines/${resolvedDisciplinePath}/trajectory`)}
                                 type="button"
                                 disabled={!disciplineId}
                             >
@@ -620,7 +624,7 @@ export function KnowledgeGraphView({ disciplineId }: KnowledgeGraphViewProps) {
                             </button>
                         </div>
 
-                        <h2>{scene?.title ?? currentDiscipline?.name ?? "Граф дисциплины"}</h2>
+                        <h2>{scene?.title ?? resolvedDiscipline?.name ?? "Граф дисциплины"}</h2>
                         <p className="card__text">
                             {scene?.subtitle ?? "Выбери дисциплину, а затем кликни по теме, чтобы раскрыть ее элементы."}
                         </p>
@@ -845,7 +849,7 @@ export function KnowledgeGraphView({ disciplineId }: KnowledgeGraphViewProps) {
 
                         <div className="modal-panel__body">
                             <GraphEditor
-                                disciplineId={disciplineId}
+                                disciplineId={resolvedDisciplineId || disciplineId}
                                 topics={graphData?.topics ?? []}
                                 disciplineElements={graphData?.knowledge_elements ?? []}
                                 knowledgeElementRelations={

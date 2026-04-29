@@ -10,6 +10,7 @@ from sqlalchemy.orm import declarative_base
 from sqlalchemy import text
 
 from .config import settings
+from .slugs import transliterate_to_slug_base
 
 
 __all__ = [
@@ -82,6 +83,17 @@ def _sqlite_has_table(connection, table_name: str) -> bool:
             "WHERE type = 'table' AND name = :table_name"
         ),
         {"table_name": table_name},
+    ).fetchone()
+    return row is not None
+
+
+def _sqlite_has_index(connection, index_name: str) -> bool:
+    row = connection.execute(
+        text(
+            "SELECT name FROM sqlite_master "
+            "WHERE type = 'index' AND name = :index_name"
+        ),
+        {"index_name": index_name},
     ).fetchone()
     return row is not None
 
@@ -359,6 +371,38 @@ def _seed_relations_table(connection) -> None:
         )
 
 
+def _sync_discipline_slugs(connection) -> None:
+    if not _sqlite_has_table(connection, "disciplines"):
+        return
+
+    if not _sqlite_has_column(connection, "disciplines", "slug"):
+        connection.execute(text("ALTER TABLE disciplines ADD COLUMN slug VARCHAR(255)"))
+
+    rows = connection.execute(
+        text("SELECT id, name, slug FROM disciplines ORDER BY name, id")
+    ).fetchall()
+    used_slugs: set[str] = set()
+    for discipline_id, name, slug in rows:
+        candidate = str(slug or "").strip()
+        if not candidate or candidate in used_slugs:
+            base_slug = transliterate_to_slug_base(str(name or ""))
+            candidate = base_slug
+            suffix = 2
+            while candidate in used_slugs:
+                candidate = f"{base_slug}-{suffix}"
+                suffix += 1
+        used_slugs.add(candidate)
+        connection.execute(
+            text("UPDATE disciplines SET slug = :slug WHERE id = :discipline_id"),
+            {"slug": candidate, "discipline_id": discipline_id},
+        )
+
+    if not _sqlite_has_index(connection, "uq_disciplines_slug"):
+        connection.execute(
+            text("CREATE UNIQUE INDEX uq_disciplines_slug ON disciplines (slug)")
+        )
+
+
 def _normalize_relations_and_links(connection) -> None:
     if not _sqlite_has_table(connection, "relations"):
         return
@@ -552,6 +596,7 @@ def _rebuild_knowledge_element_relations_table(connection) -> None:
 
 def _sync_sqlite_schema(connection) -> None:
     # Keep local SQLite schema compatible with the current SQLAlchemy models.
+    _sync_discipline_slugs(connection)
     if not _sqlite_has_column(connection, "topics", "description"):
         connection.execute(text("ALTER TABLE topics ADD COLUMN description TEXT"))
     if not _sqlite_has_column(connection, "topic_knowledge_elements", "role"):

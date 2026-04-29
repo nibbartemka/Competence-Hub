@@ -70,8 +70,9 @@ export default function StudentTopicControlPage() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
+  const [continuePractice, setContinuePractice] = useState(false);
 
-  async function loadControl(signal?: AbortSignal) {
+  async function loadControl(signal?: AbortSignal, nextContinuePractice = continuePractice) {
     if (!studentId || !trajectoryId) {
       throw new Error("Не удалось определить студента или траекторию.");
     }
@@ -80,7 +81,13 @@ export default function StudentTopicControlPage() {
 
     let nextControl: StudentTopicControl;
     if (topicId) {
-      nextControl = await fetchStudentTopicControl(studentId, trajectoryId, topicId, signal);
+      nextControl = await fetchStudentTopicControl(
+        studentId,
+        trajectoryId,
+        topicId,
+        nextContinuePractice,
+        signal,
+      );
     } else {
       const position = Number(topicPosition);
       if (!Number.isInteger(position) || position < 1) {
@@ -90,13 +97,19 @@ export default function StudentTopicControlPage() {
         studentId,
         trajectoryId,
         position,
+        nextContinuePractice,
         signal,
       );
     }
 
     setControl(nextControl);
+    setContinuePractice(nextControl.is_extra_practice);
     setAnswer(nextControl.current_task ? emptyAnswer(nextControl.current_task) : {});
   }
+
+  useEffect(() => {
+    setContinuePractice(false);
+  }, [studentId, trajectoryId, topicId, topicPosition]);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -105,7 +118,8 @@ export default function StudentTopicControlPage() {
       try {
         setLoading(true);
         setError("");
-        await loadControl(controller.signal);
+        setControl(null);
+        await loadControl(controller.signal, false);
       } catch (loadError) {
         if (!isAbortError(loadError)) {
           setError(extractErrorMessage(loadError));
@@ -189,7 +203,7 @@ export default function StudentTopicControlPage() {
       );
 
       setAnswer(emptyAnswer(updatedTask));
-      await loadControl();
+      await loadControl(undefined, continuePractice);
     } catch (submitError) {
       setError(extractErrorMessage(submitError));
     } finally {
@@ -293,7 +307,7 @@ export default function StudentTopicControlPage() {
       <main className="student-control-layout">
         <section className="card card--soft student-control-task">
           {loading && !control ? (
-            <div className="status-view immersive-page__status student-control-task__status">
+            <div className="status-view status-view--embedded student-control-task__status">
               <div className="status-view__pulse" />
               <h3>Подбираю задание</h3>
               <p>Загружаю состояние темы, доступность шага и текущее задание для студента.</p>
@@ -319,6 +333,11 @@ export default function StudentTopicControlPage() {
                 <span>Освоение: {currentTask.primary_element.mastery_value}</span>
                 <span>Сложность: {currentTask.difficulty}</span>
               </div>
+              {control?.is_extra_practice ? (
+                <p className="card__text">
+                  Включён режим дополнительной практики. Здесь можно повышать результат выше минимального порога темы.
+                </p>
+              ) : null}
               {currentTask.progress.last_feedback ? (
                 <div className="student-task-card__feedback">
                   {String(currentTask.progress.last_feedback.message ?? "")}
@@ -338,17 +357,55 @@ export default function StudentTopicControlPage() {
                   className="ghost-button"
                   type="button"
                   disabled={saving}
-                  onClick={() => void loadControl()}
+                  onClick={async () => {
+                    try {
+                      setLoading(true);
+                      setError("");
+                      await loadControl(undefined, continuePractice);
+                    } catch (refreshError) {
+                      setError(extractErrorMessage(refreshError));
+                    } finally {
+                      setLoading(false);
+                    }
+                  }}
                 >
                   Обновить тему
                 </button>
               </div>
             </>
           ) : (
-            <div className="status-view immersive-page__status student-control-task__status">
-              <div className="status-view__pulse" />
+            <div className="status-view status-view--embedded status-view--empty student-control-task__status">
               <h3>Нет доступного задания</h3>
-              <p>Для этой темы пока нет задания, которое подходит текущему состоянию студента.</p>
+              <p>
+                {control?.is_extra_practice
+                  ? "Для этой темы больше не осталось подходящих заданий даже в режиме дополнительной практики."
+                  : control?.has_tasks
+                  ? "В обычном режиме минимальный порог уже достигнут. Если хочешь улучшить результат, можно включить дополнительную практику."
+                  : "Для этой темы пока нет заданий."}
+              </p>
+              {control?.continue_practice_available ? (
+                <div className="student-task-card__actions">
+                  <button
+                    className="primary-button"
+                    type="button"
+                    disabled={loading}
+                    onClick={async () => {
+                      try {
+                        setLoading(true);
+                        setError("");
+                        setControl(null);
+                        await loadControl(undefined, true);
+                      } catch (refreshError) {
+                        setError(extractErrorMessage(refreshError));
+                      } finally {
+                        setLoading(false);
+                      }
+                    }}
+                  >
+                    Продолжить практику
+                  </button>
+                </div>
+              ) : null}
             </div>
           )}
         </section>

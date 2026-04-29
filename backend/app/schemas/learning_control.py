@@ -20,6 +20,9 @@ class StudentTopicControlRead(BaseModel):
     topic_threshold: int
     topic_mastery: int
     is_unlocked: bool
+    has_tasks: bool = False
+    continue_practice_available: bool = False
+    is_extra_practice: bool = False
     elements: list[StudentTopicControlElementRead] = Field(default_factory=list)
     current_task: StudentAssignedTaskRead | None = None
 

@@ -21,6 +21,7 @@ import {
   fetchTeachers,
   isAbortError,
 } from "./api";
+import { disciplinePathValue } from "./disciplineRouting";
 import type { Discipline, Group, Student, Teacher } from "./types";
 
 type DashboardData = {
@@ -563,7 +564,7 @@ export function HomePage() {
                         {...ACTION_MOTION}
                         className="secondary-button discipline-row__action"
                         layout
-                        to={`/disciplines/${discipline.id}`}
+                        to={`/disciplines/${disciplinePathValue(discipline, discipline.id)}`}
                       >
                         Паспорт
                       </MotionLink>
@@ -571,7 +572,7 @@ export function HomePage() {
                         {...ACTION_MOTION}
                         className="primary-button discipline-row__action"
                         layout
-                        to={`/disciplines/${discipline.id}/knowledge`}
+                        to={`/disciplines/${disciplinePathValue(discipline, discipline.id)}/knowledge`}
                       >
                         Открыть редактор
                       </MotionLink>
@@ -579,7 +580,7 @@ export function HomePage() {
                         {...ACTION_MOTION}
                         className="secondary-button discipline-row__action"
                         layout
-                        to={`/disciplines/${discipline.id}/trajectory`}
+                        to={`/disciplines/${disciplinePathValue(discipline, discipline.id)}/trajectory`}
                       >
                         Собрать траекторию
                       </MotionLink>

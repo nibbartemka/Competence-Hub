@@ -20,6 +20,7 @@ import {
   GraphNodeRuntimeStateProvider,
   type GraphNodeRuntimeState,
 } from "./components/GraphNode";
+import { disciplinePathValue, matchesDisciplineIdentifier } from "./disciplineRouting";
 import {
   buildFocusedScene,
   hasConcreteNodeSelection,
@@ -280,10 +281,15 @@ export default function TrajectoryGraphBuilder() {
 
   const activeDiscipline = useMemo(
     () =>
-      disciplines.find((discipline) => discipline.id === disciplineId) ??
+      disciplines.find((discipline) => matchesDisciplineIdentifier(discipline, disciplineId ?? "")) ??
       graph?.discipline ??
       null,
     [disciplines, disciplineId, graph],
+  );
+  const resolvedDisciplineId = graph?.discipline.id ?? activeDiscipline?.id ?? "";
+  const resolvedDisciplinePath = disciplinePathValue(
+    graph?.discipline ?? activeDiscipline,
+    disciplineId ?? "",
   );
 
   const disciplineTeachers = useMemo(() => {
@@ -451,7 +457,7 @@ export default function TrajectoryGraphBuilder() {
         if (!element) continue;
         selectedElementRecords.push({
           competenceType: element.competence_type,
-          threshold: elementThresholds[buildElementKey(topicId, elementId)] ?? 100,
+          threshold: elementThresholds[buildElementKey(topicId, elementId)] ?? 0,
         });
       }
     }
@@ -739,7 +745,7 @@ export default function TrajectoryGraphBuilder() {
           if (isSelected) {
             selectedNodeIds.add(nodeId);
             metricsByNodeId.set(nodeId, [
-              `Порог ${elementThresholds[buildElementKey(topicId, link.element_id)] ?? 100}`,
+              `Порог ${elementThresholds[buildElementKey(topicId, link.element_id)] ?? 0}`,
             ]);
           }
           if (isBlocked) {
@@ -813,7 +819,7 @@ export default function TrajectoryGraphBuilder() {
     enabled: Boolean(disciplineId),
     graphRef,
     scene,
-    scopeId: disciplineId,
+    scopeId: resolvedDisciplineId || disciplineId,
     scopeType: "trajectory-builder",
   });
   const graphPageLoading = loading || layoutLoading;
@@ -890,7 +896,9 @@ export default function TrajectoryGraphBuilder() {
       setElementThresholds(draft.elementThresholds ?? {});
       pushNotification({ kind: "success", text: "Черновик траектории восстановлен." });
     } catch {
-      window.localStorage.removeItem(trajectoryDraftKey(disciplineId));
+      if (disciplineId) {
+        window.localStorage.removeItem(trajectoryDraftKey(disciplineId));
+      }
     } finally {
       setDraftRestored(true);
     }
@@ -992,7 +1000,7 @@ export default function TrajectoryGraphBuilder() {
   }, [selectedGroupId]);
 
   useEffect(() => {
-    if (!disciplineId) return;
+    if (!resolvedDisciplineId) return;
 
     const controller = new AbortController();
 
@@ -1000,7 +1008,7 @@ export default function TrajectoryGraphBuilder() {
       try {
         const items = await fetchLearningTrajectories(
           {
-            discipline_id: disciplineId,
+            discipline_id: resolvedDisciplineId,
             teacher_id: selectedTeacherId || undefined,
             group_id: selectedGroupId || undefined,
           },
@@ -1017,20 +1025,7 @@ export default function TrajectoryGraphBuilder() {
     void loadTrajectories();
 
     return () => controller.abort();
-  }, [disciplineId, selectedGroupId, selectedTeacherId]);
-
-  function hasSelectedElementForCompetence(competenceType: CompetenceType) {
-    for (const topicId of selectedTopicIds) {
-      for (const elementId of selectedElementsByTopic[topicId] ?? []) {
-        const element = elementById.get(elementId);
-        if (element?.competence_type === competenceType) {
-          return true;
-        }
-      }
-    }
-
-    return false;
-  }
+  }, [resolvedDisciplineId, selectedGroupId, selectedTeacherId]);
 
   function toggleCompetenceFilter(competenceType: CompetenceType) {
     setCompetenceFilters((current) => ({
@@ -1262,7 +1257,7 @@ export default function TrajectoryGraphBuilder() {
 
       return {
         ...current,
-        [key]: hasSelectedElementForCompetence(element.competence_type) ? 100 : 0,
+        [key]: 0,
       };
     });
   }
@@ -1282,10 +1277,10 @@ export default function TrajectoryGraphBuilder() {
   }
 
   async function refreshTrajectories() {
-    if (!disciplineId) return;
+    if (!resolvedDisciplineId) return;
 
     const items = await fetchLearningTrajectories({
-      discipline_id: disciplineId,
+      discipline_id: resolvedDisciplineId,
       teacher_id: selectedTeacherId || undefined,
       group_id: selectedGroupId || undefined,
     });
@@ -1293,7 +1288,7 @@ export default function TrajectoryGraphBuilder() {
   }
 
   async function handleCreateTrajectory() {
-    if (!disciplineId) return;
+    if (!resolvedDisciplineId) return;
 
     if (validationErrors.length) {
       pushNotification({ kind: "error", text: validationErrors[0] });
@@ -1304,7 +1299,7 @@ export default function TrajectoryGraphBuilder() {
       setSaving(true);
       await createLearningTrajectory({
         name: trajectoryName.trim(),
-        discipline_id: disciplineId,
+        discipline_id: resolvedDisciplineId,
         teacher_id: selectedTeacherId,
         group_id: selectedGroupId,
         subgroup_id: targetMode === "subgroup" ? selectedSubgroupId : null,
@@ -1314,12 +1309,14 @@ export default function TrajectoryGraphBuilder() {
           threshold: topicThresholds[topicId] ?? 100,
           elements: (selectedElementsByTopic[topicId] ?? []).map((elementId) => ({
             element_id: elementId,
-            threshold: elementThresholds[buildElementKey(topicId, elementId)] ?? 100,
+            threshold: elementThresholds[buildElementKey(topicId, elementId)] ?? 0,
           })),
         })),
       });
 
-      window.localStorage.removeItem(trajectoryDraftKey(disciplineId));
+      if (disciplineId) {
+        window.localStorage.removeItem(trajectoryDraftKey(disciplineId));
+      }
       setTrajectoryName("");
       setSelectedTopicIds([]);
       setTopicThresholds({});
@@ -1430,7 +1427,7 @@ export default function TrajectoryGraphBuilder() {
                                 updateElementThreshold(topicId, elementId, Number(event.target.value))
                               }
                               type="number"
-                              value={elementThresholds[key] ?? 100}
+                              value={elementThresholds[key] ?? 0}
                             />
                           </label>
                         );
@@ -1473,7 +1470,7 @@ export default function TrajectoryGraphBuilder() {
         <div className="hero__controls">
           <button
             className="ghost-button"
-            onClick={() => navigate(`/disciplines/${disciplineId}/knowledge`)}
+            onClick={() => navigate(`/disciplines/${resolvedDisciplinePath}/knowledge`)}
             type="button"
           >
             Назад к графу
@@ -1661,7 +1658,7 @@ export default function TrajectoryGraphBuilder() {
                     className="trajectory-saved-card"
                     key={trajectory.id}
                     onClick={() =>
-                      navigate(`/disciplines/${disciplineId}/trajectories/${trajectory.id}`)
+                      navigate(`/disciplines/${resolvedDisciplinePath}/trajectories/${trajectory.id}`)
                     }
                     type="button"
                   >

@@ -1,11 +1,12 @@
 from uuid import UUID
 
 from fastapi import APIRouter, status
-from sqlalchemy import and_, select
+from sqlalchemy import and_, or_, select
 from sqlalchemy.orm import lazyload, selectinload
 
 from app.api.crud import commit_or_409, delete_and_commit, not_found
 from app.api.deps import DbSession
+from app.core.slugs import build_unique_discipline_slug
 from app.models import (
     Discipline,
     Group,
@@ -35,7 +36,7 @@ router = APIRouter(prefix="/disciplines", tags=["Disciplines"])
 
 
 async def _build_discipline_reads(
-    rows: list[tuple[UUID, str, int]],
+    rows: list[tuple[UUID, str, str, int]],
     session: DbSession,
 ) -> list[DisciplineRead]:
     if not rows:
@@ -71,30 +72,58 @@ async def _build_discipline_reads(
         DisciplineRead(
             id=discipline_id,
             name=name,
+            slug=slug,
             knowledge_graph_version=knowledge_graph_version,
             teacher_ids=teacher_ids_by_discipline.get(discipline_id, []),
             group_ids=group_ids_by_discipline.get(discipline_id, []),
         )
-        for discipline_id, name, knowledge_graph_version in rows
+        for discipline_id, name, slug, knowledge_graph_version in rows
     ]
 
 
+def _discipline_identifier_filter(discipline_identifier: str):
+    try:
+        discipline_uuid = UUID(discipline_identifier)
+    except ValueError:
+        return Discipline.slug == discipline_identifier
+    return or_(
+        Discipline.id == discipline_uuid,
+        Discipline.slug == discipline_identifier,
+    )
+
+
 async def get_discipline_for_read(
-    discipline_id: UUID,
+    discipline_identifier: str,
     session: DbSession,
 ) -> DisciplineRead:
     result = await session.execute(
         select(
             Discipline.id,
             Discipline.name,
+            Discipline.slug,
             Discipline.knowledge_graph_version,
         )
-        .where(Discipline.id == discipline_id)
+        .where(_discipline_identifier_filter(discipline_identifier))
     )
     row = result.one_or_none()
     if row is None:
-        raise not_found("Discipline", discipline_id)
+        raise not_found("Discipline", discipline_identifier)
     return (await _build_discipline_reads([row], session))[0]
+
+
+async def get_discipline_model(
+    discipline_identifier: str,
+    session: DbSession,
+) -> Discipline:
+    result = await session.execute(
+        select(Discipline)
+        .options(lazyload("*"))
+        .where(_discipline_identifier_filter(discipline_identifier))
+    )
+    discipline = result.scalar_one_or_none()
+    if discipline is None:
+        raise not_found("Discipline", discipline_identifier)
+    return discipline
 
 
 @router.get("/", response_model=list[DisciplineRead])
@@ -103,6 +132,7 @@ async def list_disciplines(session: DbSession) -> list[DisciplineRead]:
         select(
             Discipline.id,
             Discipline.name,
+            Discipline.slug,
             Discipline.knowledge_graph_version,
         )
         .order_by(Discipline.name)
@@ -112,7 +142,10 @@ async def list_disciplines(session: DbSession) -> list[DisciplineRead]:
 
 @router.post("/", response_model=DisciplineRead, status_code=status.HTTP_201_CREATED)
 async def create_discipline(payload: DisciplineCreate, session: DbSession) -> DisciplineRead:
-    discipline = Discipline(name=payload.name)
+    discipline = Discipline(
+        name=payload.name,
+        slug=await build_unique_discipline_slug(session, payload.name),
+    )
     session.add(discipline)
 
     if payload.teacher_id is not None:
@@ -152,23 +185,25 @@ async def create_discipline(payload: DisciplineCreate, session: DbSession) -> Di
                 session.add(TeacherGroup(teacher_id=payload.teacher_id, group_id=group_id))
 
     await commit_or_409(session)
-    return await get_discipline_for_read(discipline.id, session)
+    return await get_discipline_for_read(str(discipline.id), session)
 
 
-@router.get("/{discipline_id}", response_model=DisciplineRead)
-async def get_discipline(discipline_id: UUID, session: DbSession) -> DisciplineRead:
-    return await get_discipline_for_read(discipline_id, session)
+@router.get("/{discipline_identifier}", response_model=DisciplineRead)
+async def get_discipline(discipline_identifier: str, session: DbSession) -> DisciplineRead:
+    return await get_discipline_for_read(discipline_identifier, session)
 
 
 @router.get(
-    "/{discipline_id}/knowledge-graph",
+    "/{discipline_identifier}/knowledge-graph",
     response_model=DisciplineKnowledgeGraphRead,
 )
 async def get_discipline_knowledge_graph(
-    discipline_id: UUID,
+    discipline_identifier: str,
     session: DbSession,
 ) -> DisciplineKnowledgeGraphRead:
-    discipline = await get_discipline_for_read(discipline_id, session)
+    discipline_model = await get_discipline_model(discipline_identifier, session)
+    discipline_id = discipline_model.id
+    discipline = await get_discipline_for_read(str(discipline_id), session)
 
     topics_result = await session.execute(
         select(Topic)
@@ -274,9 +309,7 @@ async def get_discipline_knowledge_graph(
     )
 
 
-@router.delete("/{discipline_id}", status_code=status.HTTP_204_NO_CONTENT)
-async def delete_discipline(discipline_id: UUID, session: DbSession) -> None:
-    discipline = await session.get(Discipline, discipline_id)
-    if discipline is None:
-        raise not_found("Discipline", discipline_id)
+@router.delete("/{discipline_identifier}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_discipline(discipline_identifier: str, session: DbSession) -> None:
+    discipline = await get_discipline_model(discipline_identifier, session)
     await delete_and_commit(session, discipline)

@@ -89,6 +89,7 @@ class LearningTrajectoryTaskType(StrEnum):
 class LearningTrajectoryTaskTemplateKind(StrEnum):
     DEFINITION_CHOICE = "definition_choice"
     TERM_CHOICE = "term_choice"
+    PROPERTY_MULTIPLE = "property_multiple"
     RELATION_CHOICE = "relation_choice"
     REQUIRES_ORDERING = "requires_ordering"
     CONTAINS_MULTIPLE = "contains_multiple"

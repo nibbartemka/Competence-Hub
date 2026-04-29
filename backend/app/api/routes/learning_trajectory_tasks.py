@@ -38,6 +38,7 @@ from app.schemas import (
 )
 from app.services.learning_tasks import (
     bad_request,
+    build_adaptive_candidate_pool,
     build_relation_maps,
     build_student_task_read,
     build_task_read,
@@ -46,10 +47,9 @@ from app.services.learning_tasks import (
     evaluate_task_answer,
     merge_mastery_value,
     parse_task_content_json,
-    prerequisites_ready,
     select_next_task,
     TASK_CHECKED_RELATIONS,
-    validate_manual_task_payload,
+    validate_task_payload,
 )
 
 
@@ -109,6 +109,16 @@ def _task_read_options(
             )
         )
     if include_unlock_data:
+        options.append(
+            selectinload(LearningTrajectoryTask.trajectory_topic).options(
+                selectinload(LearningTrajectoryTopic.elements).options(
+                    lazyload("*"),
+                    selectinload(LearningTrajectoryElement.element).options(
+                        lazyload("*")
+                    ),
+                )
+            )
+        )
         options.append(
             selectinload(LearningTrajectoryTask.trajectory).options(
                 selectinload(LearningTrajectory.topics).options(
@@ -331,6 +341,29 @@ async def _load_relation_map(
     return build_relation_maps(list(result.scalars().all()))
 
 
+async def _load_template_relations(
+    element_ids: set[UUID],
+    session: DbSession,
+) -> list[KnowledgeElementRelation]:
+    if len(element_ids) < 2:
+        return []
+
+    result = await session.execute(
+        select(KnowledgeElementRelation)
+        .options(
+            lazyload("*"),
+            selectinload(KnowledgeElementRelation.relation).options(
+                lazyload("*")
+            ),
+        )
+        .where(
+            KnowledgeElementRelation.source_element_id.in_(element_ids),
+            KnowledgeElementRelation.target_element_id.in_(element_ids),
+        )
+    )
+    return list(result.scalars().all())
+
+
 async def _validate_checked_relations(
     trajectory: LearningTrajectory,
     primary_element_id: UUID,
@@ -475,7 +508,15 @@ async def create_learning_trajectory_task(
     session: DbSession,
 ) -> LearningTrajectoryTaskRead:
     trajectory = await _get_trajectory_for_tasks(trajectory_id, session)
-    normalized_content = validate_manual_task_payload(trajectory, payload)
+    template_relations = await _load_template_relations(
+        {payload.primary_element_id, *payload.related_element_ids},
+        session,
+    )
+    normalized_content = validate_task_payload(
+        trajectory,
+        payload,
+        template_relations=template_relations,
+    )
     checked_relations = await _validate_checked_relations(
         trajectory=trajectory,
         primary_element_id=payload.primary_element_id,
@@ -528,9 +569,14 @@ async def update_learning_trajectory_task(
 ) -> LearningTrajectoryTaskRead:
     task = await _get_task_for_read(task_id, session)
     trajectory = await _get_trajectory_for_tasks(task.trajectory_id, session)
-    normalized_content = validate_manual_task_payload(
+    template_relations = await _load_template_relations(
+        {payload.primary_element_id, *payload.related_element_ids},
+        session,
+    )
+    normalized_content = validate_task_payload(
         trajectory,
         LearningTrajectoryTaskCreate(**payload.model_dump()),
+        template_relations=template_relations,
     )
     checked_relations = await _validate_checked_relations(
         trajectory=trajectory,
@@ -655,21 +701,34 @@ async def get_recommended_student_task(
         session,
     )
 
-    candidates: list[tuple[LearningTrajectoryTask, StudentTaskProgress | None]] = []
-    fallback_candidates: list[tuple[LearningTrajectoryTask, StudentTaskProgress | None]] = []
-    for task in tasks:
-        progress = progress_by_task_id.get(task.id)
-        if not prerequisites_ready(task, mastery_by_element_id, outgoing_by_source):
-            continue
-        if not _topic_is_unlocked(task, mastery_by_element_id):
-            continue
-
-        fallback_candidates.append((task, progress))
-        primary_mastery = mastery_by_element_id.get(task.primary_element_id, 0)
-        if primary_mastery < 85 or progress is None or progress.status != StudentTaskProgressStatus.COMPLETED:
-            candidates.append((task, progress))
-
-    pool = candidates or fallback_candidates
+    unlocked_tasks = [
+        task
+        for task in tasks
+        if _topic_is_unlocked(task, mastery_by_element_id)
+    ]
+    pool = build_adaptive_candidate_pool(
+        unlocked_tasks,
+        mastery_by_element_id,
+        progress_by_task_id,
+        outgoing_by_source,
+    )
+    if not pool:
+        pool = build_adaptive_candidate_pool(
+            unlocked_tasks,
+            mastery_by_element_id,
+            progress_by_task_id,
+            outgoing_by_source,
+            ignore_stage_gate=True,
+        )
+    if not pool:
+        pool = build_adaptive_candidate_pool(
+            unlocked_tasks,
+            mastery_by_element_id,
+            progress_by_task_id,
+            outgoing_by_source,
+            ignore_stage_gate=True,
+            ignore_prerequisites=True,
+        )
     selected = select_next_task(pool, mastery_by_element_id, degree_by_element_id)
     if selected is None:
         return None

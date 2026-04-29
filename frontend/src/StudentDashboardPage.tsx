@@ -10,6 +10,7 @@ import {
   fetchSubgroups,
   isAbortError,
 } from "./api";
+import { disciplinePathValue } from "./disciplineRouting";
 import { revealMotion } from "./motionPresets";
 import type {
   Discipline,
@@ -207,7 +208,7 @@ export default function StudentDashboardPage() {
                       <MotionLink
                         className="student-trajectory-card"
                         key={trajectory.id}
-                        to={`/disciplines/${trajectory.discipline_id}/trajectories/${trajectory.id}?preview=student&student=${studentId}`}
+                        to={`/disciplines/${disciplinePathValue(discipline, trajectory.discipline_id)}/trajectories/${trajectory.id}?preview=student&student=${studentId}`}
                         {...revealMotion(0.02, 12)}
                       >
                         <div className="student-trajectory-card__head">

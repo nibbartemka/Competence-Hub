@@ -881,6 +881,23 @@ textarea {
   padding: 32px;
 }
 
+.status-view--embedded {
+  position: relative;
+  inset: auto;
+  width: 100%;
+  min-height: 320px;
+  border-radius: 24px;
+  background: rgba(255, 255, 255, 0.72);
+}
+
+.status-view--empty {
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.72) 0%, rgba(248, 251, 255, 0.9) 100%);
+}
+
+.status-view--empty h3 {
+  margin-top: 0;
+}
+
 .status-view h3 {
   margin: 14px 0 8px;
   font-family: "Roboto", "Segoe UI", sans-serif;

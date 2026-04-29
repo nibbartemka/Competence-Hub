@@ -1,6 +1,6 @@
 from uuid import UUID
 
-from fastapi import APIRouter, HTTPException, status
+from fastapi import APIRouter, HTTPException, Query, status
 from sqlalchemy import select
 from sqlalchemy.orm import lazyload, selectinload
 
@@ -22,7 +22,6 @@ from app.models import (
 from app.models.enums import (
     LearningTrajectoryStatus,
     LearningTrajectoryTaskType,
-    StudentTaskProgressStatus,
 )
 from app.schemas import (
     StudentTopicControlElementRead,
@@ -32,10 +31,10 @@ from app.schemas import (
     StudentTrajectoryMasteryTopicRead,
 )
 from app.services.learning_tasks import (
+    build_adaptive_candidate_pool,
     build_student_task_read,
     build_relation_maps,
     parse_task_content_json,
-    prerequisites_ready,
     select_next_task,
 )
 
@@ -66,10 +65,16 @@ def _control_task_options():
         selectinload(LearningTrajectoryTask.trajectory_topic).selectinload(
             LearningTrajectoryTopic.topic
         ),
+        selectinload(LearningTrajectoryTask.trajectory_topic).selectinload(
+            LearningTrajectoryTopic.elements
+        ).selectinload(LearningTrajectoryElement.element),
         selectinload(LearningTrajectoryTask.primary_element),
         selectinload(LearningTrajectoryTask.related_elements).selectinload(
             LearningTrajectoryTaskElement.element
         ),
+        selectinload(LearningTrajectoryTask.checked_relations)
+        .selectinload(LearningTrajectoryTaskRelation.relation)
+        .selectinload(KnowledgeElementRelation.relation),
         selectinload(LearningTrajectoryTask.checked_relations)
         .selectinload(LearningTrajectoryTaskRelation.relation)
         .selectinload(KnowledgeElementRelation.source_element),
@@ -140,7 +145,10 @@ async def _load_control_relation_map(
 ) -> tuple[dict[UUID, list[KnowledgeElementRelation]], dict[UUID, int]]:
     result = await session.execute(
         select(KnowledgeElementRelation)
-        .options(lazyload("*"))
+        .options(
+            lazyload("*"),
+            selectinload(KnowledgeElementRelation.relation).options(lazyload("*")),
+        )
         .join(
             KnowledgeElement,
             KnowledgeElement.id == KnowledgeElementRelation.source_element_id,
@@ -195,6 +203,7 @@ async def _build_student_topic_control(
     *,
     topic_id: UUID | None = None,
     topic_position: int | None = None,
+    continue_practice: bool = False,
 ) -> StudentTopicControlRead:
     student = await _get_student_for_control(student_id, session)
     trajectory = await _get_trajectory_for_control(trajectory_id, session)
@@ -256,24 +265,46 @@ async def _build_student_topic_control(
             session,
         )
 
-    accessible_candidates = []
-    fallback_candidates = []
-    for task in tasks:
-        progress = progress_by_task_id.get(task.id)
-        if not prerequisites_ready(task, mastery_by_element_id, outgoing_by_source):
-            continue
+    has_tasks = bool(tasks)
 
-        fallback_candidates.append((task, progress))
-        primary_mastery = mastery_by_element_id.get(task.primary_element_id, 0)
-        if (
-            primary_mastery < 85
-            or progress is None
-            or progress.status != StudentTaskProgressStatus.COMPLETED
-        ):
-            accessible_candidates.append((task, progress))
+    def _build_pool(*, ignore_target_mastery: bool) -> list[tuple[LearningTrajectoryTask, StudentTaskProgress | None]]:
+        candidate_pool = build_adaptive_candidate_pool(
+            tasks,
+            mastery_by_element_id,
+            progress_by_task_id,
+            outgoing_by_source,
+            ignore_target_mastery=ignore_target_mastery,
+        )
+        if not candidate_pool:
+            candidate_pool = build_adaptive_candidate_pool(
+                tasks,
+                mastery_by_element_id,
+                progress_by_task_id,
+                outgoing_by_source,
+                ignore_stage_gate=True,
+                ignore_target_mastery=ignore_target_mastery,
+            )
+        if not candidate_pool:
+            candidate_pool = build_adaptive_candidate_pool(
+                tasks,
+                mastery_by_element_id,
+                progress_by_task_id,
+                outgoing_by_source,
+                ignore_stage_gate=True,
+                ignore_prerequisites=True,
+                ignore_target_mastery=ignore_target_mastery,
+            )
+        return candidate_pool
+
+    candidate_pool = _build_pool(ignore_target_mastery=continue_practice)
+    continue_practice_available = False
+    if not continue_practice and has_tasks and not candidate_pool:
+        continue_practice_available = bool(_build_pool(ignore_target_mastery=True))
+    elif continue_practice:
+        continue_practice_available = bool(candidate_pool)
 
     selected = select_next_task(
-        accessible_candidates or fallback_candidates,
+        candidate_pool,
         mastery_by_element_id,
         degree_by_element_id,
     )
@@ -301,6 +332,9 @@ async def _build_student_topic_control(
         topic_threshold=trajectory_topic.threshold,
         topic_mastery=topic_mastery,
         is_unlocked=is_unlocked,
+        has_tasks=has_tasks,
+        continue_practice_available=continue_practice_available,
+        is_extra_practice=continue_practice,
         elements=elements,
         current_task=current_task,
     )
@@ -315,12 +349,14 @@ async def get_student_topic_control(
     trajectory_id: UUID,
     topic_id: UUID,
     session: DbSession,
+    continue_practice: bool = Query(False),
 ) -> StudentTopicControlRead:
     return await _build_student_topic_control(
         student_id,
         trajectory_id,
         session,
         topic_id=topic_id,
+        continue_practice=continue_practice,
     )
 
 
@@ -386,10 +422,12 @@ async def get_student_topic_control_by_position(
     trajectory_id: UUID,
     topic_position: int,
     session: DbSession,
+    continue_practice: bool = Query(False),
 ) -> StudentTopicControlRead:
     return await _build_student_topic_control(
         student_id,
         trajectory_id,
         session,
         topic_position=topic_position,
+        continue_practice=continue_practice,
     )

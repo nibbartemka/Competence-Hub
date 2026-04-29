@@ -17,6 +17,7 @@ from app.models import (
 from app.models.enums import (
     CompetenceType,
     KnowledgeElementRelationType,
+    LearningTrajectoryTaskTemplateKind,
     LearningTrajectoryTaskType,
     StudentTaskProgressStatus,
 )
@@ -48,6 +49,43 @@ TASK_CHECKED_RELATIONS = {
     KnowledgeElementRelationType.USED_WITH,
     KnowledgeElementRelationType.BUILDS_ON,
 }
+
+ACTIVE_TASK_TEMPLATE_KINDS = {
+    LearningTrajectoryTaskTemplateKind.DEFINITION_CHOICE,
+    LearningTrajectoryTaskTemplateKind.TERM_CHOICE,
+    LearningTrajectoryTaskTemplateKind.PROPERTY_MULTIPLE,
+    LearningTrajectoryTaskTemplateKind.CONTAINS_MULTIPLE,
+    LearningTrajectoryTaskTemplateKind.MATCHING_DEFINITION,
+    LearningTrajectoryTaskTemplateKind.MANUAL,
+}
+
+FIXED_TASK_TYPE_BY_TEMPLATE: dict[
+    LearningTrajectoryTaskTemplateKind,
+    LearningTrajectoryTaskType | None,
+] = {
+    LearningTrajectoryTaskTemplateKind.DEFINITION_CHOICE: LearningTrajectoryTaskType.SINGLE_CHOICE,
+    LearningTrajectoryTaskTemplateKind.TERM_CHOICE: LearningTrajectoryTaskType.SINGLE_CHOICE,
+    LearningTrajectoryTaskTemplateKind.PROPERTY_MULTIPLE: LearningTrajectoryTaskType.MULTIPLE_CHOICE,
+    LearningTrajectoryTaskTemplateKind.CONTAINS_MULTIPLE: LearningTrajectoryTaskType.MULTIPLE_CHOICE,
+    LearningTrajectoryTaskTemplateKind.MATCHING_DEFINITION: LearningTrajectoryTaskType.MATCHING,
+    LearningTrajectoryTaskTemplateKind.MANUAL: None,
+    LearningTrajectoryTaskTemplateKind.RELATION_CHOICE: LearningTrajectoryTaskType.SINGLE_CHOICE,
+    LearningTrajectoryTaskTemplateKind.REQUIRES_ORDERING: LearningTrajectoryTaskType.ORDERING,
+    LearningTrajectoryTaskTemplateKind.CONTRAST_CHOICE: LearningTrajectoryTaskType.SINGLE_CHOICE,
+    LearningTrajectoryTaskTemplateKind.TEXT_DEFINITION: LearningTrajectoryTaskType.TEXT,
+}
+
+MANUAL_ALLOWED_TASK_TYPES = {
+    LearningTrajectoryTaskType.SINGLE_CHOICE,
+    LearningTrajectoryTaskType.MULTIPLE_CHOICE,
+    LearningTrajectoryTaskType.MATCHING,
+}
+
+DEFAULT_ELEMENT_TARGET_MASTERY = 70
+BASIC_TASK_MAX_DIFFICULTY = 40
+ADVANCED_UNLOCK_MASTERY = 55
+MASTERY_UPDATE_FACTOR = 0.45
+SUCCESS_SCORE_THRESHOLD = 60
 
 
 def bad_request(detail: str) -> HTTPException:
@@ -213,14 +251,163 @@ def _element_description(element: KnowledgeElement) -> str:
     return (element.description or element.name).strip()
 
 
-def build_content_from_checked_elements(
+def _relation_pair_set(
+    relations: list[KnowledgeElementRelation],
+    relation_types: set[KnowledgeElementRelationType],
+) -> set[tuple[str, str]]:
+    return {
+        (str(relation.source_element_id), str(relation.target_element_id))
+        for relation in relations
+        if relation.relation_type in relation_types
+    }
+
+
+def _build_single_choice_definition_content(
+    primary_element: KnowledgeElement,
+    related_elements: list[KnowledgeElement],
+) -> dict[str, Any]:
+    return {
+        "options": [
+            {
+                "id": str(primary_element.id),
+                "text": _element_description(primary_element),
+                "is_correct": True,
+            },
+            *[
+                {
+                    "id": str(element.id),
+                    "text": _element_description(element),
+                    "is_correct": False,
+                }
+                for element in related_elements
+            ],
+        ],
+        "correct_element_id": str(primary_element.id),
+    }
+
+
+def _build_single_choice_term_content(
+    primary_element: KnowledgeElement,
+    related_elements: list[KnowledgeElement],
+) -> dict[str, Any]:
+    return {
+        "options": [
+            {
+                "id": str(primary_element.id),
+                "text": primary_element.name,
+                "is_correct": True,
+            },
+            *[
+                {
+                    "id": str(element.id),
+                    "text": element.name,
+                    "is_correct": False,
+                }
+                for element in related_elements
+            ],
+        ],
+        "correct_element_id": str(primary_element.id),
+    }
+
+
+def _build_multiple_choice_relation_content(
+    primary_element: KnowledgeElement,
+    related_elements: list[KnowledgeElement],
+    relations: list[KnowledgeElementRelation],
+    relation_types: set[KnowledgeElementRelationType],
+) -> dict[str, Any]:
+    relation_pairs = _relation_pair_set(relations, relation_types)
+    correct_related_ids: list[str] = []
+    distractor_ids: list[str] = []
+
+    for element in related_elements:
+        element_id = str(element.id)
+        if (
+            (str(primary_element.id), element_id) in relation_pairs
+            or (element_id, str(primary_element.id)) in relation_pairs
+        ):
+            correct_related_ids.append(element_id)
+        else:
+            distractor_ids.append(element_id)
+
+    if not correct_related_ids:
+        raise bad_request("Для выбранного шаблона не найдено ни одного правильного варианта среди выбранных элементов темы.")
+    if not distractor_ids:
+        raise bad_request("Для выбранного шаблона нужен минимум один дополнительный элемент-дистрактор.")
+
+    element_by_id = {str(element.id): element for element in related_elements}
+    option_ids = [*correct_related_ids, *distractor_ids]
+    return {
+        "options": [
+            {
+                "id": element_id,
+                "text": element_by_id[element_id].name,
+                "is_correct": element_id in correct_related_ids,
+            }
+            for element_id in option_ids
+        ],
+        "correct_related_element_ids": correct_related_ids,
+        "distractor_element_ids": distractor_ids,
+    }
+
+
+def build_content_from_template(
+    template_kind: LearningTrajectoryTaskTemplateKind,
     task_type: LearningTrajectoryTaskType,
     primary_element: KnowledgeElement,
     related_elements: list[KnowledgeElement],
     content: dict[str, Any],
+    template_relations: list[KnowledgeElementRelation] | None = None,
 ) -> dict[str, Any]:
     checked_elements = [primary_element, *related_elements]
     element_by_id = {str(element.id): element for element in checked_elements}
+
+    if template_kind == LearningTrajectoryTaskTemplateKind.DEFINITION_CHOICE:
+        if not related_elements:
+            raise bad_request("Для шаблона выбора правильного определения нужен минимум один дополнительный элемент темы.")
+        return _build_single_choice_definition_content(primary_element, related_elements)
+
+    if template_kind == LearningTrajectoryTaskTemplateKind.TERM_CHOICE:
+        if not related_elements:
+            raise bad_request("Для шаблона выбора понятия по определению нужен минимум один дополнительный элемент темы.")
+        return _build_single_choice_term_content(primary_element, related_elements)
+
+    if template_kind == LearningTrajectoryTaskTemplateKind.MATCHING_DEFINITION:
+        if not related_elements:
+            raise bad_request("Для сопоставления понятий и определений нужен минимум один дополнительный элемент темы.")
+        return {
+            "pairs": [
+                {
+                    "id": str(element.id),
+                    "left": element.name,
+                    "right": _element_description(element),
+                }
+                for element in checked_elements
+            ]
+        }
+
+    if template_kind == LearningTrajectoryTaskTemplateKind.PROPERTY_MULTIPLE:
+        if len(related_elements) < 2:
+            raise bad_request("Для выбора характеристик объекта нужны минимум два дополнительных элемента темы.")
+        return _build_multiple_choice_relation_content(
+            primary_element=primary_element,
+            related_elements=related_elements,
+            relations=template_relations or [],
+            relation_types={KnowledgeElementRelationType.PROPERTY_OF},
+        )
+
+    if template_kind == LearningTrajectoryTaskTemplateKind.CONTAINS_MULTIPLE:
+        if len(related_elements) < 2:
+            raise bad_request("Для шаблона частей целого нужны минимум два дополнительных элемента темы.")
+        return _build_multiple_choice_relation_content(
+            primary_element=primary_element,
+            related_elements=related_elements,
+            relations=template_relations or [],
+            relation_types={
+                KnowledgeElementRelationType.CONTAINS,
+                KnowledgeElementRelationType.PART_OF,
+            },
+        )
 
     if task_type == LearningTrajectoryTaskType.SINGLE_CHOICE:
         if len(checked_elements) < 2:
@@ -259,8 +446,7 @@ def build_content_from_checked_elements(
         if unknown_ids:
             raise bad_request("Все правильные связанные элементы и дистракторы должны быть выбраны в задании.")
 
-        correct_ids = {str(primary_element.id), *correct_related_ids}
-        option_ids = [str(primary_element.id), *sorted(correct_related_ids), *sorted(distractor_ids)]
+        option_ids = [*sorted(correct_related_ids), *sorted(distractor_ids)]
         if len(set(option_ids)) < 2:
             raise bad_request("Для задания с несколькими вариантами нужно минимум два варианта ответа.")
 
@@ -269,7 +455,7 @@ def build_content_from_checked_elements(
                 {
                     "id": element_id,
                     "text": element_by_id[element_id].name,
-                    "is_correct": element_id in correct_ids,
+                    "is_correct": element_id in correct_related_ids,
                 }
                 for element_id in option_ids
             ],
@@ -338,11 +524,22 @@ def normalize_task_content(
     raise bad_request("Неподдерживаемый тип задания.")
 
 
-def validate_manual_task_payload(
+def validate_task_payload(
     trajectory: LearningTrajectory,
     payload: LearningTrajectoryTaskCreate,
+    template_relations: list[KnowledgeElementRelation] | None = None,
 ) -> dict[str, Any]:
     ensure_task_write_allowed(trajectory)
+
+    if payload.template_kind not in ACTIVE_TASK_TEMPLATE_KINDS:
+        raise bad_request("Выбранный шаблон задания больше не поддерживается в редакторе.")
+
+    fixed_task_type = FIXED_TASK_TYPE_BY_TEMPLATE.get(payload.template_kind)
+    if fixed_task_type is not None and payload.task_type != fixed_task_type:
+        raise bad_request("Для выбранного шаблона тип задания фиксирован и не может быть изменён.")
+    if payload.template_kind == LearningTrajectoryTaskTemplateKind.MANUAL:
+        if payload.task_type not in MANUAL_ALLOWED_TASK_TYPES:
+            raise bad_request("В ручном шаблоне сейчас доступны только один выбор, несколько выборов и сопоставление.")
 
     trajectory_topic = next(
         (item for item in trajectory.topics if item.topic_id == payload.topic_id),
@@ -367,11 +564,10 @@ def validate_manual_task_payload(
         raise bad_request("Ручные задания пока доступны только для компетенции «Знать».")
 
     allowed_related_elements: dict[UUID, KnowledgeElement] = {}
-    for trajectory_topic_item in trajectory.topics:
-        for trajectory_element in trajectory_topic_item.elements:
-            element = trajectory_element.element
-            if element.competence_type == CompetenceType.KNOW:
-                allowed_related_elements[element.id] = element
+    for trajectory_element in trajectory_topic.elements:
+        element = trajectory_element.element
+        if element.competence_type == CompetenceType.KNOW:
+            allowed_related_elements[element.id] = element
 
     if payload.primary_element_id in payload.related_element_ids:
         raise bad_request("Ключевой элемент не нужно дублировать среди связанных элементов.")
@@ -389,19 +585,21 @@ def validate_manual_task_payload(
 
     return normalize_task_content(
         payload.task_type,
-        build_content_from_checked_elements(
+        build_content_from_template(
+            template_kind=payload.template_kind,
             task_type=payload.task_type,
             primary_element=primary_element,
             related_elements=related_elements,
             content=payload.content,
+            template_relations=template_relations,
         ),
     )
 
 
 def merge_mastery_value(current_value: int | None, score: int) -> int:
-    if current_value is None:
-        return score
-    return round((current_value + score) / 2)
+    baseline = current_value if current_value is not None else 0
+    next_value = baseline + (score - baseline) * MASTERY_UPDATE_FACTOR
+    return max(0, min(100, round(next_value)))
 
 
 def build_teacher_task_content(task: LearningTrajectoryTask) -> dict[str, Any]:
@@ -619,6 +817,120 @@ def build_relation_maps(
     return outgoing_by_source, degree_by_element_id
 
 
+def task_target_mastery(task: LearningTrajectoryTask) -> int:
+    trajectory_element = next(
+        (
+            element
+            for element in task.trajectory_topic.elements
+            if element.element_id == task.primary_element_id
+        ),
+        None,
+    )
+    if trajectory_element is None:
+        trajectory_topic = next(
+            (
+                topic
+                for topic in task.trajectory.topics
+                if topic.id == task.trajectory_topic_id
+            ),
+            None,
+        )
+        if trajectory_topic is not None:
+            trajectory_element = next(
+                (
+                    element
+                    for element in trajectory_topic.elements
+                    if element.element_id == task.primary_element_id
+                ),
+                None,
+            )
+    if trajectory_element is None or trajectory_element.threshold <= 0:
+        return DEFAULT_ELEMENT_TARGET_MASTERY
+    return trajectory_element.threshold
+
+
+def task_is_basic(task: LearningTrajectoryTask) -> bool:
+    return task.difficulty <= BASIC_TASK_MAX_DIFFICULTY
+
+
+def task_needs_more_practice(
+    task: LearningTrajectoryTask,
+    mastery_by_element_id: dict[UUID, int],
+    *,
+    ignore_target_mastery: bool = False,
+) -> bool:
+    current_mastery = mastery_by_element_id.get(task.primary_element_id, 0)
+    if ignore_target_mastery:
+        return current_mastery < 100
+    return current_mastery < task_target_mastery(task)
+
+
+def task_stage_unlocked(
+    task: LearningTrajectoryTask,
+    mastery_by_element_id: dict[UUID, int],
+    sibling_tasks: list[LearningTrajectoryTask],
+    progress_by_task_id: dict[UUID, StudentTaskProgress],
+    *,
+    ignore_stage_gate: bool = False,
+) -> bool:
+    if ignore_stage_gate or task_is_basic(task):
+        return True
+
+    primary_mastery = mastery_by_element_id.get(task.primary_element_id, 0)
+    if primary_mastery >= ADVANCED_UNLOCK_MASTERY:
+        return True
+
+    for sibling in sibling_tasks:
+        if sibling.id == task.id or not task_is_basic(sibling):
+            continue
+        sibling_progress = progress_by_task_id.get(sibling.id)
+        if sibling_progress and (sibling_progress.best_score or 0) >= SUCCESS_SCORE_THRESHOLD:
+            return True
+
+    return False
+
+
+def build_adaptive_candidate_pool(
+    tasks: list[LearningTrajectoryTask],
+    mastery_by_element_id: dict[UUID, int],
+    progress_by_task_id: dict[UUID, StudentTaskProgress],
+    outgoing_by_source: dict[UUID, list[KnowledgeElementRelation]],
+    *,
+    ignore_stage_gate: bool = False,
+    ignore_prerequisites: bool = False,
+    ignore_target_mastery: bool = False,
+) -> list[tuple[LearningTrajectoryTask, StudentTaskProgress | None]]:
+    tasks_by_primary_element: dict[UUID, list[LearningTrajectoryTask]] = defaultdict(list)
+    for task in tasks:
+        tasks_by_primary_element[task.primary_element_id].append(task)
+
+    candidates: list[tuple[LearningTrajectoryTask, StudentTaskProgress | None]] = []
+    for task in tasks:
+        if not ignore_prerequisites and not prerequisites_ready(task, mastery_by_element_id, outgoing_by_source):
+            continue
+
+        if not task_needs_more_practice(
+            task,
+            mastery_by_element_id,
+            ignore_target_mastery=ignore_target_mastery,
+        ):
+            continue
+
+        progress = progress_by_task_id.get(task.id)
+        if not task_stage_unlocked(
+            task,
+            mastery_by_element_id,
+            tasks_by_primary_element.get(task.primary_element_id, []),
+            progress_by_task_id,
+            ignore_stage_gate=ignore_stage_gate,
+        ):
+            continue
+
+        candidates.append((task, progress))
+
+    return candidates
+
+
 def prerequisites_ready(
     task: LearningTrajectoryTask,
     mastery_by_element_id: dict[UUID, int],
@@ -656,19 +968,22 @@ def task_priority(
     progress: StudentTaskProgress | None,
 ) -> float:
     mastery_value = mastery_by_element_id.get(task.primary_element_id, 0)
-    completion_penalty = 0.0
-    if progress is not None and progress.status == StudentTaskProgressStatus.COMPLETED:
-        completion_penalty = 0.15
+    target_mastery = task_target_mastery(task)
+    mastery_gap = max(0, target_mastery - mastery_value)
+    mastery_gap_score = min(1.0, mastery_gap / max(target_mastery, 1))
+    attempts_count = progress.attempts_count if progress and progress.attempts_count else 0
+    novelty_score = max(0.25, 1 - attempts_count * 0.18)
+    stage_fit = 1.0 if task_is_basic(task) else (1.0 if mastery_value >= ADVANCED_UNLOCK_MASTERY else 0.7)
+    recovery_score = 1.0 if progress and (progress.last_score or 0) < SUCCESS_SCORE_THRESHOLD else 0.55
 
     return max(
         0.0,
-        (
-            0.45 * low_mastery_score(mastery_value)
-            + 0.25 * graph_importance(task.primary_element_id, degree_by_element_id)
-            + 0.20 * difficulty_fit(task, mastery_value)
-            + 0.10 * (1.0 if progress is None else max(0.2, 1 - progress.attempts_count * 0.2))
-        )
-        - completion_penalty,
+        0.35 * mastery_gap_score
+        + 0.20 * graph_importance(task.primary_element_id, degree_by_element_id)
+        + 0.15 * difficulty_fit(task, mastery_value)
+        + 0.15 * novelty_score
+        + 0.15 * stage_fit
+        + 0.05 * recovery_score,
     )
 
 
@@ -680,27 +995,22 @@ def select_next_task(
     """Simple, replaceable selector for adaptive control.
 
     Policy:
-    1. prefer not completed tasks;
-    2. then weaker primary element mastery;
-    3. then fewer attempts;
-    4. then task difficulty closer to current mastery;
-    5. then more graph-connected elements.
+    1. tasks are prefiltered to elements that still need practice;
+    2. weaker elements are prioritized;
+    3. easier tasks lead until basic mastery is reached;
+    4. repeated attempts gradually lose priority.
     """
     if not candidates:
         return None
 
     def sort_key(item: tuple[LearningTrajectoryTask, StudentTaskProgress | None]):
         task, progress = item
-        mastery_value = mastery_by_element_id.get(task.primary_element_id, 0)
-        is_completed = progress is not None and progress.status == StudentTaskProgressStatus.COMPLETED
         attempts_count = progress.attempts_count if progress is not None else 0
-        difficulty_distance = abs(task.difficulty - mastery_value)
+        priority = task_priority(task, mastery_by_element_id, degree_by_element_id, progress)
         return (
-            1 if is_completed else 0,
-            mastery_value,
+            -priority,
             attempts_count,
-            difficulty_distance,
-            -graph_importance(task.primary_element_id, degree_by_element_id),
+            task.difficulty,
             task.created_at,
         )
 

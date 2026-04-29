@@ -21,6 +21,7 @@ export type RelationDirectionType = "one_direction" | "two_direction";
 export type Discipline = {
   id: string;
   name: string;
+  slug: string;
   knowledge_graph_version: number;
   teacher_ids: string[];
   group_ids: string[];
@@ -165,6 +166,7 @@ export type LearningTrajectoryTaskType =
 export type LearningTrajectoryTaskTemplateKind =
   | "definition_choice"
   | "term_choice"
+  | "property_multiple"
   | "relation_choice"
   | "requires_ordering"
   | "contains_multiple"
@@ -303,6 +305,9 @@ export type StudentTopicControl = {
   topic_threshold: number;
   topic_mastery: number;
   is_unlocked: boolean;
+   has_tasks: boolean;
+   continue_practice_available: boolean;
+   is_extra_practice: boolean;
   elements: StudentTopicControlElement[];
   current_task: StudentAssignedTask | null;
 };
@@ -411,6 +416,8 @@ export type SceneNodeData = {
   sequenceNumber?: number;
   progressValue?: number;
   progressLabel?: string;
+  onCardClick?: () => void;
+  onHintClick?: () => void;
   onSecondaryHintClick?: () => void;
 };
 
