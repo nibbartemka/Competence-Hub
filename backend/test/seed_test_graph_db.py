@@ -18,6 +18,7 @@ if str(ROOT_DIR) not in sys.path:
     sys.path.insert(0, str(ROOT_DIR))
 
 from app.core import Base
+from app.core.slugs import transliterate_to_slug_base
 from app.models import (
     Discipline,
     Group,
@@ -164,7 +165,12 @@ def seed_relation_catalog(session: Session) -> dict[KnowledgeElementRelationType
 
 
 def seed_data(session: Session) -> None:
-    discipline = Discipline(name="Теория графов. Демонстрационный контур", knowledge_graph_version=1)
+    discipline_name = "Теория графов. Демонстрационный контур"
+    discipline = Discipline(
+        name=discipline_name,
+        slug=transliterate_to_slug_base(discipline_name),
+        knowledge_graph_version=1,
+    )
     session.add(discipline)
     session.flush()
 
