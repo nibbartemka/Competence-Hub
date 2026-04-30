@@ -256,6 +256,7 @@ export default function TrajectoryGraphBuilder() {
   const [elementThresholds, setElementThresholds] = useState<Record<string, number>>({});
   const [view, setView] = useState<ViewMode>({ level: "topics" });
   const [selectedNodeId, setSelectedNodeId] = useState("");
+  const [relationshipFocusEnabled, setRelationshipFocusEnabled] = useState(false);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [exportingImage, setExportingImage] = useState(false);
@@ -641,8 +642,13 @@ export default function TrajectoryGraphBuilder() {
       };
     }
 
-    return buildFocusedScene(preparedScene, selectedNodeId);
-  }, [preparedScene, selectedNodeId]);
+    const focusedNodeId =
+      relationshipFocusEnabled && view.level === "elements"
+        ? selectedNodeId
+        : NO_NODE_SELECTION;
+
+    return buildFocusedScene(preparedScene, focusedNodeId);
+  }, [preparedScene, relationshipFocusEnabled, selectedNodeId, view.level]);
 
   const graphNodeRuntimeState = useMemo<GraphNodeRuntimeState>(() => {
     const selectedNodeIds = new Set<string>();
@@ -912,6 +918,12 @@ export default function TrajectoryGraphBuilder() {
       setDraftRestored(true);
     }
   }, [disciplineId, draftRestored]);
+
+  useEffect(() => {
+    if (view.level !== "elements" && relationshipFocusEnabled) {
+      setRelationshipFocusEnabled(false);
+    }
+  }, [relationshipFocusEnabled, view.level]);
 
   useEffect(() => {
     if (!disciplineId || !draftRestored) return;
@@ -1624,6 +1636,18 @@ export default function TrajectoryGraphBuilder() {
                 {detail.subtitle ? <p className="card__lead">{detail.subtitle}</p> : null}
                 {detail.description ? <p className="card__text">{detail.description}</p> : null}
 
+                {false ? (
+                  <div className="detail-focus-toggle">
+                    <button
+                      className={relationshipFocusEnabled ? "primary-button" : "secondary-button"}
+                      onClick={() => setRelationshipFocusEnabled((current) => !current)}
+                      type="button"
+                    >
+                      {relationshipFocusEnabled ? "Скрыть связи" : "Показать связи"}
+                    </button>
+                  </div>
+                ) : null}
+
                 <div className="chip-row">
                   {detail.chips.map((chip) => (
                     <span className={`chip chip--${chip.tone}`} key={chip.label}>
@@ -1708,6 +1732,15 @@ export default function TrajectoryGraphBuilder() {
                 >
                   {exportingImage ? "Сохраняю..." : "Сохранить PNG"}
                 </button>
+                {view.level === "elements" ? (
+                  <button
+                    className={relationshipFocusEnabled ? "primary-button" : "secondary-button"}
+                    onClick={() => setRelationshipFocusEnabled((current) => !current)}
+                    type="button"
+                  >
+                    {relationshipFocusEnabled ? "Скрыть связи" : "Показать связи"}
+                  </button>
+                ) : null}
                 {view.level === "elements" ? (
                   <button
                     className="ghost-button"

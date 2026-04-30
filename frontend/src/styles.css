@@ -3729,6 +3729,10 @@ textarea {
   color: rgba(93, 104, 117, 0.78) !important;
 }
 
+.detail-focus-toggle {
+  margin: 0 0 14px;
+}
+
 @keyframes trajectoryNodePop {
   from {
     transform: scale(0.97);
