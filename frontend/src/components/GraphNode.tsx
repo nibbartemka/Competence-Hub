@@ -109,6 +109,10 @@ export function GraphNode({ node }: RGNodeSlotProps) {
     hintAction?.();
   };
 
+  const handleMouseDownStop = (event: MouseEvent<HTMLElement>) => {
+    event.stopPropagation();
+  };
+
   const handleSecondaryHintClick = (event: MouseEvent<HTMLSpanElement>) => {
     event.stopPropagation();
     secondaryHintAction?.();
@@ -173,6 +177,7 @@ export function GraphNode({ node }: RGNodeSlotProps) {
               <span
                 className="graph-node__hint"
                 onClick={handleHintClick}
+                onMouseDown={handleMouseDownStop}
                 role="button"
                 tabIndex={0}
                 onKeyDown={handleActionKeyDown(hintAction)}
@@ -185,6 +190,7 @@ export function GraphNode({ node }: RGNodeSlotProps) {
               <span
                 className="graph-node__hint graph-node__hint--secondary"
                 onClick={handleSecondaryHintClick}
+                onMouseDown={handleMouseDownStop}
                 role="button"
                 tabIndex={0}
                 onKeyDown={handleActionKeyDown(secondaryHintAction)}

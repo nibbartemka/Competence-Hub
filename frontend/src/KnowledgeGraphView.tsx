@@ -2,7 +2,6 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { AnimatePresence, motion } from "motion/react";
 import { useNavigate } from "react-router-dom";
 import RelationGraph, {
-    type RGNode,
     type RGOptions,
     type RelationGraphComponent,
 } from "relation-graph-react";
@@ -51,9 +50,9 @@ const GRAPH_OPTIONS: RGOptions = {
     defaultLineFontColor: "#38527d",
     defaultNodeBorderWidth: 0,
     defaultShowLineLabel: true,
-    moveToCenterWhenRefresh: true,
-    zoomToFitWhenRefresh: true,
-    useAnimationWhenRefresh: true,
+    moveToCenterWhenRefresh: false,
+    zoomToFitWhenRefresh: false,
+    useAnimationWhenRefresh: false,
     useAnimationWhenExpanded: true,
     allowShowMiniToolBar: false,
     allowShowFullscreenMenu: false,
@@ -241,18 +240,12 @@ export function KnowledgeGraphView({ disciplineId }: KnowledgeGraphViewProps) {
         );
     }, [allElements, resolvedDisciplineId, topicKnowledgeLinks]);
 
-    const { scene, dimmedNodeIds } = useMemo(() => {
+    const preparedScene = useMemo(() => {
         if (!graphData) {
-            return {
-                scene: null as GraphScene | null,
-                dimmedNodeIds: new Set<string>(),
-            };
+            return null as GraphScene | null;
         }
 
-        const preferredNodeId = hasConcreteNodeSelection(selectedNodeId)
-            ? selectedNodeId
-            : undefined;
-        const baseScene = buildSceneFromView(graphData, view, preferredNodeId);
+        const baseScene = buildSceneFromView(graphData, view);
 
         const nextScene = {
             ...baseScene,
@@ -310,14 +303,31 @@ export function KnowledgeGraphView({ disciplineId }: KnowledgeGraphViewProps) {
             ? filterElementSceneByCompetence(nextScene, competenceFilters)
             : nextScene;
 
-        return buildFocusedScene(filteredScene, selectedNodeId);
-    }, [competenceFilters, graphData, selectedNodeId, view]);
+        return filteredScene;
+    }, [competenceFilters, graphData, view]);
+
+    const { scene, dimmedNodeIds } = useMemo(() => {
+        if (!preparedScene) {
+            return {
+                scene: null as GraphScene | null,
+                dimmedNodeIds: new Set<string>(),
+            };
+        }
+
+        return buildFocusedScene(preparedScene, selectedNodeId);
+    }, [preparedScene, selectedNodeId]);
 
     const graphNodeRuntimeState = useMemo<GraphNodeRuntimeState>(
         () => ({
+            selectedNodeIds: hasConcreteNodeSelection(selectedNodeId)
+                ? new Set<string>([selectedNodeId])
+                : new Set<string>(),
             dimmedNodeIds,
+            cardActionByNodeId: new Map(
+                (scene?.nodes ?? []).map((node) => [node.id, () => setSelectedNodeId(node.id)]),
+            ),
         }),
-        [dimmedNodeIds],
+        [dimmedNodeIds, scene, selectedNodeId],
     );
     const {
         layoutLoading,
@@ -411,10 +421,10 @@ export function KnowledgeGraphView({ disciplineId }: KnowledgeGraphViewProps) {
                 if (cancelled) return;
 
                 setGraphFetchDebug(debug);
-                const nextScene = buildTopicScene(nextGraph);
-                setGraphData(nextGraph);
-                setView({ level: "topics" });
-                setSelectedNodeId(nextScene.defaultSelectedNodeId);
+        const nextScene = buildTopicScene(nextGraph);
+        setGraphData(nextGraph);
+        setView({ level: "topics" });
+        setSelectedNodeId(nextScene.defaultSelectedNodeId);
             } catch (loadError) {
                 if (cancelled) return;
                 setError(extractErrorMessage(loadError));
@@ -448,28 +458,16 @@ export function KnowledgeGraphView({ disciplineId }: KnowledgeGraphViewProps) {
         }
     }, [scene, selectedNodeId]);
 
-    useEffect(() => {
-        if (!graphRef.current) return;
-
-        const graphInstance = graphRef.current.getInstance();
-        if (!hasConcreteNodeSelection(selectedNodeId)) {
-            graphInstance.setCheckedNode("");
-            return;
-        }
-
-        graphInstance.setCheckedNode(selectedNodeId);
-    }, [selectedNodeId]);
-
     async function applyView(nextView: ViewMode, preferredNodeId?: string) {
         if (!graphData) return;
 
         let activeGraph = graphData;
-        let nextScene = buildSceneFromView(activeGraph, nextView, preferredNodeId);
+        let nextScene = buildSceneFromView(activeGraph, nextView);
 
         if (nextView.level === "elements" && nextScene.key.startsWith("missing-topic:") && disciplineId) {
             const { graph: freshGraph } = await fetchKnowledgeGraphDirect(disciplineId);
             activeGraph = freshGraph;
-            nextScene = buildSceneFromView(freshGraph, nextView, preferredNodeId);
+            nextScene = buildSceneFromView(freshGraph, nextView);
             setGraphData(freshGraph);
         }
 
@@ -480,11 +478,6 @@ export function KnowledgeGraphView({ disciplineId }: KnowledgeGraphViewProps) {
     function handleDisciplineChange(nextDisciplineId: string) {
         if (nextDisciplineId === disciplineId) return;
         navigate(`/disciplines/${nextDisciplineId}/knowledge`);
-    }
-
-    function handleNodeClick(node: RGNode) {
-        setSelectedNodeId(node.id);
-        return false;
     }
 
     function handleCanvasClick() {
@@ -523,7 +516,7 @@ export function KnowledgeGraphView({ disciplineId }: KnowledgeGraphViewProps) {
             nextGraph.topics.some((topic) => topic.id === view.topicId)
             ? view
             : { level: "topics" as const };
-        const nextScene = buildSceneFromView(nextGraph, nextView, selectedNodeId || undefined);
+        const nextScene = buildSceneFromView(nextGraph, nextView);
 
         setGraphFetchDebug(debug);
         setGraphData(nextGraph);
@@ -759,7 +752,6 @@ export function KnowledgeGraphView({ disciplineId }: KnowledgeGraphViewProps) {
                                                 onCanvasClick={handleCanvasClick}
                                                 onCanvasDragEnd={onCanvasDragEnd}
                                                 onCanvasDragging={onCanvasDragging}
-                                                onNodeClick={handleNodeClick}
                                                 onNodeDragEnd={onNodeDragEnd}
                                                 onNodeDragging={onNodeDragging}
                                                 onZoomEnd={onZoomEnd}

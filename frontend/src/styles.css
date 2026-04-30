@@ -154,6 +154,53 @@ textarea {
   width: var(--page-content-width);
 }
 
+.immersive-page--knowledge {
+  --page-side-gutter: clamp(18px, 3.5vw, 84px);
+  --page-max-width: 1880px;
+}
+
+.immersive-page--knowledge .immersive-page__hero,
+.immersive-page--knowledge .immersive-page__grid,
+.immersive-page--knowledge .immersive-page__status {
+  width: min(var(--page-max-width), calc(100vw - (var(--page-side-gutter) * 2)));
+}
+
+.immersive-page--knowledge .workspace {
+  grid-template-columns: minmax(300px, 340px) minmax(0, 1fr);
+  gap: 16px;
+  align-items: start;
+}
+
+.immersive-page--knowledge .hero {
+  padding: 20px 28px;
+}
+
+.immersive-page--knowledge .hero__controls {
+  min-width: min(380px, 100%);
+  gap: 12px;
+}
+
+.immersive-page--knowledge .hero h1 {
+  margin: 4px 0 8px;
+  font-size: clamp(1.9rem, 3vw, 2.85rem);
+}
+
+.immersive-page--knowledge .inspector {
+  gap: 16px;
+}
+
+.immersive-page--knowledge .card {
+  padding: 20px;
+}
+
+.immersive-page--knowledge .graph-stage {
+  min-height: calc(100vh - 220px);
+}
+
+.immersive-page--knowledge .graph-surface {
+  min-height: calc(100vh - 340px);
+}
+
 .hero {
   display: flex;
   justify-content: space-between;
@@ -2974,19 +3021,28 @@ textarea {
 
 .trajectory-page {
   background:
-    radial-gradient(circle at 10% 8%, rgba(19, 117, 91, 0.12), transparent 28%),
-    radial-gradient(circle at 92% 18%, rgba(45, 87, 191, 0.12), transparent 30%),
-    var(--page-bg);
+      radial-gradient(circle at 10% 8%, rgba(19, 117, 91, 0.12), transparent 28%),
+      radial-gradient(circle at 92% 18%, rgba(45, 87, 191, 0.12), transparent 30%),
+      var(--page-bg);
+  --page-side-gutter: clamp(12px, 2vw, 34px);
+  --page-max-width: 1960px;
 }
 
 .trajectory-hero .hero__subtitle {
   max-width: 720px;
 }
 
+.trajectory-page .hero,
+.trajectory-page .trajectory-workspace {
+  width: min(var(--page-max-width), calc(100vw - (var(--page-side-gutter) * 2)));
+  margin-left: auto;
+  margin-right: auto;
+}
+
 .trajectory-workspace {
   display: grid;
-  grid-template-columns: minmax(320px, 430px) minmax(0, 1fr);
-  gap: 22px;
+  grid-template-columns: minmax(280px, 340px) minmax(0, 1fr);
+  gap: 16px;
   margin-top: 22px;
 }
 
@@ -2994,6 +3050,7 @@ textarea {
   display: grid;
   align-content: start;
   gap: 18px;
+  max-width: 340px;
 }
 
 .trajectory-settings {
@@ -3155,7 +3212,7 @@ textarea {
 .trajectory-graph-column {
   display: grid;
   align-content: start;
-  gap: 18px;
+  gap: 16px;
   min-width: 0;
 }
 
@@ -3230,11 +3287,11 @@ textarea {
 }
 
 .trajectory-graph-stage {
-  min-height: calc(100vh - 84px);
+  min-height: calc(100vh - 260px);
 }
 
 .trajectory-graph-stage .graph-surface {
-  min-height: calc(100vh - 210px);
+  min-height: calc(100vh - 390px);
 }
 
 .trajectory-toolbar-actions {
@@ -3648,6 +3705,28 @@ textarea {
 .trajectory-page .graph-node--disabled:not(.graph-node--selected) .graph-node__subtitle,
 .trajectory-page .graph-node--disabled:not(.graph-node--selected) .graph-node__description {
   color: #eaf2ff;
+}
+
+.trajectory-page .graph-node--dimmed:not(.graph-node--selected) {
+  opacity: 0.34 !important;
+  filter: saturate(0.2) grayscale(0.14) !important;
+  border-color: rgba(114, 126, 141, 0.24) !important;
+  background:
+    linear-gradient(180deg, rgba(242, 246, 250, 0.82), rgba(228, 234, 240, 0.74)) !important;
+  box-shadow: 0 12px 24px rgba(54, 67, 83, 0.08) !important;
+}
+
+.trajectory-page .graph-node--dimmed:not(.graph-node--selected) .graph-node__badge,
+.trajectory-page .graph-node--dimmed:not(.graph-node--selected) .graph-node__hint,
+.trajectory-page .graph-node--dimmed:not(.graph-node--selected) .graph-node__metrics span {
+  background: rgba(111, 122, 136, 0.12) !important;
+  color: rgba(86, 97, 111, 0.78) !important;
+}
+
+.trajectory-page .graph-node--dimmed:not(.graph-node--selected) .graph-node__title,
+.trajectory-page .graph-node--dimmed:not(.graph-node--selected) .graph-node__subtitle,
+.trajectory-page .graph-node--dimmed:not(.graph-node--selected) .graph-node__description {
+  color: rgba(93, 104, 117, 0.78) !important;
 }
 
 @keyframes trajectoryNodePop {

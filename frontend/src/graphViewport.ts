@@ -81,6 +81,60 @@ function buildSceneGraphData(
   };
 }
 
+function buildSceneStructureSignature(scene: ViewportScene) {
+  const nodesSignature = scene.nodes
+    .map((node) => {
+      const data =
+        node.data && typeof node.data === "object"
+          ? (node.data as Record<string, unknown>)
+          : null;
+      return JSON.stringify({
+        id: node.id,
+        x: node.x ?? null,
+        y: node.y ?? null,
+        width: node.width ?? null,
+        height: node.height ?? null,
+        text: ((node as unknown as Record<string, unknown>).text ?? null),
+        data: data
+          ? {
+              entity: data.entity ?? null,
+              title: data.title ?? null,
+              subtitle: data.subtitle ?? null,
+              description: data.description ?? null,
+              metrics: data.metrics ?? null,
+              chips: data.chips ?? null,
+              badge: data.badge ?? null,
+              badgeTone: data.badgeTone ?? null,
+              hint: data.hint ?? null,
+              hintTone: data.hintTone ?? null,
+              sequenceNumber: data.sequenceNumber ?? null,
+              isDisabled: data.isDisabled ?? null,
+              lockState: data.lockState ?? null,
+            }
+          : null,
+      });
+    })
+    .join("|");
+
+  const linesSignature = scene.lines
+    .map((line) =>
+      JSON.stringify({
+        id: line.id ?? null,
+        from: line.from,
+        to: line.to,
+        text: line.text ?? null,
+        color: line.color ?? null,
+        fontColor: line.fontColor ?? null,
+        lineWidth: line.lineWidth ?? null,
+        dashType: line.dashType ?? null,
+        animation: line.animation ?? null,
+      }),
+    )
+    .join("|");
+
+  return `${scene.key}::${scene.rootId}::${nodesSignature}::${linesSignature}`;
+}
+
 function restoreSceneLayout(
   graphComponent: RelationGraphComponent,
   scene: ViewportScene,
@@ -95,18 +149,9 @@ function restoreSceneLayout(
         graphInstance.setZoom(layout.zoom);
       }
     }
-
-    if (scene.defaultSelectedNodeId) {
-      graphInstance.setCheckedNode(scene.defaultSelectedNodeId);
-    }
   };
 
-  if (layout) {
-    graphComponent.setJsonData(graphData, false, afterRefresh);
-    return;
-  }
-
-  graphComponent.setJsonData(graphData, afterRefresh);
+  graphComponent.setJsonData(graphData, false, afterRefresh);
 }
 
 async function persistLayoutPayload(
@@ -139,6 +184,7 @@ export function usePersistedGraphViewport({
   const persistedLayoutsRef = useRef<Map<string, GraphLayoutPayload>>(new Map());
   const runtimeLayoutsRef = useRef<Map<string, GraphLayoutPayload>>(new Map());
   const currentSceneKeyRef = useRef("");
+  const currentSceneStructureSignatureRef = useRef("");
   const saveTimerRef = useRef<number | null>(null);
 
   useEffect(() => {
@@ -146,6 +192,7 @@ export function usePersistedGraphViewport({
       persistedLayoutsRef.current = new Map();
       runtimeLayoutsRef.current = new Map();
       currentSceneKeyRef.current = "";
+      currentSceneStructureSignatureRef.current = "";
       setLayoutError("");
       setLayoutLoading(false);
       setLayoutVersion((current) => current + 1);
@@ -191,13 +238,15 @@ export function usePersistedGraphViewport({
   }, [enabled, scopeId, scopeType]);
 
   useEffect(() => {
-    if (!enabled || !scene || !graphRef.current || layoutLoading) {
+    if (!scene || !graphRef.current || layoutLoading) {
       return;
     }
 
     const graphComponent = graphRef.current;
     const graphInstance = graphComponent.getInstance();
     const previousSceneKey = currentSceneKeyRef.current;
+    const nextSceneStructureSignature = buildSceneStructureSignature(scene);
+    const persistenceEnabled = enabled && Boolean(scopeId);
 
     if (previousSceneKey) {
       runtimeLayoutsRef.current.set(
@@ -206,13 +255,23 @@ export function usePersistedGraphViewport({
       );
     }
 
+    if (
+      previousSceneKey === scene.key &&
+      currentSceneStructureSignatureRef.current === nextSceneStructureSignature
+    ) {
+      return;
+    }
+
     const layout =
       runtimeLayoutsRef.current.get(scene.key) ??
-      persistedLayoutsRef.current.get(scene.key);
+      (persistenceEnabled
+        ? persistedLayoutsRef.current.get(scene.key)
+        : undefined);
 
     restoreSceneLayout(graphComponent, scene, layout);
     currentSceneKeyRef.current = scene.key;
-  }, [enabled, graphRef, layoutLoading, layoutVersion, scene]);
+    currentSceneStructureSignatureRef.current = nextSceneStructureSignature;
+  }, [enabled, graphRef, layoutLoading, layoutVersion, scene, scopeId]);
 
   useEffect(() => {
     return () => {

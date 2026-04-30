@@ -55,9 +55,9 @@ const GRAPH_OPTIONS: RGOptions = {
   defaultLineFontColor: "#38527d",
   defaultNodeBorderWidth: 0,
   defaultShowLineLabel: true,
-  moveToCenterWhenRefresh: true,
-  zoomToFitWhenRefresh: true,
-  useAnimationWhenRefresh: true,
+  moveToCenterWhenRefresh: false,
+  zoomToFitWhenRefresh: false,
+  useAnimationWhenRefresh: false,
   useAnimationWhenExpanded: true,
   allowShowMiniToolBar: false,
   allowShowFullscreenMenu: false,
@@ -272,7 +272,16 @@ export default function TrajectoryGraphBuilder() {
 
   function pushNotification(message: Feedback) {
     const id = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
-    setNotifications((current) => [...current, { ...message, id }]);
+    setNotifications((current) => {
+      const alreadyShown = current.some(
+        (notification) =>
+          notification.kind === message.kind && notification.text === message.text,
+      );
+      if (alreadyShown) {
+        return current;
+      }
+      return [...current, { ...message, id }];
+    });
   }
 
   function dismissNotification(id: string) {
@@ -499,25 +508,15 @@ export default function TrajectoryGraphBuilder() {
     trajectoryName,
   ]);
 
-  const { scene, dimmedNodeIds } = useMemo(() => {
+  const preparedScene = useMemo(() => {
     if (!graph) {
-      return {
-        scene: null as GraphScene | null,
-        dimmedNodeIds: new Set<string>(),
-      };
+      return null as GraphScene | null;
     }
 
     const baseScene =
       view.level === "topics"
-        ? buildTopicScene(
-            graph,
-            hasConcreteNodeSelection(selectedNodeId) ? selectedNodeId : undefined,
-          )
-        : buildElementScene(
-            graph,
-            view.topicId,
-            hasConcreteNodeSelection(selectedNodeId) ? selectedNodeId : undefined,
-          );
+        ? buildTopicScene(graph)
+        : buildElementScene(graph, view.topicId);
 
     const nextNodes = baseScene.nodes.map((node) => {
       const data = node.data as SceneNodeData | undefined;
@@ -575,7 +574,8 @@ export default function TrajectoryGraphBuilder() {
       }
 
       if (data.entity === "element") {
-        const isFormed = data.tone === "formed";
+        return node;
+        /* const isFormed = data.tone === "formed";
         const parsed = parseElementNodeId(node.id);
         const isElementSelected = parsed
           ? Boolean(selectedElementsByTopic[parsed.topicId]?.includes(parsed.elementId))
@@ -592,7 +592,7 @@ export default function TrajectoryGraphBuilder() {
           ...node,
           height: estimateTrajectoryNodeHeight(nextData, node.width ?? 210),
           data: nextData,
-        };
+        }; */
       }
 
       return node;
@@ -622,18 +622,27 @@ export default function TrajectoryGraphBuilder() {
       ? filterElementSceneByCompetence(nextScene, competenceFilters)
       : nextScene;
 
-    return buildFocusedScene(filteredScene, selectedNodeId);
+    return filteredScene;
   }, [
     competenceFilters,
     graph,
     requiredElementsByTopic,
-    selectedNodeId,
-    selectedElementsByTopic,
     selectedTopicIds,
     selectedTopicSet,
     topicThresholds,
     view,
   ]);
+
+  const { scene, dimmedNodeIds } = useMemo(() => {
+    if (!preparedScene) {
+      return {
+        scene: null as GraphScene | null,
+        dimmedNodeIds: new Set<string>(),
+      };
+    }
+
+    return buildFocusedScene(preparedScene, selectedNodeId);
+  }, [preparedScene, selectedNodeId]);
 
   const graphNodeRuntimeState = useMemo<GraphNodeRuntimeState>(() => {
     const selectedNodeIds = new Set<string>();
@@ -816,11 +825,11 @@ export default function TrajectoryGraphBuilder() {
     onNodeDragging,
     onZoomEnd,
   } = usePersistedGraphViewport({
-    enabled: Boolean(disciplineId),
+    enabled: false,
     graphRef,
     scene,
     scopeId: resolvedDisciplineId || disciplineId,
-    scopeType: "trajectory-builder",
+    scopeType: "trajectory-builder-v2",
   });
   const graphPageLoading = loading || layoutLoading;
 
@@ -1723,7 +1732,7 @@ export default function TrajectoryGraphBuilder() {
                   <h3>Загружаю граф</h3>
                   <p>Собираю темы, связи и элементы дисциплины.</p>
                 </div>
-              ) : !scene ? (
+              ) : !scene || !scene.nodes.length ? (
                 <div className="status-view">
                   <h3>Нет данных для конструктора</h3>
                   <p>Сначала добавь темы и формируемые элементы в граф знаний.</p>

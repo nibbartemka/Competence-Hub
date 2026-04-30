@@ -3,7 +3,6 @@ import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 import RelationGraph, {
   type JsonLine,
   type JsonNode,
-  type RGNode,
   type RGOptions,
   type RelationGraphComponent,
 } from "relation-graph-react";
@@ -72,9 +71,9 @@ const GRAPH_OPTIONS: RGOptions = {
   defaultLineFontColor: "#38527d",
   defaultNodeBorderWidth: 0,
   defaultShowLineLabel: true,
-  moveToCenterWhenRefresh: true,
-  zoomToFitWhenRefresh: true,
-  useAnimationWhenRefresh: true,
+  moveToCenterWhenRefresh: false,
+  zoomToFitWhenRefresh: false,
+  useAnimationWhenRefresh: false,
   useAnimationWhenExpanded: true,
   allowShowMiniToolBar: false,
   allowShowFullscreenMenu: false,
@@ -1207,9 +1206,38 @@ export default function TrajectoryDetailPage() {
   ]);
   const graphNodeRuntimeState = useMemo<GraphNodeRuntimeState>(
     () => ({
+      selectedNodeIds: hasConcreteNodeSelection(selectedNodeId)
+        ? new Set<string>([selectedNodeId])
+        : new Set<string>(),
       dimmedNodeIds,
+      cardActionByNodeId: new Map(
+        (scene?.nodes ?? []).map((node) => [
+          node.id,
+          () => {
+            if (showStudentView) {
+              if (node.id.startsWith("topic-focus:")) {
+                const topicId = node.id.slice("topic-focus:".length);
+                returnStudentToTopics(topicId);
+                return;
+              }
+
+              setSelectedNodeId(node.id);
+              return;
+            }
+
+            if (node.id.startsWith("topic-focus:")) {
+              const topicId = node.id.slice("topic-focus:".length);
+              setView({ level: "topics" });
+              setSelectedNodeId(`topic:${topicId}`);
+              return;
+            }
+
+            setSelectedNodeId(node.id);
+          },
+        ]),
+      ),
     }),
-    [dimmedNodeIds],
+    [dimmedNodeIds, scene, selectedNodeId, showStudentView],
   );
   const detail: DetailCard | null =
     selectedNodeId === NO_NODE_SELECTION
@@ -1481,18 +1509,6 @@ export default function TrajectoryDetailPage() {
     }
   }, [taskPrimaryElementId, taskRelatedElementIds, taskSingleCorrectElementId]);
 
-  useEffect(() => {
-    if (!graphRef.current) return;
-
-    const graphInstance = graphRef.current.getInstance();
-    if (!hasConcreteNodeSelection(selectedNodeId)) {
-      graphInstance.setCheckedNode("");
-      return;
-    }
-
-    graphInstance.setCheckedNode(selectedNodeId);
-  }, [selectedNodeId]);
-
   async function persistTopicOrder(nextOrder: string[]) {
     if (!graph || !trajectory || !trajectoryId) return;
     if (!canEditTrajectory) {
@@ -1588,34 +1604,6 @@ export default function TrajectoryDetailPage() {
       return;
     }
     setSelectedNodeId(topicOrder[0] ? `topic:${topicOrder[0]}` : "");
-  }
-
-  function handleNodeClick(node: RGNode) {
-    if (showStudentView) {
-      if (node.id.startsWith("topic-focus:")) {
-        const topicId = node.id.slice("topic-focus:".length);
-        returnStudentToTopics(topicId);
-        return false;
-      }
-
-      if (node.id.startsWith("topic:")) {
-        setSelectedNodeId(node.id);
-        return false;
-      }
-
-      setSelectedNodeId(node.id);
-      return false;
-    }
-
-    if (node.id.startsWith("topic-focus:")) {
-      const topicId = node.id.slice("topic-focus:".length);
-      setView({ level: "topics" });
-      setSelectedNodeId(`topic:${topicId}`);
-      return false;
-    }
-
-    setSelectedNodeId(node.id);
-    return false;
   }
 
   function handleCanvasClick() {
@@ -2662,7 +2650,6 @@ export default function TrajectoryDetailPage() {
                     onCanvasClick={handleCanvasClick}
                     onCanvasDragEnd={onCanvasDragEnd}
                     onCanvasDragging={onCanvasDragging}
-                    onNodeClick={handleNodeClick}
                     onNodeDragEnd={onNodeDragEnd}
                     onNodeDragging={onNodeDragging}
                     onZoomEnd={onZoomEnd}
