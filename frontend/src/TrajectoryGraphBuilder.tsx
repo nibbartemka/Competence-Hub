@@ -1755,8 +1755,10 @@ export default function TrajectoryGraphBuilder() {
                 ) : null}
                 {view.level === "elements" ? (
                   <button
+                    aria-label="Вернуться на первый уровень графа тем"
                     className="ghost-button"
                     onClick={() => setView({ level: "topics" })}
+                    title="Вернуться на первый уровень графа тем"
                     type="button"
                   >
                     К темам

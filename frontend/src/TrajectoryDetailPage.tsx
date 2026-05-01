@@ -207,6 +207,12 @@ function buildDetailValueKey(label: string, value: string) {
   return `${label}:${value}`;
 }
 
+function trajectoryTopicColumnCount(totalTopics: number) {
+  if (totalTopics <= 3) return totalTopics || 1;
+  if (totalTopics <= 8) return 4;
+  return 5;
+}
+
 function topicName(topicById: Map<string, Topic>, topicId: string) {
   return topicById.get(topicId)?.name ?? "Тема не найдена";
 }
@@ -411,6 +417,7 @@ function buildTrajectoryScene(
   const nodes: JsonNode[] = [];
   const lines: JsonLine[] = [];
   const detailsByNodeId: Record<string, DetailCard> = {};
+  const columns = trajectoryTopicColumnCount(topicOrder.length);
 
   topicOrder.forEach((topicId, index) => {
     const topic = topicById.get(topicId);
@@ -451,8 +458,8 @@ function buildTrajectoryScene(
     nodes.push({
       id: nodeId,
       text: topic.name,
-      x: 160 + col * 330,
-      y: 170 + row * 340,
+      x: 120 + col * 300,
+      y: 160 + row * 312,
       width: 270,
       height: estimateTrajectoryNodeHeight(topic),
       nodeShape: 1,
@@ -537,6 +544,7 @@ function buildStudentTrajectoryTopicsScene(
   const detailsByNodeId: Record<string, DetailCard> = {};
   const sequentialLineKeys = new Set<string>();
   let defaultSelectedNodeId = "";
+  const columns = trajectoryTopicColumnCount(topicOrder.length);
 
   topicOrder.forEach((topicId, index) => {
     const topic = topicById.get(topicId);
@@ -544,8 +552,8 @@ function buildStudentTrajectoryTopicsScene(
     if (!topic || !trajectoryTopic) return;
 
     const nodeId = `topic:${topic.id}`;
-    const row = Math.floor(index / 3);
-    const col = index % 3;
+    const row = Math.floor(index / columns);
+    const col = index % columns;
     const topicMastery = studentTopicMastery(trajectoryTopic, masteryByElementId);
     const lockReason = studentTopicLockReason(
       trajectory,
@@ -585,8 +593,8 @@ function buildStudentTrajectoryTopicsScene(
     nodes.push({
       id: nodeId,
       text: topic.name,
-      x: 180 + col * 330,
-      y: 170 + row * 340,
+      x: 120 + col * 300,
+      y: 160 + row * 312,
       width: 270,
       height: estimateTrajectoryNodeHeight(topic),
       nodeShape: 1,
@@ -887,6 +895,13 @@ export default function TrajectoryDetailPage() {
   const [topicOrderModalOpen, setTopicOrderModalOpen] = useState(false);
   const [tasksModalOpen, setTasksModalOpen] = useState(false);
   const [tasksModalSection, setTasksModalSection] = useState<"list" | "create">("list");
+  const [taskListTopicFilter, setTaskListTopicFilter] = useState("all");
+  const [taskListSearch, setTaskListSearch] = useState("");
+  const [taskListCompetenceFilters, setTaskListCompetenceFilters] = useState<Record<KnowledgeElement["competence_type"], boolean>>({
+    know: true,
+    can: true,
+    master: true,
+  });
   const [studentTasks, setStudentTasks] = useState<StudentAssignedTask[]>([]);
   const [recommendedStudentTask, setRecommendedStudentTask] = useState<StudentAssignedTask | null>(null);
   const [studentTrajectoryMastery, setStudentTrajectoryMastery] =
@@ -1340,6 +1355,104 @@ export default function TrajectoryDetailPage() {
     );
   }, [isStudentMode, recommendedStudentTask, selectedTopicId, selectedTopicStudentTasks]);
   const graphLoading = loading || layoutLoading || (showStudentView && studentDataLoading);
+  const filteredTasks = useMemo(() => {
+    const normalizedSearch = taskListSearch.trim().toLocaleLowerCase("ru");
+
+    return tasks.filter((task) => {
+      if (taskListTopicFilter !== "all" && task.topic_id !== taskListTopicFilter) {
+        return false;
+      }
+
+      const competenceType =
+        elementById.get(task.primary_element.element_id)?.competence_type ?? "know";
+      if (!taskListCompetenceFilters[competenceType]) {
+        return false;
+      }
+
+      if (!normalizedSearch) {
+        return true;
+      }
+
+      const haystack = [
+        task.title,
+        task.prompt,
+        task.topic_name,
+        task.primary_element.name,
+        ...task.related_elements.map((element) => element.name),
+        ...task.checked_relations.map(
+          (relation) =>
+            `${relation.source_element_name} ${CHECKED_TASK_RELATION_LABELS[relation.relation_type] ?? relation.relation_type} ${relation.target_element_name}`,
+        ),
+      ]
+        .join(" ")
+        .toLocaleLowerCase("ru");
+
+      return haystack.includes(normalizedSearch);
+    });
+  }, [elementById, taskListCompetenceFilters, taskListSearch, taskListTopicFilter, tasks]);
+  const uncoveredTrajectoryElementsByTopic = useMemo(() => {
+    if (!trajectory) return [];
+
+    const coveredPrimaryElementIds = new Set(tasks.map((task) => task.primary_element.element_id));
+
+    return trajectory.topics
+      .map((trajectoryTopic) => {
+        const uncoveredElements = trajectoryTopic.elements
+          .map((trajectoryElement) => {
+            const element = elementById.get(trajectoryElement.element_id);
+            if (!element) return null;
+            if (coveredPrimaryElementIds.has(element.id)) return null;
+            return {
+              id: element.id,
+              name: element.name,
+              competence_type: element.competence_type,
+              threshold: trajectoryElement.threshold,
+            };
+          })
+          .filter(
+            (
+              item,
+            ): item is {
+              id: string;
+              name: string;
+              competence_type: KnowledgeElement["competence_type"];
+              threshold: number;
+            } => Boolean(item),
+          );
+
+        if (!uncoveredElements.length) {
+          return null;
+        }
+
+        return {
+          topicId: trajectoryTopic.topic_id,
+          topicName: topicName(topicById, trajectoryTopic.topic_id),
+          elements: uncoveredElements.sort((left, right) => left.name.localeCompare(right.name, "ru")),
+        };
+      })
+      .filter(
+        (
+          item,
+        ): item is {
+          topicId: string;
+          topicName: string;
+          elements: Array<{
+            id: string;
+            name: string;
+            competence_type: KnowledgeElement["competence_type"];
+            threshold: number;
+          }>;
+        } => Boolean(item),
+      );
+  }, [elementById, tasks, topicById, trajectory]);
+  const uncoveredTrajectoryElementsCount = useMemo(
+    () =>
+      uncoveredTrajectoryElementsByTopic.reduce(
+        (sum, topicGroup) => sum + topicGroup.elements.length,
+        0,
+      ),
+    [uncoveredTrajectoryElementsByTopic],
+  );
 
   function resetTaskTemplate(nextType: LearningTrajectoryTaskType = "single_choice") {
     setTaskType(nextType);
@@ -1960,6 +2073,107 @@ export default function TrajectoryDetailPage() {
     return <p className="form-error">Неподдерживаемый тип задания.</p>;
   }
 
+  function toggleTaskListCompetenceFilter(type: KnowledgeElement["competence_type"]) {
+    setTaskListCompetenceFilters((current) => ({ ...current, [type]: !current[type] }));
+  }
+
+  function renderTaskDraftPreview() {
+    return (
+      <div className="trajectory-task-preview trajectory-task-preview--student">
+        <div className="trajectory-task-preview__header">
+          <div>
+            <strong>Предпросмотр глазами студента</strong>
+            <p>{taskTitle || "Заголовок задания"}</p>
+          </div>
+          <span className="hero__chip">
+            {TASK_TYPE_LABELS[taskTemplateKind === "manual" ? taskType : TASK_TEMPLATE_TYPE[taskTemplateKind]]}
+          </span>
+        </div>
+        <span>{taskPrompt || "Текст задания"}</span>
+
+        {(taskTemplateKind === "definition_choice" ||
+          taskTemplateKind === "term_choice" ||
+          (taskTemplateKind === "manual" && taskType === "single_choice")) ? (
+          <div className="trajectory-task-preview__list">
+            {[taskPrimaryElementId, ...taskRelatedElementIds].filter(Boolean).map((elementId) => {
+              const element = elementById.get(elementId);
+              const optionText =
+                taskTemplateKind === "definition_choice"
+                  ? element?.description || element?.name || "Определение"
+                  : element?.name || "Элемент";
+              const isCorrect =
+                elementId ===
+                (taskTemplateKind === "manual"
+                  ? taskSingleCorrectElementId || taskPrimaryElementId
+                  : taskPrimaryElementId);
+              return (
+                <div className="trajectory-task-preview__row" key={elementId}>
+                  <span className="trajectory-task-preview__marker" />
+                  <span>{optionText}</span>
+                  {isCorrect ? (
+                    <span className="trajectory-task-preview__answer-tag">Правильный вариант</span>
+                  ) : null}
+                </div>
+              );
+            })}
+          </div>
+        ) : null}
+
+        {(taskTemplateKind === "property_multiple" ||
+          taskTemplateKind === "contains_multiple" ||
+          (taskTemplateKind === "manual" && taskType === "multiple_choice")) ? (
+          <div className="trajectory-task-preview__list">
+            {taskRelatedElementIds.map((elementId) => {
+              const isCorrect =
+                taskTemplateKind === "manual"
+                  ? taskMultipleCorrectRelatedElementIds.includes(elementId)
+                  : autoMultipleChoiceBuckets.correctIds.includes(elementId);
+              return (
+                <div className="trajectory-task-preview__row" key={elementId}>
+                  <span className="trajectory-task-preview__marker trajectory-task-preview__marker--check" />
+                  <span>{elementName(elementById, elementId)}</span>
+                  {isCorrect ? (
+                    <span className="trajectory-task-preview__answer-tag">Правильный вариант</span>
+                  ) : null}
+                </div>
+              );
+            })}
+          </div>
+        ) : null}
+
+        {(taskTemplateKind === "matching_definition" ||
+          (taskTemplateKind === "manual" && taskType === "matching")) ? (
+          <div className="trajectory-task-preview__pairs">
+            {[taskPrimaryElementId, ...taskRelatedElementIds].filter(Boolean).map((elementId) => {
+              const element = elementById.get(elementId);
+              return (
+                <div className="trajectory-task-preview__pair" key={elementId}>
+                  <strong>{element?.name ?? "Элемент"}</strong>
+                  <span>{element?.description || element?.name || "Описание"}</span>
+                </div>
+              );
+            })}
+          </div>
+        ) : null}
+
+        {taskCheckedRelationIds.length ? (
+          <div className="trajectory-task-preview__relations">
+            <strong>Проверяемые связи</strong>
+            <div className="trajectory-task-preview__items">
+              {availableCheckedRelations
+                .filter((relation) => taskCheckedRelationIds.includes(relation.id))
+                .map((relation) => (
+                  <span className="trajectory-task-preview__item" key={relation.id}>
+                    {checkedRelationLabel(relation, elementById)}
+                  </span>
+                ))}
+            </div>
+          </div>
+        ) : null}
+      </div>
+    );
+  }
+
   function renderTopicOrderModalBody() {
     return (
       <section className="card card--soft trajectory-selected-panel">
@@ -2074,6 +2288,37 @@ export default function TrajectoryDetailPage() {
             Создание
           </button>
         </div>
+
+        <details className="editor-block trajectory-task-coverage">
+          <summary>
+            Непокрытые элементы траектории
+            {uncoveredTrajectoryElementsCount ? ` (${uncoveredTrajectoryElementsCount})` : " (0)"}
+          </summary>
+          <div className="editor-form">
+            <p className="card__text">
+              Здесь показаны элементы текущей траектории, для которых ещё нет ни одного задания, где
+              они выступают ключевым проверяемым элементом.
+            </p>
+            {uncoveredTrajectoryElementsByTopic.length ? (
+              <div className="trajectory-task-coverage__topics">
+                {uncoveredTrajectoryElementsByTopic.map((topicGroup) => (
+                  <div className="trajectory-task-coverage__topic" key={topicGroup.topicId}>
+                    <strong>{topicGroup.topicName}</strong>
+                    <div className="trajectory-task-coverage__items">
+                      {topicGroup.elements.map((element) => (
+                        <span className="trajectory-task-preview__item" key={element.id}>
+                          {element.name} · {competenceLabel(element.competence_type)} · порог {element.threshold}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <p className="card__text">Все элементы траектории уже покрыты заданиями.</p>
+            )}
+          </div>
+        </details>
 
         {tasksModalSection === "create" ? (
           <>
@@ -2349,95 +2594,7 @@ export default function TrajectoryDetailPage() {
                     </button>
                   ) : null}
                 </div>
-                {taskPreviewOpen ? (
-                  <div className="trajectory-task-preview">
-                    <strong>Предпросмотр задания</strong>
-                    <p>{taskTitle || "Заголовок задания"}</p>
-                    <span>{taskPrompt || "Текст задания"}</span>
-
-                    {(taskTemplateKind === "definition_choice" ||
-                      taskTemplateKind === "term_choice" ||
-                      (taskTemplateKind === "manual" && taskType === "single_choice")) ? (
-                      <div className="trajectory-task-preview__items">
-                        {[taskPrimaryElementId, ...taskRelatedElementIds].filter(Boolean).map((elementId) => {
-                          const element = elementById.get(elementId);
-                          const optionText =
-                            taskTemplateKind === "definition_choice"
-                              ? element?.description || element?.name || "Определение"
-                              : element?.name || "Элемент";
-                          const isCorrect =
-                            elementId ===
-                            (taskTemplateKind === "manual"
-                              ? taskSingleCorrectElementId || taskPrimaryElementId
-                              : taskPrimaryElementId);
-                          return (
-                            <span
-                              className={
-                                isCorrect
-                                  ? "trajectory-task-preview__item trajectory-task-preview__item--correct"
-                                  : "trajectory-task-preview__item"
-                              }
-                              key={elementId}
-                            >
-                              {optionText}
-                            </span>
-                          );
-                        })}
-                      </div>
-                    ) : null}
-
-                    {(taskTemplateKind === "property_multiple" ||
-                      taskTemplateKind === "contains_multiple" ||
-                      (taskTemplateKind === "manual" && taskType === "multiple_choice")) ? (
-                      <div className="trajectory-task-preview__items">
-                        {taskRelatedElementIds.map((elementId) => {
-                          const isCorrect =
-                            taskTemplateKind === "manual"
-                              ? taskMultipleCorrectRelatedElementIds.includes(elementId)
-                              : autoMultipleChoiceBuckets.correctIds.includes(elementId);
-                          return (
-                            <span
-                              className={
-                                isCorrect
-                                  ? "trajectory-task-preview__item trajectory-task-preview__item--correct"
-                                  : "trajectory-task-preview__item"
-                              }
-                              key={elementId}
-                            >
-                              {elementName(elementById, elementId)}
-                            </span>
-                          );
-                        })}
-                      </div>
-                    ) : null}
-
-                    {(taskTemplateKind === "matching_definition" ||
-                      (taskTemplateKind === "manual" && taskType === "matching")) ? (
-                      <div className="trajectory-task-preview__items">
-                        {[taskPrimaryElementId, ...taskRelatedElementIds].filter(Boolean).map((elementId) => {
-                          const element = elementById.get(elementId);
-                          return (
-                            <span className="trajectory-task-preview__item" key={elementId}>
-                              {element?.name ?? "Элемент"} {"->"} {element?.description || element?.name || "Описание"}
-                            </span>
-                          );
-                        })}
-                      </div>
-                    ) : null}
-
-                    {taskCheckedRelationIds.length ? (
-                      <div className="trajectory-task-preview__items">
-                        {availableCheckedRelations
-                          .filter((relation) => taskCheckedRelationIds.includes(relation.id))
-                          .map((relation) => (
-                            <span className="trajectory-task-preview__item" key={relation.id}>
-                              {checkedRelationLabel(relation, elementById)}
-                            </span>
-                          ))}
-                      </div>
-                    ) : null}
-                  </div>
-                ) : null}
+                {taskPreviewOpen ? renderTaskDraftPreview() : null}
               </div>
             ) : (
               <p className="card__text">В этой траектории пока нет выбранных элементов «Знать».</p>
@@ -2445,8 +2602,54 @@ export default function TrajectoryDetailPage() {
           </>
         ) : (
           <div className="trajectory-task-list">
-            {tasks.length ? (
-              tasks.map((task) => (
+            <div className="trajectory-task-filters">
+              <label className="field">
+                <span>Поиск</span>
+                <input
+                  value={taskListSearch}
+                  onChange={(event) => setTaskListSearch(event.target.value)}
+                  placeholder="Название, текст, тема, элемент"
+                  type="search"
+                />
+              </label>
+              <label className="field">
+                <span>Тема</span>
+                <select
+                  value={taskListTopicFilter}
+                  onChange={(event) => setTaskListTopicFilter(event.target.value)}
+                >
+                  <option value="all">Все темы</option>
+                  {trajectory?.topics.map((topic) => (
+                    <option key={topic.topic_id} value={topic.topic_id}>
+                      {topicName(topicById, topic.topic_id)}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <div className="trajectory-task-filters__competence">
+                <span>Компетенция</span>
+                <div className="competence-filter">
+                  {(["know", "can", "master"] as const).map((type) => (
+                    <label
+                      className={`competence-filter__item competence-filter__item--${
+                        type === "know" ? "know" : type === "can" ? "can" : "master"
+                      }`}
+                      key={type}
+                    >
+                      <input
+                        checked={taskListCompetenceFilters[type]}
+                        onChange={() => toggleTaskListCompetenceFilter(type)}
+                        type="checkbox"
+                      />
+                      <span>{competenceLabel(type)}</span>
+                    </label>
+                  ))}
+                </div>
+              </div>
+            </div>
+
+            {filteredTasks.length ? (
+              filteredTasks.map((task) => (
                 <article className="trajectory-task-card" key={task.id}>
                   <div className="trajectory-task-card__header">
                     <div>
@@ -2464,6 +2667,12 @@ export default function TrajectoryDetailPage() {
                   </div>
                   <p>{task.prompt}</p>
                   <div className="trajectory-task-card__chips">
+                    <span>{topicName(topicById, task.topic_id)}</span>
+                    <span>
+                      {competenceLabel(
+                        elementById.get(task.primary_element.element_id)?.competence_type ?? "know",
+                      )}
+                    </span>
                     <span>{task.primary_element.name}</span>
                     {task.checked_relations.map((relation) => (
                       <span key={relation.relation_id}>
@@ -2477,7 +2686,11 @@ export default function TrajectoryDetailPage() {
                 </article>
               ))
             ) : (
-              <p className="card__text">Для этой траектории задания пока не созданы.</p>
+              <p className="card__text">
+                {tasks.length
+                  ? "По текущим фильтрам задания не найдены."
+                  : "Для этой траектории задания пока не созданы."}
+              </p>
             )}
           </div>
         )}

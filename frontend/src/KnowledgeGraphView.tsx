@@ -226,6 +226,7 @@ export function KnowledgeGraphView({ disciplineId }: KnowledgeGraphViewProps) {
     const [unlinkedError, setUnlinkedError] = useState("");
     const [exportingImage, setExportingImage] = useState(false);
     const [competenceFilters, setCompetenceFilters] = useState(DEFAULT_COMPETENCE_FILTERS);
+    const [relationshipFocusEnabled, setRelationshipFocusEnabled] = useState(false);
 
     const currentDiscipline = disciplines.find((d) => matchesDisciplineIdentifier(d, disciplineId));
     const resolvedDiscipline = graphData?.discipline ?? currentDiscipline ?? null;
@@ -314,8 +315,13 @@ export function KnowledgeGraphView({ disciplineId }: KnowledgeGraphViewProps) {
             };
         }
 
-        return buildFocusedScene(preparedScene, selectedNodeId);
-    }, [preparedScene, selectedNodeId]);
+        const focusedNodeId =
+            relationshipFocusEnabled && view.level === "elements"
+                ? selectedNodeId
+                : NO_NODE_SELECTION;
+
+        return buildFocusedScene(preparedScene, focusedNodeId);
+    }, [preparedScene, relationshipFocusEnabled, selectedNodeId, view.level]);
 
     const graphNodeRuntimeState = useMemo<GraphNodeRuntimeState>(
         () => ({
@@ -457,6 +463,12 @@ export function KnowledgeGraphView({ disciplineId }: KnowledgeGraphViewProps) {
             }
         }
     }, [scene, selectedNodeId]);
+
+    useEffect(() => {
+        if (view.level !== "elements" && relationshipFocusEnabled) {
+            setRelationshipFocusEnabled(false);
+        }
+    }, [relationshipFocusEnabled, view.level]);
 
     async function applyView(nextView: ViewMode, preferredNodeId?: string) {
         if (!graphData) return;
@@ -706,6 +718,15 @@ export function KnowledgeGraphView({ disciplineId }: KnowledgeGraphViewProps) {
                                 >
                                     {exportingImage ? "Сохраняю..." : "Сохранить PNG"}
                                 </button>
+                                {view.level === "elements" ? (
+                                    <button
+                                        className={relationshipFocusEnabled ? "primary-button" : "secondary-button"}
+                                        onClick={() => setRelationshipFocusEnabled((current) => !current)}
+                                        type="button"
+                                    >
+                                        {relationshipFocusEnabled ? "Скрыть связи" : "Показать связи"}
+                                    </button>
+                                ) : null}
                                 <p className="graph-toolbar__hint">
                                     {view.level === "topics"
                                         ? "Кнопка внутри карточки темы открывает ее внутренний граф элементов."
