@@ -1067,12 +1067,12 @@ export default function TrajectoryGraphBuilder() {
     }));
   }
 
-  function getFormedElementIdsForTopics(topicIds: string[]) {
+  function getSelectedElementIdsForTopics(topicIds: string[]) {
     const result = new Set<string>();
 
     for (const topicId of topicIds) {
-      for (const element of formedElementsByTopic.get(topicId) ?? []) {
-        result.add(element.id);
+      for (const elementId of selectedElementsByTopic[topicId] ?? []) {
+        result.add(elementId);
       }
     }
 
@@ -1083,10 +1083,10 @@ export default function TrajectoryGraphBuilder() {
     topicId: string,
     previousTopicIds = selectedTopicIds,
   ) {
-    const formedElementIds = getFormedElementIdsForTopics(previousTopicIds);
+    const selectedElementIds = getSelectedElementIdsForTopics(previousTopicIds);
 
     return (requiredElementsByTopic.get(topicId) ?? []).filter(
-      (element) => !formedElementIds.has(element.id),
+      (element) => !selectedElementIds.has(element.id),
     );
   }
 
