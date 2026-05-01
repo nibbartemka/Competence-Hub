@@ -519,6 +519,10 @@ export default function TrajectoryGraphBuilder() {
         ? buildTopicScene(graph)
         : buildElementScene(graph, view.topicId);
 
+    return view.level === "elements"
+      ? filterElementSceneByCompetence(baseScene, competenceFilters)
+      : baseScene;
+
     const nextNodes = baseScene.nodes.map((node) => {
       const data = node.data as SceneNodeData | undefined;
       if (!data?.entity) return node;
@@ -627,10 +631,6 @@ export default function TrajectoryGraphBuilder() {
   }, [
     competenceFilters,
     graph,
-    requiredElementsByTopic,
-    selectedTopicIds,
-    selectedTopicSet,
-    topicThresholds,
     view,
   ]);
 
@@ -653,6 +653,8 @@ export default function TrajectoryGraphBuilder() {
   const graphNodeRuntimeState = useMemo<GraphNodeRuntimeState>(() => {
     const selectedNodeIds = new Set<string>();
     const disabledNodeIds = new Set<string>();
+    const sequenceNumberByNodeId = new Map<string, number | undefined>();
+    const subtitleByNodeId = new Map<string, string | undefined>();
     const lockStateByNodeId = new Map<string, "locked" | "open">();
     const hintByNodeId = new Map<string, string | undefined>();
     const secondaryHintByNodeId = new Map<string, string | undefined>();
@@ -689,9 +691,16 @@ export default function TrajectoryGraphBuilder() {
 
           if (isSelected) {
             selectedNodeIds.add(nodeId);
+            sequenceNumberByNodeId.set(nodeId, selectedIndex + 1);
+            subtitleByNodeId.set(nodeId, `Шаг ${selectedIndex + 1} в траектории`);
+            metricsByNodeId.set(nodeId, [`Порог ${topicThresholds[topic.id] ?? 100}`]);
           }
           if (isBlocked) {
             disabledNodeIds.add(nodeId);
+            subtitleByNodeId.set(
+              nodeId,
+              `Сначала нужно: ${missingElements.map((item) => item.name).join(", ")}`,
+            );
           }
 
           cardActionByNodeId.set(nodeId, () => setSelectedNodeId(nodeId));
@@ -727,6 +736,7 @@ export default function TrajectoryGraphBuilder() {
 
         if (selectedTopicSet.has(topicId)) {
           selectedNodeIds.add(focusNodeId);
+          sequenceNumberByNodeId.set(focusNodeId, selectedTopicIds.indexOf(topicId) + 1);
         }
 
         cardActionByNodeId.set(focusNodeId, () => setSelectedNodeId(focusNodeId));
@@ -798,6 +808,8 @@ export default function TrajectoryGraphBuilder() {
       selectedNodeIds,
       disabledNodeIds,
       dimmedNodeIds,
+      sequenceNumberByNodeId,
+      subtitleByNodeId,
       lockStateByNodeId,
       hintByNodeId,
       secondaryHintByNodeId,

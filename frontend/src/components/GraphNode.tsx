@@ -13,6 +13,8 @@ export type GraphNodeRuntimeState = {
   selectedNodeIds?: ReadonlySet<string>;
   disabledNodeIds?: ReadonlySet<string>;
   dimmedNodeIds?: ReadonlySet<string>;
+  sequenceNumberByNodeId?: ReadonlyMap<string, number | undefined>;
+  subtitleByNodeId?: ReadonlyMap<string, string | undefined>;
   lockStateByNodeId?: ReadonlyMap<string, "locked" | "open">;
   hintByNodeId?: ReadonlyMap<string, string | undefined>;
   secondaryHintByNodeId?: ReadonlyMap<string, string | undefined>;
@@ -74,9 +76,15 @@ export function GraphNode({ node }: RGNodeSlotProps) {
   const secondaryHint = runtimeState?.secondaryHintByNodeId?.has(node.id)
     ? runtimeState.secondaryHintByNodeId.get(node.id)
     : data.secondaryHint;
+  const subtitle = runtimeState?.subtitleByNodeId?.has(node.id)
+    ? runtimeState.subtitleByNodeId.get(node.id)
+    : data.subtitle;
   const metrics = runtimeState?.metricsByNodeId?.has(node.id)
     ? (runtimeState.metricsByNodeId.get(node.id) ?? [])
     : data.metrics;
+  const sequenceNumber = runtimeState?.sequenceNumberByNodeId?.has(node.id)
+    ? runtimeState.sequenceNumberByNodeId.get(node.id)
+    : data.sequenceNumber;
   const isSelected = runtimeState?.selectedNodeIds?.has(node.id) ?? data.isSelected;
   const isDisabled = runtimeState?.disabledNodeIds?.has(node.id) ?? data.isDisabled;
   const isDimmed = runtimeState?.dimmedNodeIds?.has(node.id) ?? false;
@@ -152,9 +160,9 @@ export function GraphNode({ node }: RGNodeSlotProps) {
       tabIndex={isCardClickable ? 0 : undefined}
       title={data.description ?? data.title}
     >
-      {data.sequenceNumber ? (
+      {sequenceNumber ? (
         <span className="graph-node__sequence" title={`Шаг ${data.sequenceNumber}`}>
-          {data.sequenceNumber}
+          {sequenceNumber}
         </span>
       ) : null}
 
@@ -203,7 +211,7 @@ export function GraphNode({ node }: RGNodeSlotProps) {
       </div>
 
       <strong className="graph-node__title">{data.title}</strong>
-      {data.subtitle ? <p className="graph-node__subtitle">{data.subtitle}</p> : null}
+      {subtitle ? <p className="graph-node__subtitle">{subtitle}</p> : null}
       {data.description ? <p className="graph-node__description">{data.description}</p> : null}
 
       {typeof data.progressValue === "number" ? (
