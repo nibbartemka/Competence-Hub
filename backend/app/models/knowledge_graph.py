@@ -221,8 +221,6 @@ class Relation(Base):
         unique=True,
     )
 
-    name: Mapped[str] = mapped_column(String(50), nullable=False)
-
     direction: Mapped[RelationDirectionType] = mapped_column(
         Enum(
             RelationDirectionType,
