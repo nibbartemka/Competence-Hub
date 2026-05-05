@@ -2,6 +2,9 @@ import type {
   CompetenceType,
   Discipline,
   DisciplineKnowledgeGraph,
+  AuthLoginResponse,
+  Admin,
+  Expert,
   GraphLayout,
   GraphLayoutPayload,
   Group,
@@ -102,6 +105,16 @@ export function fetchDisciplines(signal?: AbortSignal) {
   return request<Discipline[]>("/disciplines/", { signal });
 }
 
+export function login(payload: {
+  login: string;
+  password: string;
+}) {
+  return request<AuthLoginResponse>("/auth/login", {
+    method: "POST",
+    body: payload,
+  });
+}
+
 export function fetchGraphLayouts(
   scopeType: string,
   scopeId: string,
@@ -145,6 +158,36 @@ export function fetchGroups(signal?: AbortSignal) {
   return request<Group[]>("/groups/", { signal });
 }
 
+export function fetchAdmins(signal?: AbortSignal) {
+  return request<Admin[]>("/admins/", { signal });
+}
+
+export function createAdmin(payload: {
+  name: string;
+  login: string;
+  password: string;
+}) {
+  return request<Admin>("/admins/", {
+    method: "POST",
+    body: payload,
+  });
+}
+
+export function fetchExperts(signal?: AbortSignal) {
+  return request<Expert[]>("/experts/", { signal });
+}
+
+export function createExpert(payload: {
+  name: string;
+  login: string;
+  password: string;
+}) {
+  return request<Expert>("/experts/", {
+    method: "POST",
+    body: payload,
+  });
+}
+
 export function createGroup(payload: { name: string }) {
   return request<Group>("/groups/", {
     method: "POST",
@@ -180,6 +223,8 @@ export function fetchStudent(studentId: string, signal?: AbortSignal) {
 
 export function createStudent(payload: {
   name: string;
+  login: string;
+  password: string;
   group_id: string;
   subgroup_id?: string | null;
 }) {
@@ -197,7 +242,12 @@ export function fetchTeacher(teacherId: string, signal?: AbortSignal) {
   return request<Teacher>(`/teachers/${teacherId}`, { signal });
 }
 
-export function createTeacher(payload: { name: string; group_ids?: string[] }) {
+export function createTeacher(payload: {
+  name: string;
+  login: string;
+  password: string;
+  group_ids?: string[];
+}) {
   return request<Teacher>("/teachers/", {
     method: "POST",
     body: payload,

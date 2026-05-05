@@ -1,4 +1,7 @@
+from .admins import AdminCreate, AdminRead, AdminUpdate
 from .disciplines import DisciplineCreate, DisciplineRead
+from .auth import AuthLoginRequest, AuthLoginResponse
+from .experts import ExpertCreate, ExpertRead, ExpertUpdate
 from .graph_layouts import GraphLayoutPayload, GraphLayoutRead, GraphLayoutUpsert
 from .groups import GroupCreate, GroupRead, SubgroupCreate, SubgroupRead
 from .knowledge_element_relations import (
@@ -55,6 +58,14 @@ from .teachers import TeacherCreate, TeacherRead
 __all__ = [
     "DisciplineCreate",
     "DisciplineRead",
+    "AdminCreate",
+    "AdminRead",
+    "AdminUpdate",
+    "AuthLoginRequest",
+    "AuthLoginResponse",
+    "ExpertCreate",
+    "ExpertRead",
+    "ExpertUpdate",
     "GraphLayoutPayload",
     "GraphLayoutRead",
     "GraphLayoutUpsert",

@@ -11,6 +11,8 @@ class Teacher(Base):
 
     id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
     name: Mapped[str] = mapped_column(String(255), nullable=False, unique=True)
+    login: Mapped[str] = mapped_column(String(255), nullable=False, unique=True)
+    password: Mapped[str] = mapped_column(String(255), nullable=False)
 
     discipline_links: Mapped[list["TeacherDiscipline"]] = relationship(
         "TeacherDiscipline",

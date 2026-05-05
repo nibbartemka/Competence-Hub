@@ -3,8 +3,10 @@ import ReactDOM from "react-dom/client";
 import { createBrowserRouter, RouterProvider } from "react-router-dom";
 
 import DisciplineOverviewPage from "./DisciplineOverviewPage";
+import { LandingPage } from "./LandingPage";
 import { HomePage } from "./HomePage";
 import KnowledgeGraph from "./KnowledgeGraph";
+import StudentHomePage from "./StudentHomePage";
 import StudentDashboardPage from "./StudentDashboardPage";
 import StudentTopicControlPage from "./StudentTopicControlPage";
 import TeacherDashboardPage from "./TeacherDashboardPage";
@@ -13,7 +15,13 @@ import TrajectoryDetailPage from "./TrajectoryDetailPage";
 import "./styles.css";
 
 const router = createBrowserRouter([
-  { path: "/", element: <HomePage /> },
+  { path: "/", element: <LandingPage /> },
+  { path: "/login", element: <LandingPage /> },
+  { path: "/login/:role", element: <LandingPage /> },
+  { path: "/admins/:adminId/home", element: <HomePage /> },
+  { path: "/experts/:expertId/home", element: <HomePage /> },
+  { path: "/teachers/:teacherId/home", element: <HomePage /> },
+  { path: "/students/:studentId/home", element: <StudentHomePage /> },
   { path: "/disciplines/:disciplineId", element: <DisciplineOverviewPage /> },
   { path: "/disciplines/:disciplineId/knowledge", element: <KnowledgeGraph /> },
   { path: "/disciplines/:disciplineId/trajectory", element: <TrajectoryGraphBuilder /> },

@@ -11,6 +11,8 @@ class Student(Base):
 
     id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
     name: Mapped[str] = mapped_column(String(255), nullable=False)
+    login: Mapped[str] = mapped_column(String(255), nullable=False, unique=True)
+    password: Mapped[str] = mapped_column(String(255), nullable=False)
 
     group_id: Mapped[UUID] = mapped_column(
         ForeignKey("groups.id", ondelete="CASCADE"),

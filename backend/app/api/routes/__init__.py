@@ -1,6 +1,9 @@
 from fastapi import APIRouter
 
+from .admins import router as admins_router
+from .auth import router as auth_router
 from .disciplines import router as disciplines_router
+from .experts import router as experts_router
 from .graph_layouts import router as graph_layouts_router
 from .groups import router as groups_router
 from .knowledge_element_relations import router as knowledge_element_relations_router
@@ -17,7 +20,10 @@ from .topics import router as topics_router
 
 
 api_router = APIRouter(prefix="/api")
+api_router.include_router(admins_router)
+api_router.include_router(auth_router)
 api_router.include_router(disciplines_router)
+api_router.include_router(experts_router)
 api_router.include_router(graph_layouts_router)
 api_router.include_router(groups_router)
 api_router.include_router(students_router)

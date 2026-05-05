@@ -20,7 +20,9 @@ if str(ROOT_DIR) not in sys.path:
 from app.core import Base
 from app.core.slugs import transliterate_to_slug_base
 from app.models import (
+    Admin,
     Discipline,
+    Expert,
     Group,
     GroupDiscipline,
     KnowledgeElement,
@@ -359,6 +361,18 @@ def build_topic_dependencies(session: Session, topics_by_index: dict[int, Topic]
 
 
 def build_people_and_group_data(session: Session, discipline: Discipline) -> dict[str, object]:
+    admin = Admin(
+        name="Главный администратор",
+        login="admin",
+        password="admin",
+    )
+    expert = Expert(
+        name="Кузнецова Марина Сергеевна",
+        login="expert",
+        password="expert",
+    )
+    session.add_all([admin, expert])
+
     group = Group(name="Б9124-09.03.04")
     session.add(group)
     session.flush()
@@ -368,18 +382,50 @@ def build_people_and_group_data(session: Session, discipline: Discipline) -> dic
     session.add_all([subgroup_1, subgroup_2])
     session.flush()
 
-    teacher_1 = Teacher(name="Остроухова Светлана Николаевна")
-    teacher_2 = Teacher(name="Петров Александр Игоревич")
+    teacher_1 = Teacher(
+        name="Остроухова Светлана Николаевна",
+        login="ostrouhova",
+        password="ostrouhova",
+    )
+    teacher_2 = Teacher(
+        name="Петров Александр Игоревич",
+        login="petrov",
+        password="petrov",
+    )
     session.add_all([teacher_1, teacher_2])
     session.flush()
 
     students_subgroup_1 = [
-        Student(name="Борщевский Кирилл", group_id=group.id, subgroup_id=subgroup_1.id),
-        Student(name="Пяткин Алексей", group_id=group.id, subgroup_id=subgroup_1.id),
+        Student(
+            name="Борщевский Кирилл",
+            login="borshchevskiy",
+            password="borshchevskiy",
+            group_id=group.id,
+            subgroup_id=subgroup_1.id,
+        ),
+        Student(
+            name="Пяткин Алексей",
+            login="pyatkin",
+            password="pyatkin",
+            group_id=group.id,
+            subgroup_id=subgroup_1.id,
+        ),
     ]
     students_subgroup_2 = [
-        Student(name="Федоров Максим", group_id=group.id, subgroup_id=subgroup_2.id),
-        Student(name="Иванова Дарья", group_id=group.id, subgroup_id=subgroup_2.id),
+        Student(
+            name="Федоров Максим",
+            login="fedorov",
+            password="fedorov",
+            group_id=group.id,
+            subgroup_id=subgroup_2.id,
+        ),
+        Student(
+            name="Иванова Дарья",
+            login="ivanova",
+            password="ivanova",
+            group_id=group.id,
+            subgroup_id=subgroup_2.id,
+        ),
     ]
     session.add_all([*students_subgroup_1, *students_subgroup_2])
     session.flush()
@@ -402,6 +448,8 @@ def build_people_and_group_data(session: Session, discipline: Discipline) -> dic
     session.flush()
 
     return {
+        "admin": admin,
+        "expert": expert,
         "group": group,
         "subgroups": [subgroup_1, subgroup_2],
         "teachers": [teacher_1, teacher_2],
@@ -890,6 +938,8 @@ def seed_student_mastery_and_progress(
 
 
 def print_seed_summary(session: Session, discipline: Discipline) -> None:
+    admins_count = session.query(Admin).count()
+    experts_count = session.query(Expert).count()
     topics_count = session.query(Topic).count()
     elements_count = session.query(KnowledgeElement).count()
     relations_count = session.query(KnowledgeElementRelation).count()
@@ -907,6 +957,8 @@ def print_seed_summary(session: Session, discipline: Discipline) -> None:
     print(f"Element relations: {relations_count}")
     print(f"Topic dependencies: {dependencies_count}")
     print(f"Subgroups: {subgroups_count}")
+    print(f"Admins: {admins_count}")
+    print(f"Experts: {experts_count}")
     print(f"Teachers: {teachers_count}")
     print(f"Students: {students_count}")
     print(f"Learning trajectories: {trajectories_count}")

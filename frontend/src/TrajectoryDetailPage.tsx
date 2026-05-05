@@ -946,6 +946,27 @@ export default function TrajectoryDetailPage() {
   }, [showStudentView]);
 
   useEffect(() => {
+    if (!topicOrder.length) {
+      setSelectedNodeId(NO_NODE_SELECTION);
+      return;
+    }
+
+    const firstTopicNodeId = `topic:${topicOrder[0]}`;
+
+    if (showStudentView) {
+      setSelectedNodeId(firstTopicNodeId);
+      return;
+    }
+
+    if (
+      selectedNodeId.startsWith("element:") ||
+      selectedNodeId.startsWith("topic-focus:")
+    ) {
+      setSelectedNodeId(firstTopicNodeId);
+    }
+  }, [showStudentView, topicOrder]);
+
+  useEffect(() => {
     if (!isStudentMode) return;
     setStudentPreviewOpen(true);
     setStudentView({ level: "topics" });
@@ -1261,9 +1282,7 @@ export default function TrajectoryDetailPage() {
   const canEditTrajectory = trajectory?.status === "draft" && trajectory.is_actual;
   const graphLayoutScopeType = isStudentMode
     ? "trajectory-student"
-    : showStudentView
-      ? "trajectory-preview"
-      : "trajectory-detail";
+    : "trajectory-detail";
   const {
     layoutLoading,
     onCanvasDragEnd,

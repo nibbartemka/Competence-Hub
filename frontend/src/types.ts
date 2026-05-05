@@ -41,6 +41,7 @@ export type Subgroup = {
 export type Student = {
   id: string;
   name: string;
+  login: string;
   group_id: string;
   subgroup_id: string | null;
 };
@@ -48,8 +49,29 @@ export type Student = {
 export type Teacher = {
   id: string;
   name: string;
+  login: string;
   discipline_ids: string[];
   group_ids: string[];
+};
+
+export type Expert = {
+  id: string;
+  name: string;
+  login: string;
+};
+
+export type Admin = {
+  id: string;
+  name: string;
+  login: string;
+};
+
+export type AuthRole = "student" | "teacher" | "admin" | "expert";
+
+export type AuthLoginResponse = {
+  role: AuthRole;
+  user_id: string | null;
+  display_name: string;
 };
 
 export type Topic = {

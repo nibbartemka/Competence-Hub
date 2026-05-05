@@ -1,4 +1,6 @@
+from .admins import Admin
 from .disciplines import Discipline
+from .experts import Expert
 from .graph_layouts import GraphLayout
 from .knowledge_graph import (
     Topic,
@@ -35,6 +37,8 @@ from .bindings import (
 
 __all__ = [
     "Discipline",
+    "Admin",
+    "Expert",
     "GraphLayout",
     "Topic",
     "TopicDependency",

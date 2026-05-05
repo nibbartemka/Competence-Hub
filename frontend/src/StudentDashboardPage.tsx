@@ -7,7 +7,9 @@ import {
   fetchGroups,
   fetchStudent,
   fetchStudentLearningTrajectories,
+  fetchStudentsByGroup,
   fetchSubgroups,
+  fetchTeachers,
   isAbortError,
 } from "./api";
 import { disciplinePathValue } from "./disciplineRouting";
@@ -18,12 +20,15 @@ import type {
   Student,
   StudentLearningTrajectorySummary,
   Subgroup,
+  Teacher,
 } from "./types";
 
 const MotionLink = motion(Link);
 
 function extractErrorMessage(error: unknown) {
-  if (error instanceof Error) return error.message;
+  if (error instanceof Error) {
+    return error.message;
+  }
   return "Не удалось загрузить страницу студента.";
 }
 
@@ -35,12 +40,17 @@ export default function StudentDashboardPage() {
   const [groups, setGroups] = useState<Group[]>([]);
   const [subgroups, setSubgroups] = useState<Subgroup[]>([]);
   const [disciplines, setDisciplines] = useState<Discipline[]>([]);
+  const [teachers, setTeachers] = useState<Teacher[]>([]);
   const [trajectories, setTrajectories] = useState<StudentLearningTrajectorySummary[]>([]);
+  const [groupStudents, setGroupStudents] = useState<Student[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
   useEffect(() => {
-    if (!studentId) return;
+    if (!studentId) {
+      return;
+    }
+
     const currentStudentId = studentId;
     const controller = new AbortController();
 
@@ -49,40 +59,48 @@ export default function StudentDashboardPage() {
         setLoading(true);
         setError("");
 
-        const [nextStudent, nextGroups, nextDisciplines] = await Promise.all([
+        const [nextStudent, nextGroups, nextDisciplines, nextTeachers] = await Promise.all([
           fetchStudent(currentStudentId, controller.signal),
           fetchGroups(controller.signal),
           fetchDisciplines(controller.signal),
+          fetchTeachers(controller.signal),
         ]);
 
-        if (controller.signal.aborted) return;
+        if (controller.signal.aborted) {
+          return;
+        }
 
-        const [nextSubgroups, nextTrajectories] = nextStudent
+        const [nextSubgroups, nextTrajectories, nextGroupStudents] = nextStudent
           ? await Promise.all([
               nextStudent.group_id
                 ? fetchSubgroups(nextStudent.group_id, controller.signal)
                 : Promise.resolve([] as Subgroup[]),
               fetchStudentLearningTrajectories(currentStudentId, controller.signal),
+              nextStudent.group_id
+                ? fetchStudentsByGroup(nextStudent.group_id, controller.signal)
+                : Promise.resolve([] as Student[]),
             ])
-          : [[], [] as StudentLearningTrajectorySummary[]];
+          : [[], [] as StudentLearningTrajectorySummary[], [] as Student[]];
 
-        if (controller.signal.aborted) return;
+        if (controller.signal.aborted) {
+          return;
+        }
 
         setStudent(nextStudent);
         setGroups(nextGroups);
         setDisciplines(nextDisciplines);
+        setTeachers(nextTeachers);
         setSubgroups(nextSubgroups);
         setTrajectories(nextTrajectories);
-
-        if (!nextStudent) {
-          setError("Студент не найден.");
-        }
+        setGroupStudents(nextGroupStudents);
       } catch (loadError) {
         if (!isAbortError(loadError)) {
           setError(extractErrorMessage(loadError));
         }
       } finally {
-        if (!controller.signal.aborted) setLoading(false);
+        if (!controller.signal.aborted) {
+          setLoading(false);
+        }
       }
     }
 
@@ -99,7 +117,14 @@ export default function StudentDashboardPage() {
     () => new Map(disciplines.map((discipline) => [discipline.id, discipline])),
     [disciplines],
   );
-
+  const teacherById = useMemo(
+    () => new Map(teachers.map((teacher) => [teacher.id, teacher])),
+    [teachers],
+  );
+  const classmates = useMemo(
+    () => groupStudents.filter((groupStudent) => groupStudent.id !== student?.id),
+    [groupStudents, student?.id],
+  );
   const totalTasksCount = trajectories.reduce(
     (sum, trajectory) => sum + trajectory.total_task_count,
     0,
@@ -109,7 +134,9 @@ export default function StudentDashboardPage() {
     0,
   );
 
-  if (!studentId) return null;
+  if (!studentId) {
+    return null;
+  }
 
   return (
     <div className="page-shell student-dashboard-page immersive-page immersive-page--student">
@@ -119,11 +146,16 @@ export default function StudentDashboardPage() {
             <p className="hero__eyebrow">COMPETENCE HUB</p>
             <h1>Кабинет студента</h1>
             <p className="hero__subtitle">
-              Назначенные траектории, текущий этап и доступ к прохождению через граф темы.
+              Здесь видны профиль студента, назначенные траектории и переход к прохождению
+              контроля через граф темы.
             </p>
           </div>
           <div className="hero__controls hero__controls--stack">
-            <button className="ghost-button" onClick={() => navigate("/")} type="button">
+            <button
+              className="ghost-button"
+              onClick={() => navigate(`/students/${studentId}/home`)}
+              type="button"
+            >
               На главную
             </button>
             <div className="student-profile-compact student-profile-card">
@@ -179,9 +211,72 @@ export default function StudentDashboardPage() {
                 </article>
               </div>
               <p className="card__text">
-                Выбери траекторию ниже. Задания открываются уже внутри графа выбранной
-                траектории после клика по теме.
+                Выбери траекторию ниже. Задания открываются уже внутри графа выбранной траектории
+                после перехода в нужную тему.
               </p>
+            </motion.section>
+
+            <motion.section
+              className="card card--soft overview-card overview-card--wide"
+              {...revealMotion(0.07)}
+            >
+              <div className="card__header">
+                <div>
+                  <p className="card__eyebrow">Группа и преподаватели</p>
+                  <h2>Учебное окружение</h2>
+                </div>
+              </div>
+
+              <div className="home-lists">
+                <div>
+                  <h3>Моя группа</h3>
+                  <span>
+                    {student?.group_id
+                      ? groupById.get(student.group_id)?.name ?? "Группа не найдена"
+                      : "Не назначена"}
+                  </span>
+                  <span>
+                    {student?.subgroup_id
+                      ? `Подгруппа № ${subgroupById.get(student.subgroup_id) ?? "не найдена"}`
+                      : "Подгруппа не назначена"}
+                  </span>
+                </div>
+                <div>
+                  <h3>Состав группы</h3>
+                  {classmates.length ? (
+                    classmates.map((classmate) => <span key={classmate.id}>{classmate.name}</span>)
+                  ) : (
+                    <p className="home-hint">Кроме текущего студента в группе пока никого нет.</p>
+                  )}
+                </div>
+                <div>
+                  <h3>Преподаватели дисциплин</h3>
+                  {trajectories.length ? (
+                    trajectories.map((trajectory) => {
+                      const discipline = disciplineById.get(trajectory.discipline_id);
+                      const teacher = discipline?.teacher_ids.length
+                        ? teacherById.get(discipline.teacher_ids[0])
+                        : null;
+                      return teacher ? (
+                        <MotionLink
+                          className="overview-row"
+                          key={`${trajectory.id}-${teacher.id}`}
+                          to={`/teachers/${teacher.id}`}
+                        >
+                          <strong>{discipline?.name ?? "Дисциплина"}</strong>
+                          <span>{teacher.name}</span>
+                        </MotionLink>
+                      ) : (
+                        <span key={trajectory.id}>
+                          {discipline?.name ?? "Дисциплина"} · преподаватель не назначен
+                        </span>
+                      );
+                    })
+                  ) : (
+                    <p className="home-hint">Назначенных дисциплин пока нет.</p>
+                  )}
+                </div>
+              </div>
             </motion.section>
 
             <motion.section
@@ -199,6 +294,9 @@ export default function StudentDashboardPage() {
                 {trajectories.length ? (
                   trajectories.map((trajectory) => {
                     const discipline = disciplineById.get(trajectory.discipline_id);
+                    const linkedTeacher = discipline?.teacher_ids.length
+                      ? teacherById.get(discipline.teacher_ids[0])
+                      : null;
                     const remainingTasks = Math.max(
                       trajectory.total_task_count - trajectory.completed_task_count,
                       0,
@@ -209,7 +307,7 @@ export default function StudentDashboardPage() {
                         className="student-trajectory-card"
                         key={trajectory.id}
                         to={`/disciplines/${disciplinePathValue(discipline, trajectory.discipline_id)}/trajectories/${trajectory.id}?preview=student&student=${studentId}`}
-                        {...revealMotion(0.02, 12)}
+                        {...revealMotion(0.02)}
                       >
                         <div className="student-trajectory-card__head">
                           <div>
@@ -222,7 +320,7 @@ export default function StudentDashboardPage() {
                         <p className="card__text">
                           {trajectory.total_task_count
                             ? remainingTasks
-                              ? `Осталось пройти ${remainingTasks} заданий в этой траектории.`
+                              ? `Осталось пройти ${remainingTasks} заданий по этой траектории.`
                               : "Все текущие задания по этой траектории выполнены."
                             : "Траектория назначена, но задания пока не добавлены."}
                         </p>
@@ -233,13 +331,14 @@ export default function StudentDashboardPage() {
                           </div>
                           <span>Прогресс: {trajectory.progress_percent}%</span>
                           <span>
-                            Выполнено {trajectory.completed_task_count} из{" "}
-                            {trajectory.total_task_count} заданий
+                            Выполнено {trajectory.completed_task_count} из {trajectory.total_task_count}{" "}
+                            заданий
                           </span>
                         </div>
 
                         <div className="student-trajectory-card__footer">
                           <span>Открыть граф траектории</span>
+                          {linkedTeacher ? <span>{linkedTeacher.name}</span> : null}
                         </div>
                       </MotionLink>
                     );

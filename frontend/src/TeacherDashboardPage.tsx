@@ -6,18 +6,21 @@ import {
   fetchDisciplines,
   fetchGroups,
   fetchStudentsByGroup,
+  fetchSubgroups,
   fetchTeacher,
   fetchTeachers,
   isAbortError,
 } from "./api";
 import { disciplinePathValue } from "./disciplineRouting";
 import { actionHoverMotion, cardHoverMotion, revealMotion } from "./motionPresets";
-import type { Discipline, Group, Student, Teacher } from "./types";
+import type { Discipline, Group, Student, Subgroup, Teacher } from "./types";
 
 const MotionLink = motion(Link);
 
 function extractErrorMessage(error: unknown) {
-  if (error instanceof Error) return error.message;
+  if (error instanceof Error) {
+    return error.message;
+  }
   return "Не удалось загрузить кабинет преподавателя.";
 }
 
@@ -29,6 +32,7 @@ export default function TeacherDashboardPage() {
   const [disciplines, setDisciplines] = useState<Discipline[]>([]);
   const [groups, setGroups] = useState<Group[]>([]);
   const [students, setStudents] = useState<Student[]>([]);
+  const [subgroups, setSubgroups] = useState<Subgroup[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
@@ -40,27 +44,49 @@ export default function TeacherDashboardPage() {
         setLoading(true);
         setError("");
         const [nextTeacher, nextDisciplines, nextGroups] = await Promise.all([
-          teacherId ? fetchTeacher(teacherId, controller.signal) : fetchTeachers(controller.signal).then((items) => items[0]),
+          teacherId
+            ? fetchTeacher(teacherId, controller.signal)
+            : fetchTeachers(controller.signal).then((items) => items[0] ?? null),
           fetchDisciplines(controller.signal),
           fetchGroups(controller.signal),
         ]);
 
-        const nextStudents = (
-          await Promise.all(
-            (nextTeacher?.group_ids ?? []).map((groupId) =>
-              fetchStudentsByGroup(groupId, controller.signal),
-            ),
-          )
-        ).flat();
+        const nextStudents = nextTeacher
+          ? (
+              await Promise.all(
+                nextTeacher.group_ids.map((groupId) =>
+                  fetchStudentsByGroup(groupId, controller.signal),
+                ),
+              )
+            ).flat()
+          : [];
+        const nextSubgroups = nextTeacher
+          ? (
+              await Promise.all(
+                nextTeacher.group_ids.map((groupId) =>
+                  fetchSubgroups(groupId, controller.signal),
+                ),
+              )
+            ).flat()
+          : [];
 
-        setTeacher(nextTeacher ?? null);
+        if (controller.signal.aborted) {
+          return;
+        }
+
+        setTeacher(nextTeacher);
         setDisciplines(nextDisciplines);
         setGroups(nextGroups);
         setStudents(nextStudents);
+        setSubgroups(nextSubgroups);
       } catch (loadError) {
-        if (!isAbortError(loadError)) setError(extractErrorMessage(loadError));
+        if (!isAbortError(loadError)) {
+          setError(extractErrorMessage(loadError));
+        }
       } finally {
-        if (!controller.signal.aborted) setLoading(false);
+        if (!controller.signal.aborted) {
+          setLoading(false);
+        }
       }
     }
 
@@ -76,8 +102,17 @@ export default function TeacherDashboardPage() {
     () => disciplines.filter((discipline) => discipline.teacher_ids.includes(teacherId ?? "")),
     [disciplines, teacherId],
   );
+  const subgroupsByGroupId = useMemo(() => {
+    const result = new Map<string, Subgroup[]>();
+    for (const subgroup of subgroups) {
+      result.set(subgroup.group_id, [...(result.get(subgroup.group_id) ?? []), subgroup]);
+    }
+    return result;
+  }, [subgroups]);
 
-  if (!teacherId) return null;
+  if (!teacherId) {
+    return null;
+  }
 
   return (
     <div className="page-shell role-page immersive-page immersive-page--teacher">
@@ -86,11 +121,16 @@ export default function TeacherDashboardPage() {
           <p className="hero__eyebrow">Роль: преподаватель</p>
           <h1>{teacher?.name ?? "Преподаватель"}</h1>
           <p className="hero__subtitle">
-            Дисциплины, группы и доступ к студентам через закреплённые учебные группы.
+            Здесь видны дисциплины преподавателя, закрепленные группы и быстрые переходы к
+            студентам.
           </p>
         </div>
         <div className="hero__controls">
-          <button className="ghost-button" onClick={() => navigate("/")} type="button">
+          <button
+            className="ghost-button"
+            onClick={() => navigate(`/teachers/${teacherId}/home`)}
+            type="button"
+          >
             На главную
           </button>
         </div>
@@ -101,7 +141,7 @@ export default function TeacherDashboardPage() {
       {loading ? (
         <section className="status-view immersive-page__status">
           <div className="status-view__pulse" />
-          <h3>Загружаю кабинет</h3>
+          <h3>Загружаю кабинет преподавателя</h3>
         </section>
       ) : (
         <main className="overview-grid immersive-page__grid">
@@ -114,13 +154,33 @@ export default function TeacherDashboardPage() {
             <div className="discipline-list">
               {teacherDisciplines.length ? (
                 teacherDisciplines.map((discipline) => (
-                  <motion.article className="discipline-row" key={discipline.id} layout {...actionHoverMotion}>
+                  <motion.article
+                    className="discipline-row"
+                    key={discipline.id}
+                    layout
+                    {...actionHoverMotion}
+                  >
                     <div>
                       <strong>{discipline.name}</strong>
-                      <span>Версия графа {discipline.knowledge_graph_version}</span>
+                      <span>Версия графа: {discipline.knowledge_graph_version}</span>
+                      <small>
+                        Группы дисциплины:{" "}
+                        {discipline.group_ids.length
+                          ? discipline.group_ids
+                              .map(
+                                (groupId) =>
+                                  groups.find((group) => group.id === groupId)?.name ?? "Группа",
+                              )
+                              .join(", ")
+                          : "не назначены"}
+                      </small>
                     </div>
                     <div className="discipline-row__actions">
-                      <MotionLink className="primary-button" to={`/disciplines/${disciplinePathValue(discipline, discipline.id)}`} {...actionHoverMotion}>
+                      <MotionLink
+                        className="primary-button"
+                        to={`/disciplines/${disciplinePathValue(discipline, discipline.id)}`}
+                        {...actionHoverMotion}
+                      >
                         Паспорт
                       </MotionLink>
                       <MotionLink
@@ -128,7 +188,7 @@ export default function TeacherDashboardPage() {
                         to={`/disciplines/${disciplinePathValue(discipline, discipline.id)}/knowledge`}
                         {...actionHoverMotion}
                       >
-                        Граф
+                        Граф знаний
                       </MotionLink>
                     </div>
                   </motion.article>
@@ -151,7 +211,12 @@ export default function TeacherDashboardPage() {
                   const groupStudents = students.filter((student) => student.group_id === group.id);
 
                   return (
-                    <motion.div className="immersive-list-panel" key={group.id} layout {...actionHoverMotion}>
+                    <motion.div
+                      className="immersive-list-panel"
+                      key={group.id}
+                      layout
+                      {...actionHoverMotion}
+                    >
                       <h3>{group.name}</h3>
                       {groupStudents.length ? (
                         groupStudents.map((student) => (
@@ -168,6 +233,15 @@ export default function TeacherDashboardPage() {
                       ) : (
                         <p className="home-hint">Студентов пока нет.</p>
                       )}
+                      <p className="home-hint">
+                        Подгруппы:{" "}
+                        {subgroupsByGroupId.get(group.id)?.length
+                          ? subgroupsByGroupId
+                              .get(group.id)!
+                              .map((subgroup) => `№ ${subgroup.subgroup_num}`)
+                              .join(", ")
+                          : "не созданы"}
+                      </p>
                     </motion.div>
                   );
                 })

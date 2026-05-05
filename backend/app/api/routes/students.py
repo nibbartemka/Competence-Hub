@@ -17,7 +17,13 @@ async def list_students(
     session: DbSession,
     group_id: UUID | None = None,
 ) -> list[StudentRead]:
-    query = select(Student.id, Student.name, Student.group_id, Student.subgroup_id).order_by(Student.name)
+    query = select(
+        Student.id,
+        Student.name,
+        Student.login,
+        Student.group_id,
+        Student.subgroup_id,
+    ).order_by(Student.name)
     if group_id is not None:
         query = query.where(Student.group_id == group_id)
     result = await session.execute(query)
@@ -25,10 +31,11 @@ async def list_students(
         StudentRead(
             id=student_id,
             name=name,
+            login=login,
             group_id=row_group_id,
             subgroup_id=subgroup_id,
         )
-        for student_id, name, row_group_id, subgroup_id in result.all()
+        for student_id, name, login, row_group_id, subgroup_id in result.all()
     ]
 
 
@@ -47,6 +54,8 @@ async def create_student(payload: StudentCreate, session: DbSession) -> StudentR
 
     student = Student(
         name=payload.name,
+        login=payload.login,
+        password=payload.password,
         group_id=payload.group_id,
         subgroup_id=payload.subgroup_id,
     )
@@ -56,6 +65,7 @@ async def create_student(payload: StudentCreate, session: DbSession) -> StudentR
     return StudentRead(
         id=student.id,
         name=student.name,
+        login=student.login,
         group_id=student.group_id,
         subgroup_id=student.subgroup_id,
     )
@@ -65,6 +75,7 @@ async def create_student(payload: StudentCreate, session: DbSession) -> StudentR
 async def get_student(student_id: UUID, session: DbSession) -> StudentRead:
     result = await session.execute(
         select(Student.id, Student.name, Student.group_id, Student.subgroup_id)
+        .add_columns(Student.login)
         .where(Student.id == student_id)
     )
     row = result.one_or_none()
@@ -73,6 +84,7 @@ async def get_student(student_id: UUID, session: DbSession) -> StudentRead:
     return StudentRead(
         id=row.id,
         name=row.name,
+        login=row.login,
         group_id=row.group_id,
         subgroup_id=row.subgroup_id,
     )

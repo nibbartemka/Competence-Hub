@@ -13,7 +13,7 @@ router = APIRouter(prefix="/teachers", tags=["Teachers"])
 
 
 async def _build_teacher_reads(
-    rows: list[tuple[UUID, str]],
+    rows: list[tuple[UUID, str, str]],
     session: DbSession,
 ) -> list[TeacherRead]:
     if not rows:
@@ -49,16 +49,17 @@ async def _build_teacher_reads(
         TeacherRead(
             id=teacher_id,
             name=name,
+            login=login,
             discipline_ids=discipline_ids_by_teacher.get(teacher_id, []),
             group_ids=group_ids_by_teacher.get(teacher_id, []),
         )
-        for teacher_id, name in rows
+        for teacher_id, name, login in rows
     ]
 
 
 async def get_teacher_for_read(teacher_id: UUID, session: DbSession) -> TeacherRead:
     result = await session.execute(
-        select(Teacher.id, Teacher.name).where(Teacher.id == teacher_id)
+        select(Teacher.id, Teacher.name, Teacher.login).where(Teacher.id == teacher_id)
     )
     row = result.one_or_none()
     if row is None:
@@ -69,14 +70,14 @@ async def get_teacher_for_read(teacher_id: UUID, session: DbSession) -> TeacherR
 @router.get("/", response_model=list[TeacherRead])
 async def list_teachers(session: DbSession) -> list[TeacherRead]:
     result = await session.execute(
-        select(Teacher.id, Teacher.name).order_by(Teacher.name)
+        select(Teacher.id, Teacher.name, Teacher.login).order_by(Teacher.name)
     )
     return await _build_teacher_reads(list(result.all()), session)
 
 
 @router.post("/", response_model=TeacherRead, status_code=status.HTTP_201_CREATED)
 async def create_teacher(payload: TeacherCreate, session: DbSession) -> TeacherRead:
-    teacher = Teacher(name=payload.name)
+    teacher = Teacher(name=payload.name, login=payload.login, password=payload.password)
     session.add(teacher)
 
     group_ids = list(dict.fromkeys(payload.group_ids))

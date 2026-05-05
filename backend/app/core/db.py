@@ -403,6 +403,75 @@ def _sync_discipline_slugs(connection) -> None:
         )
 
 
+def _sync_person_credentials(
+    connection,
+    table_name: str,
+    name_column: str = "name",
+) -> None:
+    if not _sqlite_has_table(connection, table_name):
+        return
+
+    if not _sqlite_has_column(connection, table_name, "login"):
+        connection.execute(text(f"ALTER TABLE {table_name} ADD COLUMN login VARCHAR(255)"))
+    if not _sqlite_has_column(connection, table_name, "password"):
+        connection.execute(text(f"ALTER TABLE {table_name} ADD COLUMN password VARCHAR(255)"))
+
+    rows = connection.execute(
+        text(f"SELECT id, {name_column}, login, password FROM {table_name} ORDER BY {name_column}, id")
+    ).fetchall()
+
+    used_logins: set[str] = set()
+    for person_id, name, login, password in rows:
+        candidate_login = str(login or "").strip()
+        if not candidate_login or candidate_login in used_logins:
+            base_login = transliterate_to_slug_base(str(name or "user"))
+            candidate_login = base_login
+            suffix = 2
+            while candidate_login in used_logins:
+                candidate_login = f"{base_login}-{suffix}"
+                suffix += 1
+
+        used_logins.add(candidate_login)
+        candidate_password = str(password or "").strip() or candidate_login
+
+        connection.execute(
+            text(
+                f"UPDATE {table_name} "
+                "SET login = :login, password = :password "
+                "WHERE id = :person_id"
+            ),
+            {
+                "login": candidate_login,
+                "password": candidate_password,
+                "person_id": person_id,
+            },
+        )
+
+    unique_index_name = f"uq_{table_name}_login"
+    if not _sqlite_has_index(connection, unique_index_name):
+        connection.execute(
+            text(f"CREATE UNIQUE INDEX {unique_index_name} ON {table_name} (login)")
+        )
+
+
+def _seed_default_admin_record(connection) -> None:
+    if not _sqlite_has_table(connection, "admins"):
+        return
+
+    row = connection.execute(
+        text("SELECT id FROM admins WHERE login = 'admin' LIMIT 1")
+    ).fetchone()
+    if row is None:
+        connection.execute(
+            text(
+                """
+                INSERT INTO admins (id, name, login, password)
+                VALUES (lower(hex(randomblob(16))), 'Администратор', 'admin', 'admin')
+                """
+            )
+        )
+
+
 def _normalize_relations_and_links(connection) -> None:
     if not _sqlite_has_table(connection, "relations"):
         return
@@ -597,6 +666,11 @@ def _rebuild_knowledge_element_relations_table(connection) -> None:
 def _sync_sqlite_schema(connection) -> None:
     # Keep local SQLite schema compatible with the current SQLAlchemy models.
     _sync_discipline_slugs(connection)
+    _sync_person_credentials(connection, "admins")
+    _sync_person_credentials(connection, "experts")
+    _sync_person_credentials(connection, "teachers")
+    _sync_person_credentials(connection, "students")
+    _seed_default_admin_record(connection)
     if not _sqlite_has_column(connection, "topics", "description"):
         connection.execute(text("ALTER TABLE topics ADD COLUMN description TEXT"))
     if not _sqlite_has_column(connection, "topic_knowledge_elements", "role"):
