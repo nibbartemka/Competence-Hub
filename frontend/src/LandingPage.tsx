@@ -47,7 +47,7 @@ export function LandingPage() {
         return;
       }
       if (result.role === "student" && result.user_id) {
-        navigate(`/students/${result.user_id}/home`);
+        navigate(`/students/${result.user_id}`);
       }
     } catch (submitError) {
       setError(extractErrorMessage(submitError));

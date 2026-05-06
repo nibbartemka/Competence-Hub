@@ -3923,6 +3923,158 @@ textarea {
   font-weight: 800;
 }
 
+.role-dashboard {
+  width: var(--page-content-width);
+  margin: 0 auto;
+  display: grid;
+  gap: 22px;
+}
+
+.role-dashboard-hero {
+  width: var(--page-content-width);
+  margin: 0 auto 22px;
+}
+
+.role-dashboard-metrics {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.role-dashboard-section {
+  display: grid;
+  gap: 16px;
+}
+
+.role-dashboard-two-column {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 22px;
+}
+
+.role-card-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 16px;
+}
+
+.role-card-grid--groups {
+  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+}
+
+.role-feature-card {
+  display: grid;
+  gap: 12px;
+  min-width: 0;
+  padding: 18px;
+  border: 1px solid rgba(31, 55, 84, 0.1);
+  border-radius: 22px;
+  background:
+    linear-gradient(135deg, rgba(255, 255, 255, 0.92), rgba(244, 249, 255, 0.82)),
+    rgba(255, 255, 255, 0.76);
+  box-shadow: 0 18px 34px rgba(31, 55, 84, 0.08);
+}
+
+.role-feature-card strong {
+  display: block;
+  color: var(--ink);
+  font-size: 1.02rem;
+  line-height: 1.28;
+}
+
+.role-feature-card span,
+.role-feature-card small {
+  display: block;
+  color: var(--muted);
+  line-height: 1.45;
+}
+
+.role-action-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+}
+
+.role-dashboard-select {
+  min-width: min(380px, 100%);
+}
+
+.role-inline-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.role-inline-list a,
+.role-inline-list span {
+  display: inline-flex;
+  align-items: center;
+  min-height: 34px;
+  padding: 7px 12px;
+  border-radius: 999px;
+  background: rgba(226, 236, 251, 0.75);
+  color: #244d95;
+  font-size: 0.82rem;
+  font-weight: 800;
+  text-decoration: none;
+}
+
+.role-muted-note {
+  color: var(--muted);
+  font-size: 0.92rem;
+  line-height: 1.5;
+}
+
+.role-progress-list {
+  display: grid;
+  gap: 12px;
+}
+
+.role-progress-row {
+  display: grid;
+  gap: 8px;
+  padding: 14px;
+  border: 1px solid rgba(31, 55, 84, 0.09);
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.82);
+}
+
+.role-progress-row__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.role-progress-row__head strong {
+  color: var(--ink);
+  line-height: 1.3;
+}
+
+.role-progress-row__head span {
+  color: #244d95;
+  font-weight: 900;
+}
+
+.role-progress-row small {
+  color: var(--muted);
+}
+
+.role-progress-bar {
+  height: 10px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: rgba(219, 228, 243, 0.9);
+}
+
+.role-progress-bar i {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, #2f63d9, #3ed08f);
+}
+
 .trajectory-student-topic-panel {
   display: grid;
   gap: 16px;
@@ -4090,6 +4242,11 @@ textarea {
     justify-items: start;
   }
 
+  .role-dashboard-metrics,
+  .role-dashboard-two-column {
+    grid-template-columns: 1fr;
+  }
+
   .graph-stage {
     min-height: 660px;
   }
@@ -4136,6 +4293,24 @@ textarea {
 
   .student-dashboard-summary__stats {
     grid-template-columns: 1fr;
+  }
+
+  .role-dashboard,
+  .role-dashboard-hero {
+    width: 100%;
+  }
+
+  .role-dashboard-metrics {
+    grid-template-columns: 1fr;
+  }
+
+  .role-action-row {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .role-action-row > * {
+    width: 100%;
   }
 
   .student-profile-compact {
@@ -4833,23 +5008,28 @@ textarea {
 .admin-directory-row {
   display: grid;
   grid-template-columns:
-    minmax(220px, 1.1fr)
-    minmax(130px, 0.7fr)
-    minmax(180px, 0.9fr)
-    minmax(240px, 1.25fr)
-    minmax(100px, 0.45fr)
-    auto;
-  gap: 16px;
+    minmax(240px, 1.15fr)
+    minmax(150px, 0.72fr)
+    minmax(210px, 0.92fr)
+    minmax(280px, 1.25fr)
+    minmax(130px, 0.52fr)
+    minmax(128px, auto);
+  column-gap: 30px;
+  row-gap: 14px;
   align-items: center;
 }
 
 .admin-directory-table__head {
-  padding: 0 6px;
+  padding: 0 20px;
   color: #7388a7;
   font-size: 0.82rem;
   font-weight: 800;
   letter-spacing: 0.1em;
   text-transform: uppercase;
+}
+
+.admin-directory-table__head span {
+  white-space: nowrap;
 }
 
 .admin-directory-table__body {
@@ -4858,7 +5038,7 @@ textarea {
 }
 
 .admin-directory-row {
-  padding: 16px 18px;
+  padding: 18px 20px;
   border: 1px solid rgba(125, 148, 186, 0.14);
   border-radius: 22px;
   background: linear-gradient(180deg, rgba(255, 255, 255, 0.96), rgba(246, 250, 255, 0.88));

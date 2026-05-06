@@ -13,6 +13,7 @@ import {
   isAbortError,
 } from "./api";
 import { disciplinePathValue } from "./disciplineRouting";
+import { ExitConfirmDialog } from "./ExitConfirmDialog";
 import { revealMotion } from "./motionPresets";
 import type {
   Discipline,
@@ -25,11 +26,32 @@ import type {
 
 const MotionLink = motion(Link);
 
+const trajectoryStatusLabel: Record<StudentLearningTrajectorySummary["status"], string> = {
+  draft: "Черновик",
+  active: "Активна",
+  archived: "Архив",
+};
+
 function extractErrorMessage(error: unknown) {
   if (error instanceof Error) {
     return error.message;
   }
-  return "Не удалось загрузить страницу студента.";
+  return "Не удалось загрузить кабинет студента.";
+}
+
+function clampPercent(value: number) {
+  return Math.max(0, Math.min(100, Math.round(value)));
+}
+
+function getTrajectoryPath(
+  trajectory: StudentLearningTrajectorySummary,
+  discipline: Discipline | undefined,
+  studentId: string,
+) {
+  return `/disciplines/${disciplinePathValue(
+    discipline,
+    trajectory.discipline_id,
+  )}/trajectories/${trajectory.id}?preview=student&student=${studentId}`;
 }
 
 export default function StudentDashboardPage() {
@@ -45,6 +67,7 @@ export default function StudentDashboardPage() {
   const [groupStudents, setGroupStudents] = useState<Student[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [exitConfirmOpen, setExitConfirmOpen] = useState(false);
 
   useEffect(() => {
     if (!studentId) {
@@ -72,13 +95,9 @@ export default function StudentDashboardPage() {
 
         const [nextSubgroups, nextTrajectories, nextGroupStudents] = nextStudent
           ? await Promise.all([
-              nextStudent.group_id
-                ? fetchSubgroups(nextStudent.group_id, controller.signal)
-                : Promise.resolve([] as Subgroup[]),
+              fetchSubgroups(nextStudent.group_id, controller.signal),
               fetchStudentLearningTrajectories(currentStudentId, controller.signal),
-              nextStudent.group_id
-                ? fetchStudentsByGroup(nextStudent.group_id, controller.signal)
-                : Promise.resolve([] as Student[]),
+              fetchStudentsByGroup(nextStudent.group_id, controller.signal),
             ])
           : [[], [] as StudentLearningTrajectorySummary[], [] as Student[]];
 
@@ -121,10 +140,12 @@ export default function StudentDashboardPage() {
     () => new Map(teachers.map((teacher) => [teacher.id, teacher])),
     [teachers],
   );
+
   const classmates = useMemo(
     () => groupStudents.filter((groupStudent) => groupStudent.id !== student?.id),
     [groupStudents, student?.id],
   );
+
   const totalTasksCount = trajectories.reduce(
     (sum, trajectory) => sum + trajectory.total_task_count,
     0,
@@ -133,224 +154,351 @@ export default function StudentDashboardPage() {
     (sum, trajectory) => sum + trajectory.completed_task_count,
     0,
   );
+  const remainingTasksCount = Math.max(totalTasksCount - completedTasksCount, 0);
+  const averageProgress = trajectories.length
+    ? clampPercent(
+        trajectories.reduce((sum, trajectory) => sum + trajectory.progress_percent, 0) /
+          trajectories.length,
+      )
+    : 0;
+
+  const currentTrajectory =
+    trajectories.find(
+      (trajectory) =>
+        trajectory.status === "active" &&
+        trajectory.total_task_count > trajectory.completed_task_count,
+    ) ??
+    trajectories.find((trajectory) => trajectory.status === "active") ??
+    trajectories[0];
+
+  const teachersByDiscipline = useMemo(() => {
+    const disciplineIds = Array.from(
+      new Set(trajectories.map((trajectory) => trajectory.discipline_id)),
+    );
+
+    return disciplineIds.map((disciplineId) => {
+      const discipline = disciplineById.get(disciplineId);
+      const disciplineTeachers =
+        discipline?.teacher_ids
+          .map((teacherId) => teacherById.get(teacherId))
+          .filter((teacher): teacher is Teacher => Boolean(teacher)) ?? [];
+
+      return {
+        discipline,
+        teachers: disciplineTeachers,
+      };
+    });
+  }, [disciplineById, teacherById, trajectories]);
 
   if (!studentId) {
     return null;
   }
 
+  const studentGroup = student ? groupById.get(student.group_id) : undefined;
+  const studentSubgroup = student?.subgroup_id ? subgroupById.get(student.subgroup_id) : undefined;
+  const currentDiscipline = currentTrajectory
+    ? disciplineById.get(currentTrajectory.discipline_id)
+    : undefined;
+
   return (
-    <div className="page-shell student-dashboard-page immersive-page immersive-page--student">
-      <div className="page-shell__inner">
-        <motion.header className="hero immersive-page__hero" {...revealMotion(0.02)}>
-          <div>
-            <p className="hero__eyebrow">COMPETENCE HUB</p>
-            <h1>Кабинет студента</h1>
-            <p className="hero__subtitle">
-              Здесь видны профиль студента, назначенные траектории и переход к прохождению
-              контроля через граф темы.
-            </p>
-          </div>
-          <div className="hero__controls hero__controls--stack">
-            <button
-              className="ghost-button"
-              onClick={() => navigate(`/students/${studentId}/home`)}
-              type="button"
-            >
-              На главную
-            </button>
-            <div className="student-profile-compact student-profile-card">
-              <span className="student-profile-compact__label">Профиль студента</span>
-              <strong className="student-profile-card__name">{student?.name ?? "Студент"}</strong>
-              <div className="student-profile-card__meta">
-                <div className="student-profile-card__row">
-                  <small>Группа</small>
-                  <span>
-                    {student?.group_id
-                      ? groupById.get(student.group_id)?.name ?? "Группа не найдена"
-                      : "Не назначена"}
-                  </span>
-                </div>
-                <div className="student-profile-card__row">
-                  <small>Подгруппа</small>
-                  <span>
-                    {student?.subgroup_id
-                      ? `№ ${subgroupById.get(student.subgroup_id)?.subgroup_num ?? "не найдена"}`
-                      : "Не назначена"}
-                  </span>
-                </div>
+    <div className="page-shell role-page immersive-page immersive-page--student">
+      <motion.header className="hero immersive-page__hero role-dashboard-hero" {...revealMotion(0.02)}>
+        <div>
+          <p className="hero__eyebrow">Кабинет студента</p>
+          <h1>{student?.name ?? "Студент"}</h1>
+          <p className="hero__subtitle">
+            Назначенные траектории, текущий контроль, прогресс по темам и состав учебной группы.
+          </p>
+        </div>
+        <div className="hero__controls hero__controls--stack">
+          <button
+            className="ghost-button"
+            onClick={() => navigate(-1)}
+            type="button"
+          >
+            Назад
+          </button>
+          <button
+            className="ghost-button"
+            onClick={() => setExitConfirmOpen(true)}
+            type="button"
+          >
+            Выход
+          </button>
+          <div className="student-profile-compact student-profile-card">
+            <span className="student-profile-compact__label">Профиль</span>
+            <strong className="student-profile-card__name">{student?.login ?? "login"}</strong>
+            <div className="student-profile-card__meta">
+              <div className="student-profile-card__row">
+                <small>Группа</small>
+                <span>{studentGroup?.name ?? "не назначена"}</span>
+              </div>
+              <div className="student-profile-card__row">
+                <small>Подгруппа</small>
+                <span>
+                  {studentSubgroup ? `подгруппа ${studentSubgroup.subgroup_num}` : "не назначена"}
+                </span>
               </div>
             </div>
           </div>
-        </motion.header>
+        </div>
+      </motion.header>
 
-        {error ? <div className="home-feedback home-feedback--error">{error}</div> : null}
+      {error ? <div className="home-feedback home-feedback--error">{error}</div> : null}
 
-        {loading ? (
-          <section className="status-view immersive-page__status">
-            <div className="status-view__pulse" />
-            <h3>Загружаю страницу студента</h3>
+      {loading ? (
+        <section className="status-view immersive-page__status">
+          <div className="status-view__pulse" />
+          <h3>Загружаю кабинет студента</h3>
+        </section>
+      ) : (
+        <main className="role-dashboard">
+          <section className="role-dashboard-metrics">
+            <article className="student-metric-card">
+              <span>Мои траектории</span>
+              <strong>{trajectories.length}</strong>
+            </article>
+            <article className="student-metric-card">
+              <span>Выполнено заданий</span>
+              <strong>
+                {completedTasksCount}/{totalTasksCount}
+              </strong>
+            </article>
+            <article className="student-metric-card">
+              <span>Средний прогресс</span>
+              <strong>{averageProgress}%</strong>
+            </article>
+            <article className="student-metric-card">
+              <span>Осталось заданий</span>
+              <strong>{remainingTasksCount}</strong>
+            </article>
           </section>
-        ) : (
-          <main className="student-dashboard-main">
-            <motion.section
-              className="card card--soft student-dashboard-summary"
-              {...revealMotion(0.05)}
-            >
-              <div className="student-dashboard-summary__stats">
-                <article className="student-metric-card">
-                  <span>Траектории</span>
-                  <strong>{trajectories.length}</strong>
-                </article>
-                <article className="student-metric-card">
-                  <span>Задания</span>
-                  <strong>{totalTasksCount}</strong>
-                </article>
-                <article className="student-metric-card">
-                  <span>Выполнено</span>
-                  <strong>{completedTasksCount}</strong>
-                </article>
-              </div>
-              <p className="card__text">
-                Выбери траекторию ниже. Задания открываются уже внутри графа выбранной траектории
-                после перехода в нужную тему.
-              </p>
-            </motion.section>
 
-            <motion.section
-              className="card card--soft overview-card overview-card--wide"
-              {...revealMotion(0.07)}
-            >
+          <motion.section className="card card--soft role-dashboard-section" {...revealMotion(0.05)}>
+            <div className="card__header">
+              <div>
+                <p className="card__eyebrow">Мои траектории</p>
+                <h2>Назначенные траектории обучения</h2>
+              </div>
+            </div>
+
+            <div className="student-trajectory-grid">
+              {trajectories.length ? (
+                trajectories.map((trajectory) => {
+                  const discipline = disciplineById.get(trajectory.discipline_id);
+                  const progress = clampPercent(trajectory.progress_percent);
+
+                  return (
+                    <MotionLink
+                      className="student-trajectory-card"
+                      key={trajectory.id}
+                      to={getTrajectoryPath(trajectory, discipline, studentId)}
+                      {...revealMotion(0.02)}
+                    >
+                      <div className="student-trajectory-card__head">
+                        <div>
+                          <strong>{trajectory.name}</strong>
+                          <span>{discipline?.name ?? "Дисциплина не найдена"}</span>
+                        </div>
+                        <span className="hero__chip">{trajectoryStatusLabel[trajectory.status]}</span>
+                      </div>
+                      <div className="student-progress" aria-label="Прогресс траектории">
+                        <div className="student-progress__bar">
+                          <i style={{ width: `${progress}%` }} />
+                        </div>
+                        <span>Прогресс: {progress}%</span>
+                        <span>
+                          Выполнено {trajectory.completed_task_count} из {trajectory.total_task_count} заданий
+                        </span>
+                      </div>
+                      <div className="student-trajectory-card__footer">
+                        <span>Продолжить</span>
+                        <span>{trajectory.topic_count} тем</span>
+                      </div>
+                    </MotionLink>
+                  );
+                })
+              ) : (
+                <p className="card__text">Активных траекторий пока нет.</p>
+              )}
+            </div>
+          </motion.section>
+
+          <div className="role-dashboard-two-column">
+            <motion.section className="card card--soft role-dashboard-section" {...revealMotion(0.06)}>
               <div className="card__header">
                 <div>
-                  <p className="card__eyebrow">Группа и преподаватели</p>
-                  <h2>Учебное окружение</h2>
+                  <p className="card__eyebrow">Текущая траектория</p>
+                  <h2>{currentTrajectory?.name ?? "Траектория не выбрана"}</h2>
                 </div>
               </div>
-
-              <div className="home-lists">
-                <div>
-                  <h3>Моя группа</h3>
+              {currentTrajectory ? (
+                <div className="role-feature-card">
+                  <strong>{currentDiscipline?.name ?? "Дисциплина не найдена"}</strong>
                   <span>
-                    {student?.group_id
-                      ? groupById.get(student.group_id)?.name ?? "Группа не найдена"
-                      : "Не назначена"}
+                    Граф показывает доступные и закрытые темы. Если тема закрыта, причина блокировки
+                    отображается внутри карточки темы.
                   </span>
-                  <span>
-                    {student?.subgroup_id
-                      ? `Подгруппа № ${subgroupById.get(student.subgroup_id) ?? "не найдена"}`
-                      : "Подгруппа не назначена"}
-                  </span>
+                  <div className="student-progress">
+                    <div className="student-progress__bar">
+                      <i style={{ width: `${clampPercent(currentTrajectory.progress_percent)}%` }} />
+                    </div>
+                    <span>Прогресс: {clampPercent(currentTrajectory.progress_percent)}%</span>
+                  </div>
+                  <div className="role-action-row">
+                    <MotionLink
+                      className="primary-button"
+                      to={getTrajectoryPath(currentTrajectory, currentDiscipline, studentId)}
+                    >
+                      Открыть граф тем
+                    </MotionLink>
+                  </div>
                 </div>
+              ) : (
+                <p className="card__text">Преподаватель еще не назначил траекторию.</p>
+              )}
+            </motion.section>
+
+            <motion.section className="card card--soft role-dashboard-section" {...revealMotion(0.07)}>
+              <div className="card__header">
                 <div>
-                  <h3>Состав группы</h3>
+                  <p className="card__eyebrow">Прохождение контроля</p>
+                  <h2>Одно задание за раз</h2>
+                </div>
+              </div>
+              <div className="role-feature-card">
+                <strong>Контроль открывается из графа темы</strong>
+                <span>
+                  Студент выбирает доступную тему, получает текущее задание, отправляет ответ и
+                  переходит к следующему заданию по результатам адаптивной выдачи.
+                </span>
+                {currentTrajectory ? (
+                  <MotionLink
+                    className="ghost-button"
+                    to={getTrajectoryPath(currentTrajectory, currentDiscipline, studentId)}
+                  >
+                    Перейти к текущей траектории
+                  </MotionLink>
+                ) : null}
+              </div>
+            </motion.section>
+          </div>
+
+          <motion.section className="card card--soft role-dashboard-section" {...revealMotion(0.08)}>
+            <div className="card__header">
+              <div>
+                <p className="card__eyebrow">Мой прогресс</p>
+                <h2>Прогресс по траекториям</h2>
+              </div>
+            </div>
+            <div className="role-progress-list">
+              {trajectories.length ? (
+                trajectories.map((trajectory) => {
+                  const discipline = disciplineById.get(trajectory.discipline_id);
+                  const progress = clampPercent(trajectory.progress_percent);
+                  return (
+                    <article className="role-progress-row" key={trajectory.id}>
+                      <div className="role-progress-row__head">
+                        <strong>{trajectory.name}</strong>
+                        <span>{progress}%</span>
+                      </div>
+                      <small>{discipline?.name ?? "Дисциплина не найдена"}</small>
+                      <div className="role-progress-bar">
+                        <i style={{ width: `${progress}%` }} />
+                      </div>
+                    </article>
+                  );
+                })
+              ) : (
+                <p className="card__text">Данные прогресса появятся после назначения траектории.</p>
+              )}
+            </div>
+            <div className="role-muted-note">
+              Элементы для повторения будут выводиться здесь после накопления истории попыток по
+              заданиям.
+            </div>
+          </motion.section>
+
+          <div className="role-dashboard-two-column">
+            <motion.section className="card card--soft role-dashboard-section" {...revealMotion(0.09)}>
+              <div className="card__header">
+                <div>
+                  <p className="card__eyebrow">Моя группа</p>
+                  <h2>{studentGroup?.name ?? "Группа не назначена"}</h2>
+                </div>
+              </div>
+              <div className="role-feature-card">
+                <strong>
+                  {studentSubgroup ? `Подгруппа ${studentSubgroup.subgroup_num}` : "Подгруппа не назначена"}
+                </strong>
+                <span>Состав группы:</span>
+                <div className="role-inline-list">
                   {classmates.length ? (
                     classmates.map((classmate) => <span key={classmate.id}>{classmate.name}</span>)
                   ) : (
-                    <p className="home-hint">Кроме текущего студента в группе пока никого нет.</p>
-                  )}
-                </div>
-                <div>
-                  <h3>Преподаватели дисциплин</h3>
-                  {trajectories.length ? (
-                    trajectories.map((trajectory) => {
-                      const discipline = disciplineById.get(trajectory.discipline_id);
-                      const teacher = discipline?.teacher_ids.length
-                        ? teacherById.get(discipline.teacher_ids[0])
-                        : null;
-                      return teacher ? (
-                        <MotionLink
-                          className="overview-row"
-                          key={`${trajectory.id}-${teacher.id}`}
-                          to={`/teachers/${teacher.id}`}
-                        >
-                          <strong>{discipline?.name ?? "Дисциплина"}</strong>
-                          <span>{teacher.name}</span>
-                        </MotionLink>
-                      ) : (
-                        <span key={trajectory.id}>
-                          {discipline?.name ?? "Дисциплина"} · преподаватель не назначен
-                        </span>
-                      );
-                    })
-                  ) : (
-                    <p className="home-hint">Назначенных дисциплин пока нет.</p>
+                    <span>одногруппники не найдены</span>
                   )}
                 </div>
               </div>
-            </motion.section>
-
-            <motion.section
-              className="card card--soft student-dashboard-trajectories"
-              {...revealMotion(0.08)}
-            >
-              <div className="card__header">
-                <div>
-                  <p className="card__eyebrow">Траектории</p>
-                  <h2>Доступные траектории обучения</h2>
-                </div>
-              </div>
-
-              <div className="student-trajectory-grid">
-                {trajectories.length ? (
-                  trajectories.map((trajectory) => {
-                    const discipline = disciplineById.get(trajectory.discipline_id);
-                    const linkedTeacher = discipline?.teacher_ids.length
-                      ? teacherById.get(discipline.teacher_ids[0])
-                      : null;
-                    const remainingTasks = Math.max(
-                      trajectory.total_task_count - trajectory.completed_task_count,
-                      0,
-                    );
-
-                    return (
-                      <MotionLink
-                        className="student-trajectory-card"
-                        key={trajectory.id}
-                        to={`/disciplines/${disciplinePathValue(discipline, trajectory.discipline_id)}/trajectories/${trajectory.id}?preview=student&student=${studentId}`}
-                        {...revealMotion(0.02)}
-                      >
-                        <div className="student-trajectory-card__head">
-                          <div>
-                            <strong>{trajectory.name}</strong>
-                            <span>{discipline?.name ?? "Дисциплина не найдена"}</span>
-                          </div>
-                          <span className="hero__chip">{trajectory.topic_count} тем</span>
-                        </div>
-
-                        <p className="card__text">
-                          {trajectory.total_task_count
-                            ? remainingTasks
-                              ? `Осталось пройти ${remainingTasks} заданий по этой траектории.`
-                              : "Все текущие задания по этой траектории выполнены."
-                            : "Траектория назначена, но задания пока не добавлены."}
-                        </p>
-
-                        <div className="student-progress" aria-label="Прогресс прохождения">
-                          <div className="student-progress__bar">
-                            <i style={{ width: `${trajectory.progress_percent}%` }} />
-                          </div>
-                          <span>Прогресс: {trajectory.progress_percent}%</span>
-                          <span>
-                            Выполнено {trajectory.completed_task_count} из {trajectory.total_task_count}{" "}
-                            заданий
-                          </span>
-                        </div>
-
-                        <div className="student-trajectory-card__footer">
-                          <span>Открыть граф траектории</span>
-                          {linkedTeacher ? <span>{linkedTeacher.name}</span> : null}
-                        </div>
-                      </MotionLink>
-                    );
-                  })
+              <div className="role-card-grid">
+                {teachersByDiscipline.length ? (
+                  teachersByDiscipline.map(({ discipline, teachers: disciplineTeachers }) => (
+                    <article className="role-feature-card" key={discipline?.id ?? "unknown"}>
+                      <strong>{discipline?.name ?? "Дисциплина не найдена"}</strong>
+                      <div className="role-inline-list">
+                        {disciplineTeachers.length ? (
+                          disciplineTeachers.map((teacher) => (
+                            <MotionLink key={teacher.id} to={`/teachers/${teacher.id}`}>
+                              {teacher.name}
+                            </MotionLink>
+                          ))
+                        ) : (
+                          <span>преподаватель не назначен</span>
+                        )}
+                      </div>
+                    </article>
+                  ))
                 ) : (
-                  <p className="card__text">Для студента пока нет активных траекторий.</p>
+                  <p className="card__text">Дисциплины пока не назначены.</p>
                 )}
               </div>
             </motion.section>
-          </main>
-        )}
-      </div>
+
+            <motion.section className="card card--soft role-dashboard-section" {...revealMotion(0.1)}>
+              <div className="card__header">
+                <div>
+                  <p className="card__eyebrow">Статистика</p>
+                  <h2>Сводка прохождения</h2>
+                </div>
+              </div>
+              <div className="role-card-grid">
+                <article className="student-metric-card">
+                  <span>Выполнено заданий</span>
+                  <strong>{completedTasksCount}</strong>
+                </article>
+                <article className="student-metric-card">
+                  <span>Средний результат</span>
+                  <strong>{averageProgress}%</strong>
+                </article>
+                <article className="student-metric-card">
+                  <span>Завершенные темы</span>
+                  <strong>Позже</strong>
+                </article>
+                <article className="student-metric-card">
+                  <span>Динамика освоения</span>
+                  <strong>Позже</strong>
+                </article>
+              </div>
+            </motion.section>
+          </div>
+        </main>
+      )}
+
+      <ExitConfirmDialog
+        open={exitConfirmOpen}
+        onCancel={() => setExitConfirmOpen(false)}
+        onConfirm={() => navigate("/")}
+      />
     </div>
   );
 }

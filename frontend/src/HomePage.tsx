@@ -21,6 +21,7 @@ import {
   updateDisciplineAssignments,
 } from "./api";
 import { disciplinePathValue } from "./disciplineRouting";
+import { ExitConfirmDialog } from "./ExitConfirmDialog";
 import type { Admin, Discipline, Expert, Group, Student, Subgroup, Teacher } from "./types";
 
 type DashboardData = {
@@ -166,6 +167,7 @@ export function HomePage() {
   const [busyAction, setBusyAction] = useState("");
   const [notifications, setNotifications] = useState<ToastMessage[]>([]);
   const [adminModalOpen, setAdminModalOpen] = useState(false);
+  const [exitConfirmOpen, setExitConfirmOpen] = useState(false);
   const [adminModalTab, setAdminModalTab] = useState<
     "group" | "teacher" | "student" | "expert" | "admin"
   >("student");
@@ -248,13 +250,6 @@ export function HomePage() {
     }
     return currentTeacher ? [currentTeacher] : [];
   }, [currentTeacher, data.teachers, isAdminMode]);
-  const studentsByGroupId = useMemo(() => {
-    const result = new Map<string, Student[]>();
-    for (const student of visibleStudents) {
-      result.set(student.group_id, [...(result.get(student.group_id) ?? []), student]);
-      }
-    return result;
-  }, [visibleStudents]);
   const pageTitle = isAdminMode
     ? "Кабинет администратора"
     : isExpertMode
@@ -270,11 +265,6 @@ export function HomePage() {
     : isExpertMode
       ? currentExpert?.name
       : currentTeacher?.name;
-  const activePersonLogin = isAdminMode
-    ? currentAdmin?.login
-    : isExpertMode
-      ? currentExpert?.login
-      : currentTeacher?.login;
   const canCreateDiscipline =
     !busyAction &&
     disciplineName.trim() &&
@@ -419,24 +409,11 @@ export function HomePage() {
     subgroupById,
   ]);
   const topNavButtons = [
-    ...(false
-      ? [
-          {
-            key: "add-user",
-            label: "Добавить пользователя",
-            onClick: () => setAdminModalOpen(true),
-          },
-        ]
-      : []),
-    ...(isAdminMode
-      ? []
-      : [
-          {
-            key: "switch-role",
-            label: "Сменить роль",
-            onClick: () => navigate("/"),
-          },
-        ]),
+    {
+      key: "back",
+      label: "Назад",
+      onClick: () => navigate(-1),
+    },
     ...(isTeacherMode && teacherId
       ? [
           {
@@ -2399,13 +2376,13 @@ export function HomePage() {
                   <span>Администратор</span>
                 </div>
               </div>
-              <button className="ghost-button home-hero__logout" onClick={() => navigate("/")} type="button">
-                Выйти
+              <button className="ghost-button home-hero__logout" onClick={() => setExitConfirmOpen(true)} type="button">
+                Выход
               </button>
             </div>
           ) : (
-            <button className="ghost-button home-hero__logout" onClick={() => navigate("/")} type="button">
-              Выйти
+            <button className="ghost-button home-hero__logout" onClick={() => setExitConfirmOpen(true)} type="button">
+              Выход
             </button>
           )}
         </div>
@@ -2462,29 +2439,6 @@ export function HomePage() {
 
       <AnimatePresence>{renderAdminManagementModal()}</AnimatePresence>
       <AnimatePresence>{renderAdminUserDetailsModal()}</AnimatePresence>
-
-      {isTeacherMode ? (
-        <motion.section className="home-session-bar" {...buildReveal(0.04)}>
-          <div className="home-session-bar__identity">
-            <span className="card__eyebrow">Текущий вход</span>
-            <strong>{activePersonName ?? "Пользователь не найден"}</strong>
-            <small>
-              {activePersonLogin
-                ? `Логин: ${activePersonLogin}`
-                : "Проверьте корректность ссылки или повторите вход."}
-            </small>
-          </div>
-          <div className="home-session-bar__actions">
-            <button
-              className="ghost-button"
-              onClick={() => navigate("/")}
-              type="button"
-            >
-              Сменить преподавателя
-            </button>
-          </div>
-        </motion.section>
-      ) : null}
 
       <LayoutGroup>
         <main className="home-sections">
@@ -2770,90 +2724,53 @@ export function HomePage() {
             </motion.section>
           ) : null}
 
-          <motion.section className="home-section" {...buildReveal(0.12)}>
-            <motion.section className="home-card home-card--wide" layout {...CARD_MOTION}>
-              <p className="card__eyebrow">
-                {"Текущая рабочая область"}
-              </p>
-              <div className="home-lists">
-                {isExpertMode ? (
-                  <>
-                    <div>
-                      <h3>Дисциплины эксперта</h3>
-                      {visibleDisciplines.length ? (
-                        visibleDisciplines.map((discipline) => (
-                          <span key={discipline.id}>{discipline.name}</span>
-                        ))
-                      ) : (
-                        <p className="home-hint">Дисциплины пока не созданы.</p>
-                      )}
-                    </div>
-                    <div>
-                      <h3>Последние преподаватели</h3>
-                      {data.teachers.length ? (
-                        data.teachers.slice(0, 8).map((teacher) => (
-                          <span key={teacher.id}>{teacher.name}</span>
-                        ))
-                      ) : (
-                        <p className="home-hint">Преподаватели пока не созданы.</p>
-                      )}
-                    </div>
-                    <div>
-                      <h3>Экспертный контур</h3>
-                      <p className="home-hint">
-                        Открывайте дисциплины выше и переходите в граф знаний. Работа с
-                        траекториями и учебными группами остается в зоне преподавателя и
-                        администратора.
-                      </p>
-                    </div>
-                  </>
-                ) : (
-                  <>
-                    <div>
-                      <h3>Мои дисциплины</h3>
-                      {visibleDisciplines.length ? (
-                        visibleDisciplines.map((discipline) => (
-                          <span key={discipline.id}>{discipline.name}</span>
-                        ))
-                      ) : (
-                        <p className="home-hint">Дисциплины пока не назначены.</p>
-                      )}
-                    </div>
-                    <div>
-                      <h3>Мои группы</h3>
-                      {availableGroups.length ? (
-                        availableGroups.map((group) => <span key={group.id}>{group.name}</span>)
-                      ) : (
-                        <p className="home-hint">Группы пока не назначены.</p>
-                      )}
-                    </div>
-                    <div>
-                      <h3>Мои студенты</h3>
-                      {visibleStudents.length ? (
-                        Array.from(studentsByGroupId.entries()).map(([groupId, students]) => (
-                          <motion.article className="teacher-card" key={groupId} layout>
-                            <strong>{groupById.get(groupId)?.name ?? "Группа"}</strong>
-                            <p>
-                              {students.length
-                                ? students.map((student) => student.name).join(", ")
-                                : "Студенты пока не назначены."}
-                            </p>
-                          </motion.article>
-                        ))
-                      ) : (
-                        <p className="home-hint">Студенты пока не назначены.</p>
-                      )}
-                    </div>
-                  </>
-                )}
-              </div>
+          {isExpertMode ? (
+            <motion.section className="home-section" {...buildReveal(0.12)}>
+              <motion.section className="home-card home-card--wide" layout {...CARD_MOTION}>
+                <p className="card__eyebrow">Текущая рабочая область</p>
+                <div className="home-lists">
+                  <div>
+                    <h3>Дисциплины эксперта</h3>
+                    {visibleDisciplines.length ? (
+                      visibleDisciplines.map((discipline) => (
+                        <span key={discipline.id}>{discipline.name}</span>
+                      ))
+                    ) : (
+                      <p className="home-hint">Дисциплины пока не созданы.</p>
+                    )}
+                  </div>
+                  <div>
+                    <h3>Последние преподаватели</h3>
+                    {data.teachers.length ? (
+                      data.teachers.slice(0, 8).map((teacher) => (
+                        <span key={teacher.id}>{teacher.name}</span>
+                      ))
+                    ) : (
+                      <p className="home-hint">Преподаватели пока не созданы.</p>
+                    )}
+                  </div>
+                  <div>
+                    <h3>Экспертный контур</h3>
+                    <p className="home-hint">
+                      Открывайте дисциплины выше и переходите в граф знаний. Работа с
+                      траекториями и учебными группами остается в зоне преподавателя и
+                      администратора.
+                    </p>
+                  </div>
+                </div>
+              </motion.section>
             </motion.section>
-          </motion.section>
+          ) : null}
             </>
             )
           )}
         </main>
       </LayoutGroup>
+      <ExitConfirmDialog
+        open={exitConfirmOpen}
+        onCancel={() => setExitConfirmOpen(false)}
+        onConfirm={() => navigate("/")}
+      />
     </div>
   );
 }

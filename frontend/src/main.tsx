@@ -6,7 +6,6 @@ import DisciplineOverviewPage from "./DisciplineOverviewPage";
 import { LandingPage } from "./LandingPage";
 import { HomePage } from "./HomePage";
 import KnowledgeGraph from "./KnowledgeGraph";
-import StudentHomePage from "./StudentHomePage";
 import StudentDashboardPage from "./StudentDashboardPage";
 import StudentTopicControlPage from "./StudentTopicControlPage";
 import TeacherDashboardPage from "./TeacherDashboardPage";
@@ -21,7 +20,7 @@ const router = createBrowserRouter([
   { path: "/admins/:adminId/home", element: <HomePage /> },
   { path: "/experts/:expertId/home", element: <HomePage /> },
   { path: "/teachers/:teacherId/home", element: <HomePage /> },
-  { path: "/students/:studentId/home", element: <StudentHomePage /> },
+  { path: "/students/:studentId/home", element: <StudentDashboardPage /> },
   { path: "/disciplines/:disciplineId", element: <DisciplineOverviewPage /> },
   { path: "/disciplines/:disciplineId/knowledge", element: <KnowledgeGraph /> },
   { path: "/disciplines/:disciplineId/trajectory", element: <TrajectoryGraphBuilder /> },
