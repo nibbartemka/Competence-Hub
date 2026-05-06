@@ -58,13 +58,17 @@ export function LandingPage() {
 
   return (
     <div className="landing-page landing-page--auth immersive-page immersive-page--student">
+      <div className="landing-auth-decor landing-auth-decor--left" aria-hidden="true" />
+      <div className="landing-auth-decor landing-auth-decor--right" aria-hidden="true" />
+      <div className="landing-auth-orbit landing-auth-orbit--left" aria-hidden="true" />
+      <div className="landing-auth-orbit landing-auth-orbit--right" aria-hidden="true" />
       <main className="landing-auth-shell">
         <motion.div
           className="landing-auth-brand"
           {...revealMotion(0.02)}
           {...cardHoverMotion}
         >
-          Competence Hub
+          <span>Competence Hub</span>
         </motion.div>
 
         <motion.section
@@ -75,29 +79,36 @@ export function LandingPage() {
           <div className="home-card__header landing-auth-card__header">
             <div>
               <h2>Авторизация</h2>
+              <p className="landing-auth-card__subtitle">
+                Введите логин и пароль. Система сама определит роль и откроет нужный кабинет.
+              </p>
             </div>
           </div>
 
           <form className="home-form" onSubmit={handleSubmit}>
-            <label className="field">
-              <span>Логин</span>
-              <input
-                value={loginValue}
-                onChange={(event) => setLoginValue(event.target.value)}
-                placeholder="Введите логин"
-                required
-              />
+            <label className="field landing-auth-field">
+              <span className="landing-auth-field__label">Логин</span>
+              <span className="landing-auth-input">
+                <input
+                  value={loginValue}
+                  onChange={(event) => setLoginValue(event.target.value)}
+                  placeholder="Введите логин"
+                  required
+                />
+              </span>
             </label>
 
-            <label className="field">
-              <span>Пароль</span>
-              <input
-                type="password"
-                value={passwordValue}
-                onChange={(event) => setPasswordValue(event.target.value)}
-                placeholder="Введите пароль"
-                required
-              />
+            <label className="field landing-auth-field">
+              <span className="landing-auth-field__label">Пароль</span>
+              <span className="landing-auth-input">
+                <input
+                  type="password"
+                  value={passwordValue}
+                  onChange={(event) => setPasswordValue(event.target.value)}
+                  placeholder="Введите пароль"
+                  required
+                />
+              </span>
             </label>
 
             {error ? <div className="home-feedback home-feedback--error">{error}</div> : null}

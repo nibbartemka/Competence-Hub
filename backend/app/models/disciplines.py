@@ -35,6 +35,13 @@ class Discipline(Base):
         lazy="selectin",
     )
 
+    expert_links: Mapped[list["ExpertDiscipline"]] = relationship(
+        "ExpertDiscipline",
+        back_populates="discipline",
+        cascade="all, delete-orphan",
+        lazy="selectin",
+    )
+
     group_links: Mapped[list["GroupDiscipline"]] = relationship(
         "GroupDiscipline",
         back_populates="discipline",

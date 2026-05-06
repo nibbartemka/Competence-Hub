@@ -1,5 +1,5 @@
 from .admins import AdminCreate, AdminRead, AdminUpdate
-from .disciplines import DisciplineCreate, DisciplineRead
+from .disciplines import DisciplineAssignmentsUpdate, DisciplineCreate, DisciplineRead
 from .auth import AuthLoginRequest, AuthLoginResponse
 from .experts import ExpertCreate, ExpertRead, ExpertUpdate
 from .graph_layouts import GraphLayoutPayload, GraphLayoutRead, GraphLayoutUpsert
@@ -57,6 +57,7 @@ from .teachers import TeacherCreate, TeacherRead
 
 __all__ = [
     "DisciplineCreate",
+    "DisciplineAssignmentsUpdate",
     "DisciplineRead",
     "AdminCreate",
     "AdminRead",

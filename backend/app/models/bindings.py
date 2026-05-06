@@ -126,6 +126,36 @@ class TeacherDiscipline(Base):
     )
 
 
+class ExpertDiscipline(Base):
+    __tablename__ = "expert_disciplines"
+    __table_args__ = (
+        UniqueConstraint("expert_id", "discipline_id", name="uq_expert_discipline"),
+    )
+
+    id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
+
+    expert_id: Mapped[UUID] = mapped_column(
+        ForeignKey("experts.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    discipline_id: Mapped[UUID] = mapped_column(
+        ForeignKey("disciplines.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+
+    expert: Mapped["Expert"] = relationship(
+        "Expert",
+        back_populates="discipline_links",
+        lazy="selectin",
+    )
+
+    discipline: Mapped["Discipline"] = relationship(
+        "Discipline",
+        back_populates="expert_links",
+        lazy="selectin",
+    )
+
+
 class TeacherGroup(Base):
     __tablename__ = "teacher_groups"
     __table_args__ = (

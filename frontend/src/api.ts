@@ -154,6 +154,20 @@ export function createDiscipline(payload: {
   });
 }
 
+export function updateDisciplineAssignments(
+  disciplineId: string,
+  payload: {
+    teacher_ids: string[];
+    expert_ids?: string[];
+    group_ids: string[];
+  },
+) {
+  return request<Discipline>(`/disciplines/${disciplineId}/assignments`, {
+    method: "PUT",
+    body: payload,
+  });
+}
+
 export function fetchGroups(signal?: AbortSignal) {
   return request<Group[]>("/groups/", { signal });
 }

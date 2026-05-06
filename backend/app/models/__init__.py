@@ -28,6 +28,7 @@ from .learning_tasks import (
     StudentTaskProgress,
 )
 from .bindings import (
+    ExpertDiscipline,
     GroupDiscipline,
     StudentDiscipline,
     StudentDisciplineRating,
@@ -37,6 +38,7 @@ from .bindings import (
 
 __all__ = [
     "Discipline",
+    "ExpertDiscipline",
     "Admin",
     "Expert",
     "GraphLayout",

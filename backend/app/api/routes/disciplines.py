@@ -1,7 +1,7 @@
 from uuid import UUID
 
 from fastapi import APIRouter, status
-from sqlalchemy import and_, or_, select
+from sqlalchemy import and_, delete, or_, select
 from sqlalchemy.orm import lazyload, selectinload
 
 from app.api.crud import commit_or_409, delete_and_commit, not_found
@@ -9,6 +9,8 @@ from app.api.deps import DbSession
 from app.core.slugs import build_unique_discipline_slug
 from app.models import (
     Discipline,
+    Expert,
+    ExpertDiscipline,
     Group,
     GroupDiscipline,
     KnowledgeElement,
@@ -21,6 +23,7 @@ from app.models import (
     TopicKnowledgeElement,
 )
 from app.schemas import (
+    DisciplineAssignmentsUpdate,
     DisciplineCreate,
     DisciplineKnowledgeGraphRead,
     DisciplineRead,
@@ -55,8 +58,17 @@ async def _build_discipline_reads(
             GroupDiscipline.group_id,
         ).where(GroupDiscipline.discipline_id.in_(discipline_ids))
     )
+    expert_links_result = await session.execute(
+        select(
+            ExpertDiscipline.discipline_id,
+            ExpertDiscipline.expert_id,
+        ).where(ExpertDiscipline.discipline_id.in_(discipline_ids))
+    )
 
     teacher_ids_by_discipline: dict[UUID, list[UUID]] = {
+        discipline_id: [] for discipline_id in discipline_ids
+    }
+    expert_ids_by_discipline: dict[UUID, list[UUID]] = {
         discipline_id: [] for discipline_id in discipline_ids
     }
     group_ids_by_discipline: dict[UUID, list[UUID]] = {
@@ -65,6 +77,8 @@ async def _build_discipline_reads(
 
     for discipline_id, teacher_id in teacher_links_result.all():
         teacher_ids_by_discipline.setdefault(discipline_id, []).append(teacher_id)
+    for discipline_id, expert_id in expert_links_result.all():
+        expert_ids_by_discipline.setdefault(discipline_id, []).append(expert_id)
     for discipline_id, group_id in group_links_result.all():
         group_ids_by_discipline.setdefault(discipline_id, []).append(group_id)
 
@@ -75,6 +89,7 @@ async def _build_discipline_reads(
             slug=slug,
             knowledge_graph_version=knowledge_graph_version,
             teacher_ids=teacher_ids_by_discipline.get(discipline_id, []),
+            expert_ids=expert_ids_by_discipline.get(discipline_id, []),
             group_ids=group_ids_by_discipline.get(discipline_id, []),
         )
         for discipline_id, name, slug, knowledge_graph_version in rows
@@ -183,6 +198,77 @@ async def create_discipline(payload: DisciplineCreate, session: DbSession) -> Di
             )
             if existing_link.scalar_one_or_none() is None:
                 session.add(TeacherGroup(teacher_id=payload.teacher_id, group_id=group_id))
+
+    await commit_or_409(session)
+    return await get_discipline_for_read(str(discipline.id), session)
+
+
+@router.put("/{discipline_identifier}/assignments", response_model=DisciplineRead)
+async def update_discipline_assignments(
+    discipline_identifier: str,
+    payload: DisciplineAssignmentsUpdate,
+    session: DbSession,
+) -> DisciplineRead:
+    discipline = await get_discipline_model(discipline_identifier, session)
+    teacher_ids = list(dict.fromkeys(payload.teacher_ids))
+    expert_ids = list(dict.fromkeys(payload.expert_ids))
+    group_ids = list(dict.fromkeys(payload.group_ids))
+
+    for teacher_id in teacher_ids:
+        teacher = await session.get(Teacher, teacher_id)
+        if teacher is None:
+            raise not_found("Teacher", teacher_id)
+
+    for expert_id in expert_ids:
+        expert = await session.get(Expert, expert_id)
+        if expert is None:
+            raise not_found("Expert", expert_id)
+
+    for group_id in group_ids:
+        group = await session.get(Group, group_id)
+        if group is None:
+            raise not_found("Group", group_id)
+
+    await session.execute(
+        delete(TeacherDiscipline).where(TeacherDiscipline.discipline_id == discipline.id)
+    )
+    await session.execute(
+        delete(GroupDiscipline).where(GroupDiscipline.discipline_id == discipline.id)
+    )
+    await session.execute(
+        delete(ExpertDiscipline).where(ExpertDiscipline.discipline_id == discipline.id)
+    )
+
+    for teacher_id in teacher_ids:
+        session.add(
+            TeacherDiscipline(
+                teacher_id=teacher_id,
+                discipline_id=discipline.id,
+            )
+        )
+
+    for expert_id in expert_ids:
+        session.add(
+            ExpertDiscipline(
+                expert_id=expert_id,
+                discipline_id=discipline.id,
+            )
+        )
+
+    for group_id in group_ids:
+        session.add(GroupDiscipline(group_id=group_id, discipline_id=discipline.id))
+
+        for teacher_id in teacher_ids:
+            existing_link = await session.execute(
+                select(TeacherGroup).where(
+                    and_(
+                        TeacherGroup.teacher_id == teacher_id,
+                        TeacherGroup.group_id == group_id,
+                    )
+                )
+            )
+            if existing_link.scalar_one_or_none() is None:
+                session.add(TeacherGroup(teacher_id=teacher_id, group_id=group_id))
 
     await commit_or_409(session)
     return await get_discipline_for_read(str(discipline.id), session)

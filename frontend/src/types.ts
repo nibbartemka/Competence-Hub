@@ -24,6 +24,7 @@ export type Discipline = {
   slug: string;
   knowledge_graph_version: number;
   teacher_ids: string[];
+  expert_ids: string[];
   group_ids: string[];
 };
 
@@ -58,6 +59,7 @@ export type Expert = {
   id: string;
   name: string;
   login: string;
+  discipline_ids: string[];
 };
 
 export type Admin = {

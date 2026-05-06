@@ -21,3 +21,4 @@ class ExpertRead(BaseModel):
     id: UUID
     name: str
     login: str
+    discipline_ids: list[UUID] = Field(default_factory=list)
