@@ -4,6 +4,7 @@ import { useNavigate } from "react-router-dom";
 
 import { login } from "./api";
 import { actionHoverMotion, cardHoverMotion, revealMotion } from "./motionPresets";
+import { saveSession } from "./session";
 
 function extractErrorMessage(error: unknown) {
   if (error instanceof Error) {
@@ -35,18 +36,46 @@ export function LandingPage() {
       });
 
       if (result.role === "admin" && result.user_id) {
+        saveSession({
+          role: "admin",
+          userId: result.user_id,
+          displayName: result.display_name,
+          login: result.login,
+          sessionId: result.session_id,
+        });
         navigate(`/admins/${result.user_id}/home`);
         return;
       }
       if (result.role === "expert" && result.user_id) {
+        saveSession({
+          role: "expert",
+          userId: result.user_id,
+          displayName: result.display_name,
+          login: result.login,
+          sessionId: result.session_id,
+        });
         navigate(`/experts/${result.user_id}/home`);
         return;
       }
       if (result.role === "teacher" && result.user_id) {
+        saveSession({
+          role: "teacher",
+          userId: result.user_id,
+          displayName: result.display_name,
+          login: result.login,
+          sessionId: result.session_id,
+        });
         navigate(`/teachers/${result.user_id}/home`);
         return;
       }
       if (result.role === "student" && result.user_id) {
+        saveSession({
+          role: "student",
+          userId: result.user_id,
+          displayName: result.display_name,
+          login: result.login,
+          sessionId: result.session_id,
+        });
         navigate(`/students/${result.user_id}`);
       }
     } catch (submitError) {

@@ -13,3 +13,13 @@ class AuthLoginResponse(BaseModel):
     role: Literal["student", "teacher", "admin", "expert"]
     user_id: UUID | None = None
     display_name: str
+    login: str
+    session_id: str
+
+
+class AuthSessionRead(BaseModel):
+    role: Literal["student", "teacher", "admin", "expert"]
+    user_id: UUID
+    display_name: str
+    login: str
+    expires_at: str

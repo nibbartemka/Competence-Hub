@@ -52,6 +52,8 @@ async def update_admin(
         admin.login = payload.login
     if payload.password is not None:
         admin.password = payload.password
+    if payload.is_active is not None:
+        admin.is_active = payload.is_active
     await commit_or_409(session)
     await session.refresh(admin)
     return AdminRead.model_validate(admin)

@@ -13,6 +13,7 @@ class ExpertUpdate(BaseModel):
     name: str | None = Field(default=None, min_length=1, max_length=255)
     login: str | None = Field(default=None, min_length=1, max_length=255)
     password: str | None = Field(default=None, min_length=1, max_length=255)
+    is_active: bool | None = None
 
 
 class ExpertRead(BaseModel):
@@ -21,4 +22,5 @@ class ExpertRead(BaseModel):
     id: UUID
     name: str
     login: str
+    is_active: bool = True
     discipline_ids: list[UUID] = Field(default_factory=list)

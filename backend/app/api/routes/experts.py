@@ -20,7 +20,7 @@ async def get_expert_model(expert_id: UUID, session: DbSession) -> Expert:
 
 
 async def _build_expert_reads(
-    rows: list[tuple[UUID, str, str]],
+    rows: list[tuple[UUID, str, str, bool]],
     session: DbSession,
 ) -> list[ExpertRead]:
     if not rows:
@@ -44,16 +44,17 @@ async def _build_expert_reads(
             id=expert_id,
             name=name,
             login=login,
+            is_active=is_active,
             discipline_ids=discipline_ids_by_expert.get(expert_id, []),
         )
-        for expert_id, name, login in rows
+        for expert_id, name, login, is_active in rows
     ]
 
 
 @router.get("/", response_model=list[ExpertRead])
 async def list_experts(session: DbSession) -> list[ExpertRead]:
     result = await session.execute(
-        select(Expert.id, Expert.name, Expert.login).order_by(Expert.name)
+        select(Expert.id, Expert.name, Expert.login, Expert.is_active).order_by(Expert.name)
     )
     return await _build_expert_reads(list(result.all()), session)
 
@@ -64,13 +65,13 @@ async def create_expert(payload: ExpertCreate, session: DbSession) -> ExpertRead
     session.add(expert)
     await commit_or_409(session)
     await session.refresh(expert)
-    return (await _build_expert_reads([(expert.id, expert.name, expert.login)], session))[0]
+    return (await _build_expert_reads([(expert.id, expert.name, expert.login, expert.is_active)], session))[0]
 
 
 @router.get("/{expert_id}", response_model=ExpertRead)
 async def get_expert(expert_id: UUID, session: DbSession) -> ExpertRead:
     expert = await get_expert_model(expert_id, session)
-    return (await _build_expert_reads([(expert.id, expert.name, expert.login)], session))[0]
+    return (await _build_expert_reads([(expert.id, expert.name, expert.login, expert.is_active)], session))[0]
 
 
 @router.put("/{expert_id}", response_model=ExpertRead)
@@ -86,9 +87,11 @@ async def update_expert(
         expert.login = payload.login
     if payload.password is not None:
         expert.password = payload.password
+    if payload.is_active is not None:
+        expert.is_active = payload.is_active
     await commit_or_409(session)
     await session.refresh(expert)
-    return (await _build_expert_reads([(expert.id, expert.name, expert.login)], session))[0]
+    return (await _build_expert_reads([(expert.id, expert.name, expert.login, expert.is_active)], session))[0]
 
 
 @router.delete("/{expert_id}", status_code=status.HTTP_204_NO_CONTENT)

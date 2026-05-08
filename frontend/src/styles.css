@@ -3331,7 +3331,6 @@ textarea {
 
 .trajectory-selected-topic--dragging {
   opacity: 0.58;
-  transform: scale(0.985);
 }
 
 .trajectory-selected-topic--drop-target {
@@ -3896,6 +3895,10 @@ textarea {
   box-shadow: 0 16px 32px rgba(31, 55, 84, 0.08);
 }
 
+.student-trajectory-card--readonly {
+  cursor: default;
+}
+
 .student-trajectory-card__head {
   display: flex;
   align-items: start;
@@ -4142,77 +4145,74 @@ textarea {
 
 @keyframes trajectoryNodePop {
   from {
-    transform: scale(0.97);
+    opacity: 0.94;
   }
   55% {
-    transform: scale(1.025);
+    opacity: 1;
   }
   to {
-    transform: scale(1);
+    opacity: 1;
   }
 }
 
 @keyframes immersiveDrift {
   0% {
-    transform: translate3d(0, 0, 0) scale(1);
+    transform: translate3d(0, 0, 0);
   }
   33% {
-    transform: translate3d(24px, -16px, 0) scale(1.06);
+    transform: translate3d(24px, -16px, 0);
   }
   66% {
-    transform: translate3d(-18px, 22px, 0) scale(0.96);
+    transform: translate3d(-18px, 22px, 0);
   }
   100% {
-    transform: translate3d(0, 0, 0) scale(1);
+    transform: translate3d(0, 0, 0);
   }
 }
 
 @keyframes lockSnap {
   0% {
-    transform: translateY(-2px) scale(0.94);
+    transform: translateY(-2px);
   }
   55% {
-    transform: translateY(1px) scale(1.04);
+    transform: translateY(1px);
   }
   100% {
-    transform: translateY(0) scale(1);
+    transform: translateY(0);
   }
 }
 
 @keyframes lockOpen {
   0% {
-    transform: rotate(-4deg) scale(0.96);
+    transform: rotate(-4deg);
   }
   60% {
-    transform: rotate(3deg) scale(1.03);
+    transform: rotate(3deg);
   }
   100% {
-    transform: rotate(0) scale(1);
+    transform: rotate(0);
   }
 }
 
 @keyframes toastSlideIn {
   0% {
     opacity: 0;
-    transform: translate(-10px, -6px) scale(0.98);
+    transform: translate(-10px, -6px);
   }
   100% {
     opacity: 1;
-    transform: translate(0, 0) scale(1);
+    transform: translate(0, 0);
   }
 }
 
 @keyframes pulse {
   0% {
-    transform: scale(0.92);
     opacity: 0.72;
   }
   50% {
-    transform: scale(1.08);
     opacity: 1;
   }
   100% {
-    transform: scale(0.92);
     opacity: 0.72;
   }
 }
@@ -4994,14 +4994,17 @@ textarea {
 
 .admin-filter-grid {
   display: grid;
-  grid-template-columns: minmax(220px, 1.2fr) repeat(5, minmax(150px, 1fr));
-  gap: 14px;
+  grid-template-columns: minmax(260px, 1.25fr) repeat(5, minmax(180px, 1fr));
+  gap: 20px;
   align-items: end;
+  margin: 18px 0 24px;
 }
 
 .admin-directory-table {
   display: grid;
-  gap: 12px;
+  gap: 16px;
+  overflow-x: auto;
+  padding-bottom: 4px;
 }
 
 .admin-directory-table__head,
@@ -5010,17 +5013,18 @@ textarea {
   grid-template-columns:
     minmax(240px, 1.15fr)
     minmax(150px, 0.72fr)
-    minmax(210px, 0.92fr)
-    minmax(280px, 1.25fr)
-    minmax(130px, 0.52fr)
-    minmax(128px, auto);
-  column-gap: 30px;
-  row-gap: 14px;
+    minmax(240px, 0.92fr)
+    minmax(320px, 1.25fr)
+    minmax(150px, 0.52fr)
+    minmax(240px, auto);
+  column-gap: 36px;
+  row-gap: 18px;
   align-items: center;
+  min-width: 1260px;
 }
 
 .admin-directory-table__head {
-  padding: 0 20px;
+  padding: 0 26px;
   color: #7388a7;
   font-size: 0.82rem;
   font-weight: 800;
@@ -5038,7 +5042,7 @@ textarea {
 }
 
 .admin-directory-row {
-  padding: 18px 20px;
+  padding: 22px 26px;
   border: 1px solid rgba(125, 148, 186, 0.14);
   border-radius: 22px;
   background: linear-gradient(180deg, rgba(255, 255, 255, 0.96), rgba(246, 250, 255, 0.88));
@@ -5055,6 +5059,23 @@ textarea {
   display: block;
   margin-top: 4px;
   color: #7388a7;
+}
+
+.admin-directory-row__actions {
+  display: flex;
+  gap: 10px;
+  justify-content: flex-end;
+}
+
+.admin-directory-row__actions .secondary-button,
+.admin-directory-row__actions .ghost-button {
+  min-width: 108px;
+  padding-inline: 16px;
+}
+
+.admin-chip--muted {
+  background: rgba(125, 148, 186, 0.16);
+  color: #6f86a6;
 }
 
 .admin-organization-grid {
@@ -5085,6 +5106,96 @@ textarea {
 .admin-group-card > span {
   color: #6680a3;
   font-weight: 700;
+}
+
+.admin-groups-compact-card .admin-section-heading {
+  align-items: center;
+}
+
+.admin-groups-compact-card__button {
+  width: min(260px, 100%);
+}
+
+.session-profile-header {
+  position: fixed;
+  top: 34px;
+  right: 28px;
+  z-index: 80;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px;
+  border: 1px solid rgba(125, 148, 186, 0.18);
+  border-radius: 18px;
+  background: rgba(250, 253, 255, 0.94);
+  box-shadow: 0 16px 36px rgba(81, 111, 160, 0.16);
+  backdrop-filter: blur(12px);
+}
+
+.session-profile-header__summary {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  border: 0;
+  background: transparent;
+  color: #223a5c;
+  text-align: left;
+}
+
+.session-profile-header__avatar {
+  display: grid;
+  width: 38px;
+  height: 38px;
+  place-items: center;
+  border-radius: 50%;
+  background: linear-gradient(135deg, #2f63c8, #4e8af0);
+  color: #fff;
+  font-size: 0.84rem;
+  font-weight: 900;
+}
+
+.session-profile-header__identity {
+  display: grid;
+  gap: 2px;
+  min-width: 150px;
+}
+
+.session-profile-header__identity strong {
+  max-width: 230px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.session-profile-header__identity small {
+  color: #6680a3;
+  font-weight: 800;
+}
+
+.session-profile-header__actions {
+  display: flex;
+  gap: 8px;
+}
+
+.session-profile-modal {
+  width: min(720px, 100%);
+}
+
+@media (max-width: 760px) {
+  .session-profile-header {
+    left: 12px;
+    right: 12px;
+    top: 18px;
+    justify-content: space-between;
+  }
+
+  .session-profile-header__identity {
+    min-width: 0;
+  }
+
+  .session-profile-header__identity strong {
+    max-width: 140px;
+  }
 }
 
 .admin-discipline-table--org .admin-discipline-table__head,

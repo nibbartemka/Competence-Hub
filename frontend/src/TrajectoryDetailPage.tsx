@@ -1,4 +1,4 @@
-﻿import { type DragEvent, useEffect, useMemo, useRef, useState } from "react";
+import { type DragEvent, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 import RelationGraph, {
   type JsonLine,
@@ -27,6 +27,7 @@ import {
   GraphNodeRuntimeStateProvider,
   type GraphNodeRuntimeState,
 } from "./components/GraphNode";
+import { getSessionHomePath } from "./session";
 import { disciplinePathValue } from "./disciplineRouting";
 import {
   buildFocusedScene,
@@ -2755,7 +2756,7 @@ export default function TrajectoryDetailPage() {
             <>
               <button
                 className="ghost-button"
-                onClick={() => navigate(`/students/${studentIdFromQuery}`)}
+                onClick={() => navigate(getSessionHomePath())}
                 type="button"
               >
                 К кабинету студента

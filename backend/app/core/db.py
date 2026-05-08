@@ -415,6 +415,10 @@ def _sync_person_credentials(
         connection.execute(text(f"ALTER TABLE {table_name} ADD COLUMN login VARCHAR(255)"))
     if not _sqlite_has_column(connection, table_name, "password"):
         connection.execute(text(f"ALTER TABLE {table_name} ADD COLUMN password VARCHAR(255)"))
+    if not _sqlite_has_column(connection, table_name, "is_active"):
+        connection.execute(
+            text(f"ALTER TABLE {table_name} ADD COLUMN is_active BOOLEAN NOT NULL DEFAULT 1")
+        )
 
     rows = connection.execute(
         text(f"SELECT id, {name_column}, login, password FROM {table_name} ORDER BY {name_column}, id")

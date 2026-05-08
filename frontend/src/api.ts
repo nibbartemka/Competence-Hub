@@ -2,6 +2,7 @@ import type {
   CompetenceType,
   Discipline,
   DisciplineKnowledgeGraph,
+  AuthSession,
   AuthLoginResponse,
   Admin,
   Expert,
@@ -32,6 +33,7 @@ import type {
   TopicKnowledgeElement,
   TopicKnowledgeElementRole,
 } from "./types";
+import { readSession } from "./session";
 
 const API_BASE =
   import.meta.env.VITE_API_BASE?.replace(/\/$/, "") ?? "http://127.0.0.1:8000/api";
@@ -67,6 +69,7 @@ async function request<T>(path: string, options: RequestOptions = {}): Promise<T
       cache: "no-store",
       headers: {
         Accept: "application/json",
+        ...(readSession()?.sessionId ? { "X-Session-Id": readSession()?.sessionId ?? "" } : {}),
         ...(body ? { "Content-Type": "application/json" } : {}),
       },
       body: body ? JSON.stringify(body) : undefined,
@@ -113,6 +116,14 @@ export function login(payload: {
     method: "POST",
     body: payload,
   });
+}
+
+export function fetchActiveSession(signal?: AbortSignal) {
+  return request<AuthSession>("/auth/session", { signal });
+}
+
+export function logout() {
+  return request<void>("/auth/session", { method: "DELETE" });
 }
 
 export function fetchGraphLayouts(
@@ -187,6 +198,13 @@ export function createAdmin(payload: {
   });
 }
 
+export function updateAdmin(adminId: string, payload: { is_active?: boolean }) {
+  return request<Admin>(`/admins/${adminId}`, {
+    method: "PUT",
+    body: payload,
+  });
+}
+
 export function fetchExperts(signal?: AbortSignal) {
   return request<Expert[]>("/experts/", { signal });
 }
@@ -198,6 +216,13 @@ export function createExpert(payload: {
 }) {
   return request<Expert>("/experts/", {
     method: "POST",
+    body: payload,
+  });
+}
+
+export function updateExpert(expertId: string, payload: { is_active?: boolean }) {
+  return request<Expert>(`/experts/${expertId}`, {
+    method: "PUT",
     body: payload,
   });
 }
@@ -248,6 +273,13 @@ export function createStudent(payload: {
   });
 }
 
+export function updateStudent(studentId: string, payload: { is_active?: boolean }) {
+  return request<Student>(`/students/${studentId}`, {
+    method: "PUT",
+    body: payload,
+  });
+}
+
 export function fetchTeachers(signal?: AbortSignal) {
   return request<Teacher[]>("/teachers/", { signal });
 }
@@ -264,6 +296,13 @@ export function createTeacher(payload: {
 }) {
   return request<Teacher>("/teachers/", {
     method: "POST",
+    body: payload,
+  });
+}
+
+export function updateTeacher(teacherId: string, payload: { is_active?: boolean }) {
+  return request<Teacher>(`/teachers/${teacherId}`, {
+    method: "PUT",
     body: payload,
   });
 }

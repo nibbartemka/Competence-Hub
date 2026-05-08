@@ -10,11 +10,16 @@ class TeacherCreate(BaseModel):
     group_ids: list[UUID] = Field(default_factory=list)
 
 
+class TeacherUpdate(BaseModel):
+    is_active: bool | None = None
+
+
 class TeacherRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     id: UUID
     name: str
     login: str
+    is_active: bool = True
     discipline_ids: list[UUID] = Field(default_factory=list)
     group_ids: list[UUID] = Field(default_factory=list)

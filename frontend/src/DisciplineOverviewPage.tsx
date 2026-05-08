@@ -12,6 +12,7 @@ import {
 } from "./api";
 import { disciplinePathValue } from "./disciplineRouting";
 import { actionHoverMotion, cardHoverMotion, revealMotion } from "./motionPresets";
+import { getSessionHomePath } from "./session";
 import type {
   DisciplineKnowledgeGraph,
   Group,
@@ -115,7 +116,7 @@ export default function DisciplineOverviewPage() {
           </p>
         </div>
         <div className="hero__controls">
-          <button className="ghost-button" onClick={() => navigate("/")} type="button">
+          <button className="ghost-button" onClick={() => navigate(getSessionHomePath())} type="button">
             На главную
           </button>
           <MotionLink
@@ -164,15 +165,14 @@ export default function DisciplineOverviewPage() {
             {disciplineTeachers.length ? (
               disciplineTeachers.map((teacher) =>
                 teacher ? (
-                  <MotionLink
+                  <motion.article
                     className="overview-row"
                     key={teacher.id}
-                    to={`/teachers/${teacher.id}`}
                     {...actionHoverMotion}
                   >
                     <strong>{teacher.name}</strong>
                     <span>{teacher.group_ids.length} групп</span>
-                  </MotionLink>
+                  </motion.article>
                 ) : null,
               )
             ) : (

@@ -1,6 +1,6 @@
 from .admins import AdminCreate, AdminRead, AdminUpdate
 from .disciplines import DisciplineAssignmentsUpdate, DisciplineCreate, DisciplineRead
-from .auth import AuthLoginRequest, AuthLoginResponse
+from .auth import AuthLoginRequest, AuthLoginResponse, AuthSessionRead
 from .experts import ExpertCreate, ExpertRead, ExpertUpdate
 from .graph_layouts import GraphLayoutPayload, GraphLayoutRead, GraphLayoutUpsert
 from .groups import GroupCreate, GroupRead, SubgroupCreate, SubgroupRead
@@ -52,8 +52,8 @@ from .topic_knowledge_elements import (
     TopicKnowledgeElementRead,
 )
 from .topics import TopicCreate, TopicRead, TopicUpdate
-from .students import StudentCreate, StudentRead
-from .teachers import TeacherCreate, TeacherRead
+from .students import StudentCreate, StudentRead, StudentUpdate
+from .teachers import TeacherCreate, TeacherRead, TeacherUpdate
 
 __all__ = [
     "DisciplineCreate",
@@ -64,6 +64,7 @@ __all__ = [
     "AdminUpdate",
     "AuthLoginRequest",
     "AuthLoginResponse",
+    "AuthSessionRead",
     "ExpertCreate",
     "ExpertRead",
     "ExpertUpdate",
@@ -76,8 +77,10 @@ __all__ = [
     "SubgroupRead",
     "StudentCreate",
     "StudentRead",
+    "StudentUpdate",
     "TeacherCreate",
     "TeacherRead",
+    "TeacherUpdate",
     "DisciplineKnowledgeGraphRead",
     "TopicCreate",
     "TopicRead",

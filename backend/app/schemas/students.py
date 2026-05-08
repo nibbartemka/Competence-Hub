@@ -11,11 +11,16 @@ class StudentCreate(BaseModel):
     subgroup_id: UUID | None = None
 
 
+class StudentUpdate(BaseModel):
+    is_active: bool | None = None
+
+
 class StudentRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     id: UUID
     name: str
     login: str
+    is_active: bool = True
     group_id: UUID
     subgroup_id: UUID | None

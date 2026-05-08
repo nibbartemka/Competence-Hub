@@ -594,7 +594,7 @@ export function KnowledgeGraphView({ disciplineId }: KnowledgeGraphViewProps) {
 
             <div className="workspace immersive-page__grid immersive-page__grid--knowledge graph-workspace">
                 <motion.aside className="inspector" {...revealMotion(0.1, 22)}>
-                    <motion.section className="card card--soft inspector-card inspector-card--nav" {...cardHoverMotion} layout>
+                    <motion.section className="card card--soft inspector-card inspector-card--nav" {...cardHoverMotion}>
                         <div className="card__header">
                             <span className="card__eyebrow">Навигация</span>
                         </div>
@@ -635,7 +635,7 @@ export function KnowledgeGraphView({ disciplineId }: KnowledgeGraphViewProps) {
                         </p>
                     </motion.section>
 
-                    <motion.section className="card card--soft inspector-card inspector-card--orphans" {...cardHoverMotion} layout>
+                    <motion.section className="card card--soft inspector-card inspector-card--orphans" {...cardHoverMotion}>
                         <div className="card__header">
                             <span className="card__eyebrow">Непривязанные элементы</span>
                         </div>
@@ -657,7 +657,7 @@ export function KnowledgeGraphView({ disciplineId }: KnowledgeGraphViewProps) {
                         )}
                     </motion.section>
 
-                    <motion.section className="card inspector-card inspector-card--detail" {...cardHoverMotion} layout>
+                    <motion.section className="card inspector-card inspector-card--detail" {...cardHoverMotion}>
                         <div className="card__header">
                             <span className="card__eyebrow">Выбранная вершина</span>
                         </div>
@@ -703,8 +703,8 @@ export function KnowledgeGraphView({ disciplineId }: KnowledgeGraphViewProps) {
                 </motion.aside>
 
                 <motion.div className="workspace-main" {...revealMotion(0.16, 26)}>
-                    <motion.section className="graph-stage" {...cardHoverMotion} layout>
-                        <motion.div className="graph-toolbar" layout>
+                    <motion.section className="graph-stage" {...cardHoverMotion}>
+                        <motion.div className="graph-toolbar">
                             <div>
                                 <span className="graph-toolbar__eyebrow">Текущий срез</span>
                                 <h2>{scene?.title ?? "Построение графа"}</h2>
@@ -780,12 +780,12 @@ export function KnowledgeGraphView({ disciplineId }: KnowledgeGraphViewProps) {
                                         </GraphNodeRuntimeStateProvider>
                                     </motion.div>
 
-                                    <motion.aside
-                                        className="graph-legend-overlay"
-                                        initial={{ opacity: 0, y: 18, scale: 0.96 }}
-                                        animate={{ opacity: 1, y: 0, scale: 1 }}
-                                        transition={{ duration: 0.28, ease: [0.22, 1, 0.36, 1] }}
-                                    >
+                                        <motion.aside
+                                            className="graph-legend-overlay"
+                                            initial={{ opacity: 0, y: 18 }}
+                                            animate={{ opacity: 1, y: 0 }}
+                                            transition={{ duration: 0.28, ease: [0.22, 1, 0.36, 1] }}
+                                        >
                                         <p className="graph-legend-overlay__eyebrow">Легенда</p>
                                         {overlayLegendSections.map((section) => (
                                             <section className="graph-legend-overlay__section" key={section.title}>
@@ -846,8 +846,8 @@ export function KnowledgeGraphView({ disciplineId }: KnowledgeGraphViewProps) {
                         className="modal-panel"
                         onClick={(event) => event.stopPropagation()}
                         role="dialog"
-                        initial={{ opacity: 0, y: 24, scale: 0.97, filter: "blur(8px)" }}
-                        animate={{ opacity: 1, y: 0, scale: 1, filter: "blur(0px)" }}
+                        initial={{ opacity: 0, y: 24 }}
+                        animate={{ opacity: 1, y: 0 }}
                         transition={{ duration: 0.26, ease: [0.22, 1, 0.36, 1] }}
                     >
                         <div className="modal-panel__header">

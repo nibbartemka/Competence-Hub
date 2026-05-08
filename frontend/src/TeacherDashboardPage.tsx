@@ -1,6 +1,6 @@
 import { motion } from "motion/react";
 import { useEffect, useMemo, useState } from "react";
-import { Link, useNavigate, useParams } from "react-router-dom";
+import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
 
 import {
   fetchDisciplines,
@@ -13,8 +13,8 @@ import {
   isAbortError,
 } from "./api";
 import { disciplinePathValue } from "./disciplineRouting";
-import { ExitConfirmDialog } from "./ExitConfirmDialog";
 import { actionHoverMotion, revealMotion } from "./motionPresets";
+import { getSessionHomePath, readSession, sessionMatches } from "./session";
 import type {
   Discipline,
   Group,
@@ -46,6 +46,8 @@ function getDisciplinePath(discipline: Discipline | undefined, fallbackId: strin
 export default function TeacherDashboardPage() {
   const { teacherId } = useParams<{ teacherId: string }>();
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  const isAdminViewer = searchParams.get("viewer") === "admin" && readSession()?.role === "admin";
 
   const [teacher, setTeacher] = useState<Teacher | null>(null);
   const [disciplines, setDisciplines] = useState<Discipline[]>([]);
@@ -56,7 +58,13 @@ export default function TeacherDashboardPage() {
   const [selectedDisciplineId, setSelectedDisciplineId] = useState("");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
-  const [exitConfirmOpen, setExitConfirmOpen] = useState(false);
+
+  useEffect(() => {
+    const activeSession = readSession();
+    if (!isAdminViewer && !sessionMatches(activeSession, "teacher", teacherId)) {
+      navigate(getSessionHomePath(activeSession), { replace: true });
+    }
+  }, [isAdminViewer, navigate, teacherId]);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -189,10 +197,14 @@ export default function TeacherDashboardPage() {
     <div className="page-shell role-page immersive-page immersive-page--teacher">
       <motion.header className="hero immersive-page__hero role-dashboard-hero" {...revealMotion(0.02)}>
         <div>
-          <p className="hero__eyebrow">Кабинет преподавателя</p>
+          <p className="hero__eyebrow">
+            {isAdminViewer ? "Просмотр преподавателя" : "Кабинет преподавателя"}
+          </p>
           <h1>{teacher?.name ?? "Преподаватель"}</h1>
           <p className="hero__subtitle">
-            Дисциплины, группы, траектории, задания, покрытие элементов и результаты студентов.
+            {isAdminViewer
+              ? "Администратор просматривает страницу без прав преподавателя."
+              : "Дисциплины, группы, траектории, задания, покрытие элементов и результаты студентов."}
           </p>
         </div>
         <div className="hero__controls">
@@ -202,13 +214,6 @@ export default function TeacherDashboardPage() {
             type="button"
           >
             Назад
-          </button>
-          <button
-            className="ghost-button"
-            onClick={() => setExitConfirmOpen(true)}
-            type="button"
-          >
-            Выход
           </button>
         </div>
       </motion.header>
@@ -273,13 +278,15 @@ export default function TeacherDashboardPage() {
                       >
                         Паспорт
                       </MotionLink>
-                      <MotionLink
-                        className="primary-button"
-                        to={`/disciplines/${getDisciplinePath(discipline, discipline.id)}/trajectory`}
-                        {...actionHoverMotion}
-                      >
-                        Создать траекторию
-                      </MotionLink>
+                      {!isAdminViewer ? (
+                        <MotionLink
+                          className="primary-button"
+                          to={`/disciplines/${getDisciplinePath(discipline, discipline.id)}/trajectory`}
+                          {...actionHoverMotion}
+                        >
+                          Создать траекторию
+                        </MotionLink>
+                      ) : null}
                     </div>
                   </article>
                 ))
@@ -328,9 +335,7 @@ export default function TeacherDashboardPage() {
                       </div>
                       <div className="role-inline-list">
                         {groupStudents.slice(0, 6).map((student) => (
-                          <MotionLink key={student.id} to={`/students/${student.id}`} {...actionHoverMotion}>
-                            {student.name}
-                          </MotionLink>
+                          <span key={student.id}>{student.name}</span>
                         ))}
                         {groupStudents.length > 6 ? <span>Еще {groupStudents.length - 6}</span> : null}
                       </div>
@@ -393,7 +398,7 @@ export default function TeacherDashboardPage() {
                 <p className="card__eyebrow">Траектории</p>
                 <h2>Создание, черновики, активация и архив</h2>
               </div>
-              {selectedDiscipline ? (
+              {selectedDiscipline && !isAdminViewer ? (
                 <MotionLink
                   className="primary-button"
                   to={`/disciplines/${getDisciplinePath(selectedDiscipline, selectedDiscipline.id)}/trajectory`}
@@ -415,20 +420,28 @@ export default function TeacherDashboardPage() {
                         <span>{trajectory.topic_count} тем</span>
                       </div>
                       <div className="role-action-row">
-                        <MotionLink
-                          className="secondary-button"
-                          to={`/disciplines/${getDisciplinePath(discipline, trajectory.discipline_id)}/trajectories/${trajectory.id}`}
-                          {...actionHoverMotion}
-                        >
-                          Открыть
-                        </MotionLink>
-                        <MotionLink
-                          className="secondary-button"
-                          to={`/disciplines/${getDisciplinePath(discipline, trajectory.discipline_id)}/trajectories/${trajectory.id}`}
-                          {...actionHoverMotion}
-                        >
-                          Порядок тем
-                        </MotionLink>
+                        {isAdminViewer ? (
+                          <span className="role-muted-note">
+                            Доступно только чтение данных преподавателя.
+                          </span>
+                        ) : (
+                          <>
+                            <MotionLink
+                              className="secondary-button"
+                              to={`/disciplines/${getDisciplinePath(discipline, trajectory.discipline_id)}/trajectories/${trajectory.id}`}
+                              {...actionHoverMotion}
+                            >
+                              Открыть
+                            </MotionLink>
+                            <MotionLink
+                              className="secondary-button"
+                              to={`/disciplines/${getDisciplinePath(discipline, trajectory.discipline_id)}/trajectories/${trajectory.id}`}
+                              {...actionHoverMotion}
+                            >
+                              Порядок тем
+                            </MotionLink>
+                          </>
+                        )}
                       </div>
                     </article>
                   );
@@ -447,7 +460,11 @@ export default function TeacherDashboardPage() {
                 Создание задания, шаблон, тема, элемент, сложность, предпросмотр и фильтры находятся на странице выбранной траектории.
               </p>
               <div className="role-action-row">
-                {selectedTrajectories[0] ? (
+                {isAdminViewer ? (
+                  <span className="role-muted-note">
+                    Редактирование заданий доступно только владельцу профиля преподавателя.
+                  </span>
+                ) : selectedTrajectories[0] ? (
                   <MotionLink
                     className="primary-button"
                     to={`/disciplines/${getDisciplinePath(selectedDiscipline, selectedTrajectories[0].discipline_id)}/trajectories/${selectedTrajectories[0].id}`}
@@ -477,11 +494,6 @@ export default function TeacherDashboardPage() {
         </main>
       )}
 
-      <ExitConfirmDialog
-        open={exitConfirmOpen}
-        onCancel={() => setExitConfirmOpen(false)}
-        onConfirm={() => navigate("/")}
-      />
     </div>
   );
 }

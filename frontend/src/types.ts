@@ -43,6 +43,7 @@ export type Student = {
   id: string;
   name: string;
   login: string;
+  is_active: boolean;
   group_id: string;
   subgroup_id: string | null;
 };
@@ -51,6 +52,7 @@ export type Teacher = {
   id: string;
   name: string;
   login: string;
+  is_active: boolean;
   discipline_ids: string[];
   group_ids: string[];
 };
@@ -59,6 +61,7 @@ export type Expert = {
   id: string;
   name: string;
   login: string;
+  is_active: boolean;
   discipline_ids: string[];
 };
 
@@ -66,6 +69,7 @@ export type Admin = {
   id: string;
   name: string;
   login: string;
+  is_active: boolean;
 };
 
 export type AuthRole = "student" | "teacher" | "admin" | "expert";
@@ -74,6 +78,16 @@ export type AuthLoginResponse = {
   role: AuthRole;
   user_id: string | null;
   display_name: string;
+  login: string;
+  session_id: string;
+};
+
+export type AuthSession = {
+  role: AuthRole;
+  user_id: string;
+  display_name: string;
+  login: string;
+  expires_at: string;
 };
 
 export type Topic = {

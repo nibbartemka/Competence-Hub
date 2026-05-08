@@ -11,6 +11,7 @@ from .core import init_db
 from .core.db import get_async_session_maker
 from .models import Discipline
 from .models import *  # noqa: F401,F403 - ensure ORM models are registered
+from .services.session_store import session_store
 from .services.topic_dependencies import sync_topic_dependencies_for_disciplines
 
 
@@ -22,7 +23,10 @@ async def lifespan(app: FastAPI):
         discipline_ids = list(result.scalars().all())
         await sync_topic_dependencies_for_disciplines(session, discipline_ids)
         await session.commit()
-    yield
+    try:
+        yield
+    finally:
+        await session_store.close()
 
 
 def create_app() -> FastAPI:

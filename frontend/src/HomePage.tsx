@@ -1,5 +1,5 @@
 import { type FormEvent, useEffect, useMemo, useRef, useState } from "react";
-import { AnimatePresence, LayoutGroup, motion } from "motion/react";
+import { AnimatePresence, motion } from "motion/react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 
 import {
@@ -18,10 +18,14 @@ import {
   fetchSubgroups,
   fetchTeachers,
   isAbortError,
+  updateAdmin,
   updateDisciplineAssignments,
+  updateExpert,
+  updateStudent,
+  updateTeacher,
 } from "./api";
 import { disciplinePathValue } from "./disciplineRouting";
-import { ExitConfirmDialog } from "./ExitConfirmDialog";
+import { getSessionHomePath, readSession, sessionMatches } from "./session";
 import type { Admin, Discipline, Expert, Group, Student, Subgroup, Teacher } from "./types";
 
 type DashboardData = {
@@ -35,6 +39,8 @@ type DashboardData = {
 };
 
 type AdminUserRoleFilter = "all" | "student" | "teacher" | "expert" | "admin";
+type AdminUserStatusFilter = "all" | "active" | "inactive";
+type AdminModalTab = "group" | "subgroup" | "teacher" | "student" | "expert" | "admin";
 
 type AdminDirectoryUser = {
   id: string;
@@ -45,7 +51,7 @@ type AdminDirectoryUser = {
   groupIds: string[];
   subgroupId?: string | null;
   disciplineIds: string[];
-  status: "active";
+  status: AdminUserStatusFilter;
 };
 
 type Feedback = {
@@ -78,22 +84,10 @@ function shortId(id: string) {
   return id.slice(0, 8);
 }
 
-function initialsOf(name?: string | null) {
-  if (!name) {
-    return "CH";
-  }
-  return name
-    .split(/\s+/)
-    .filter(Boolean)
-    .slice(0, 2)
-    .map((part) => part[0]?.toUpperCase() ?? "")
-    .join("");
-}
-
 function buildReveal(delay = 0) {
   return {
-    initial: { opacity: 0, y: 20, filter: "blur(8px)" },
-    whileInView: { opacity: 1, y: 0, filter: "blur(0px)" },
+    initial: { opacity: 0, y: 20 },
+    whileInView: { opacity: 1, y: 0 },
     viewport: { once: true, amount: 0.18 },
     transition: {
       duration: 0.55,
@@ -153,7 +147,8 @@ export function HomePage() {
   const [adminUserGroupFilter, setAdminUserGroupFilter] = useState("");
   const [adminUserSubgroupFilter, setAdminUserSubgroupFilter] = useState("");
   const [adminUserDisciplineFilter, setAdminUserDisciplineFilter] = useState("");
-  const [adminUserStatusFilter, setAdminUserStatusFilter] = useState("active");
+  const [adminUserStatusFilter, setAdminUserStatusFilter] =
+    useState<AdminUserStatusFilter>("active");
   const [selectedAdminUser, setSelectedAdminUser] = useState<AdminDirectoryUser | null>(
     null,
   );
@@ -167,11 +162,10 @@ export function HomePage() {
   const [busyAction, setBusyAction] = useState("");
   const [notifications, setNotifications] = useState<ToastMessage[]>([]);
   const [adminModalOpen, setAdminModalOpen] = useState(false);
-  const [exitConfirmOpen, setExitConfirmOpen] = useState(false);
-  const [adminModalTab, setAdminModalTab] = useState<
-    "group" | "teacher" | "student" | "expert" | "admin"
-  >("student");
+  const [adminModalTab, setAdminModalTab] = useState<AdminModalTab>("student");
   const notificationTimersRef = useRef(new Map<string, number>());
+  const sessionRole = isAdminMode ? "admin" : isExpertMode ? "expert" : "teacher";
+  const sessionUserId = isAdminMode ? adminId : isExpertMode ? expertId : teacherId;
 
   const groupById = useMemo(
     () => new Map(data.groups.map((group) => [group.id, group])),
@@ -199,14 +193,6 @@ export function HomePage() {
   const disciplineById = useMemo(
     () => new Map(data.disciplines.map((discipline) => [discipline.id, discipline])),
     [data.disciplines],
-  );
-  const currentAdmin = useMemo(
-    () => data.admins.find((admin) => admin.id === adminId) ?? null,
-    [adminId, data.admins],
-  );
-  const currentExpert = useMemo(
-    () => data.experts.find((expert) => expert.id === expertId) ?? null,
-    [data.experts, expertId],
   );
   const currentTeacher = useMemo(
     () => data.teachers.find((teacher) => teacher.id === teacherId) ?? null,
@@ -260,11 +246,6 @@ export function HomePage() {
     : isExpertMode
       ? "Эксперт работает с дисциплинами и графами знаний, не управляя студенческими и преподавательскими учетными записями."
       : "Преподаватель работает со своими дисциплинами, траекториями и студентами закрепленных групп.";
-  const activePersonName = isAdminMode
-    ? currentAdmin?.name
-    : isExpertMode
-      ? currentExpert?.name
-      : currentTeacher?.name;
   const canCreateDiscipline =
     !busyAction &&
     disciplineName.trim() &&
@@ -322,7 +303,7 @@ export function HomePage() {
         groupIds: [student.group_id],
         subgroupId: student.subgroup_id,
         disciplineIds,
-        status: "active" as const,
+        status: student.is_active ? "active" as const : "inactive" as const,
       };
     });
     const teacherUsers = data.teachers.map((teacher) => ({
@@ -333,7 +314,7 @@ export function HomePage() {
       roleLabel: "Преподаватель",
       groupIds: teacher.group_ids,
       disciplineIds: teacher.discipline_ids,
-      status: "active" as const,
+      status: teacher.is_active ? "active" as const : "inactive" as const,
     }));
     const expertUsers = data.experts.map((expert) => ({
       id: expert.id,
@@ -343,7 +324,7 @@ export function HomePage() {
       roleLabel: "Эксперт",
       groupIds: [],
       disciplineIds: expert.discipline_ids,
-      status: "active" as const,
+      status: expert.is_active ? "active" as const : "inactive" as const,
     }));
     const adminUsers = data.admins.map((admin) => ({
       id: admin.id,
@@ -353,7 +334,7 @@ export function HomePage() {
       roleLabel: "Администратор",
       groupIds: [],
       disciplineIds: [],
-      status: "active" as const,
+      status: admin.is_active ? "active" as const : "inactive" as const,
     }));
     return [...studentUsers, ...teacherUsers, ...expertUsers, ...adminUsers];
   }, [data.admins, data.disciplines, data.experts, data.students, data.teachers]);
@@ -409,11 +390,15 @@ export function HomePage() {
     subgroupById,
   ]);
   const topNavButtons = [
-    {
-      key: "back",
-      label: "Назад",
-      onClick: () => navigate(-1),
-    },
+    ...(!isAdminMode
+      ? [
+          {
+            key: "back",
+            label: "Назад",
+            onClick: () => navigate(-1),
+          },
+        ]
+      : []),
     ...(isTeacherMode && teacherId
       ? [
           {
@@ -424,9 +409,40 @@ export function HomePage() {
         ]
       : []),
     ];
-  function openAdminModalTab(tab: "group" | "teacher" | "student" | "expert" | "admin") {
+  function openAdminModalTab(tab: AdminModalTab) {
     setAdminModalTab(tab);
     setAdminModalOpen(true);
+  }
+
+  function getAdminUserViewPath(user: AdminDirectoryUser) {
+    if (user.role === "student") {
+      return `/students/${user.id}?viewer=admin`;
+    }
+    if (user.role === "teacher") {
+      return `/teachers/${user.id}?viewer=admin`;
+    }
+    return `/admin/users/${user.role}/${user.id}`;
+  }
+
+  async function handleToggleAdminUserStatus(user: AdminDirectoryUser) {
+    const nextIsActive = user.status !== "active";
+    try {
+      setBusyAction(`status-${user.role}-${user.id}`);
+      if (user.role === "student") {
+        await updateStudent(user.id, { is_active: nextIsActive });
+      } else if (user.role === "teacher") {
+        await updateTeacher(user.id, { is_active: nextIsActive });
+      } else if (user.role === "expert") {
+        await updateExpert(user.id, { is_active: nextIsActive });
+      } else {
+        await updateAdmin(user.id, { is_active: nextIsActive });
+      }
+      await refreshAfterChange(nextIsActive ? "Профиль активирован." : "Профиль отключен.");
+    } catch (error) {
+      pushNotification("error", extractErrorMessage(error));
+    } finally {
+      setBusyAction("");
+    }
   }
 
   function dismissNotification(id: string) {
@@ -484,6 +500,13 @@ export function HomePage() {
 
     setData({ admins, disciplines, experts, groups, students, subgroups, teachers });
   }
+
+  useEffect(() => {
+    const activeSession = readSession();
+    if (!sessionMatches(activeSession, sessionRole, sessionUserId)) {
+      navigate(getSessionHomePath(activeSession), { replace: true });
+    }
+  }, [navigate, sessionRole, sessionUserId]);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -816,7 +839,11 @@ export function HomePage() {
           <header className="modal-panel__header">
             <div>
               <p className="card__eyebrow">Управление системой</p>
-              <h2>Добавить пользователя</h2>
+              <h2>
+                {adminModalTab === "group" || adminModalTab === "subgroup"
+                  ? "Группы и подгруппы"
+                  : "Добавить пользователя"}
+              </h2>
             </div>
             <button
               className="ghost-button"
@@ -829,34 +856,91 @@ export function HomePage() {
 
           <div className="modal-panel__body">
             <div className="admin-modal-grid">
-              {adminModalTab === "group" ? (
-                <motion.section className="home-card" layout {...CARD_MOTION}>
+              {adminModalTab === "group" || adminModalTab === "subgroup" ? (
+                <motion.section className="home-card admin-group-modal-card" {...CARD_MOTION}>
                   <p className="card__eyebrow">Группы</p>
-                  <h2>Создать группу</h2>
-                  <form className="home-form" onSubmit={handleCreateGroup}>
-                    <label className="field">
-                      <span>Название группы</span>
-                      <input
-                        value={groupName}
-                        onChange={(event) => setGroupName(event.target.value)}
-                        placeholder="Например: ИВТ-21"
-                        required
-                      />
-                    </label>
-                    <motion.button
-                      className="primary-button"
-                      disabled={busyAction === "group"}
-                      layout
-                      {...ACTION_MOTION}
+                  <h2>Группы и подгруппы</h2>
+                  <div className="admin-modal-tabs" role="tablist" aria-label="Создание групп">
+                    <button
+                      className={adminModalTab === "group" ? "primary-button" : "secondary-button"}
+                      onClick={() => setAdminModalTab("group")}
+                      type="button"
                     >
-                      {busyAction === "group" ? "Создаю..." : "Создать группу"}
-                    </motion.button>
-                  </form>
+                      Создание группы
+                    </button>
+                    <button
+                      className={adminModalTab === "subgroup" ? "primary-button" : "secondary-button"}
+                      onClick={() => setAdminModalTab("subgroup")}
+                      type="button"
+                    >
+                      Создание подгруппы
+                    </button>
+                  </div>
+
+                  {adminModalTab === "group" ? (
+                    <form className="home-form" onSubmit={handleCreateGroup}>
+                      <label className="field">
+                        <span>Название группы</span>
+                        <input
+                          value={groupName}
+                          onChange={(event) => setGroupName(event.target.value)}
+                          placeholder="Например: Б9124-09.03.04"
+                          required
+                        />
+                      </label>
+                      <motion.button
+                        className="primary-button"
+                        disabled={busyAction === "group"}
+                        {...ACTION_MOTION}
+                      >
+                        {busyAction === "group" ? "Создаю..." : "Создать группу"}
+                      </motion.button>
+                    </form>
+                  ) : (
+                    <form className="home-form" onSubmit={handleCreateSubgroup}>
+                      <label className="field">
+                        <span>Группа</span>
+                        <select
+                          value={subgroupGroupId}
+                          onChange={(event) => setSubgroupGroupId(event.target.value)}
+                          disabled={!data.groups.length}
+                          required
+                        >
+                          {data.groups.map((group) => (
+                            <option key={group.id} value={group.id}>
+                              {group.name}
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+                      <label className="field">
+                        <span>Номер подгруппы</span>
+                        <input
+                          min={1}
+                          type="number"
+                          value={subgroupNum}
+                          onChange={(event) => setSubgroupNum(event.target.value)}
+                          placeholder="1"
+                          required
+                        />
+                      </label>
+                      {!data.groups.length ? (
+                        <p className="home-hint">Сначала создайте хотя бы одну группу.</p>
+                      ) : null}
+                      <motion.button
+                        className="primary-button"
+                        disabled={busyAction === "subgroup" || !subgroupGroupId}
+                        {...ACTION_MOTION}
+                      >
+                        {busyAction === "subgroup" ? "Создаю..." : "Создать подгруппу"}
+                      </motion.button>
+                    </form>
+                  )}
                 </motion.section>
               ) : null}
 
               {adminModalTab === "teacher" ? (
-                <motion.section className="home-card" layout {...CARD_MOTION}>
+                <motion.section className="home-card" {...CARD_MOTION}>
                   <p className="card__eyebrow">Преподаватели</p>
                   <h2>Создать преподавателя</h2>
                   <form className="home-form" onSubmit={handleCreateTeacher}>
@@ -910,7 +994,6 @@ export function HomePage() {
                     <motion.button
                       className="primary-button"
                       disabled={busyAction === "teacher"}
-                      layout
                       {...ACTION_MOTION}
                     >
                       {busyAction === "teacher" ? "Создаю..." : "Создать преподавателя"}
@@ -920,7 +1003,7 @@ export function HomePage() {
               ) : null}
 
               {adminModalTab === "student" ? (
-                <motion.section className="home-card" layout {...CARD_MOTION}>
+                <motion.section className="home-card" {...CARD_MOTION}>
                   <p className="card__eyebrow">Студенты</p>
                   <h2>Создать студента</h2>
                   <form className="home-form" onSubmit={handleCreateStudent}>
@@ -990,7 +1073,6 @@ export function HomePage() {
                     <motion.button
                       className="primary-button"
                       disabled={busyAction === "student" || !studentGroupId}
-                      layout
                       {...ACTION_MOTION}
                     >
                       {busyAction === "student" ? "Создаю..." : "Создать студента"}
@@ -1000,7 +1082,7 @@ export function HomePage() {
               ) : null}
 
               {adminModalTab === "expert" ? (
-                <motion.section className="home-card" layout {...CARD_MOTION}>
+                <motion.section className="home-card" {...CARD_MOTION}>
                   <p className="card__eyebrow">Эксперты</p>
                   <h2>Создать эксперта</h2>
                   <form className="home-form" onSubmit={handleCreateExpert}>
@@ -1035,7 +1117,6 @@ export function HomePage() {
                     <motion.button
                       className="primary-button"
                       disabled={busyAction === "expert"}
-                      layout
                       {...ACTION_MOTION}
                     >
                       {busyAction === "expert" ? "Создаю..." : "Создать эксперта"}
@@ -1045,7 +1126,7 @@ export function HomePage() {
               ) : null}
 
               {adminModalTab === "admin" ? (
-                <motion.section className="home-card" layout {...CARD_MOTION}>
+                <motion.section className="home-card" {...CARD_MOTION}>
                   <p className="card__eyebrow">Администраторы</p>
                   <h2>Создать администратора</h2>
                   <form className="home-form" onSubmit={handleCreateAdmin}>
@@ -1080,7 +1161,6 @@ export function HomePage() {
                     <motion.button
                       className="primary-button"
                       disabled={busyAction === "admin"}
-                      layout
                       {...ACTION_MOTION}
                     >
                       {busyAction === "admin" ? "Создаю..." : "Создать администратора"}
@@ -1287,7 +1367,7 @@ export function HomePage() {
 
     return (
       <motion.section className="home-section admin-admin-stack" {...buildReveal(0.06)}>
-        <motion.section className="home-card home-card--wide admin-system-card" layout {...CARD_MOTION}>
+        <motion.section className="home-card home-card--wide admin-system-card" {...CARD_MOTION}>
           <div className="admin-section-heading">
             <p className="card__eyebrow">Пользователи</p>
             <h2>Пользователи системы</h2>
@@ -1383,10 +1463,13 @@ export function HomePage() {
               <span>Статус</span>
               <select
                 value={adminUserStatusFilter}
-                onChange={(event) => setAdminUserStatusFilter(event.target.value)}
+                onChange={(event) =>
+                  setAdminUserStatusFilter(event.target.value as AdminUserStatusFilter)
+                }
               >
                 <option value="all">Все статусы</option>
                 <option value="active">Активные</option>
+                <option value="inactive">Неактивные</option>
               </select>
             </label>
           </div>
@@ -1423,14 +1506,30 @@ export function HomePage() {
                         {subgroup ? ` · подгруппа ${subgroup.subgroup_num}` : ""}
                       </span>
                       <span>{disciplines.length ? disciplines.join(", ") : "Не назначены"}</span>
-                      <span className="admin-chip">Активен</span>
-                      <button
-                        className="secondary-button"
-                        onClick={() => setSelectedAdminUser(user)}
-                        type="button"
+                      <span
+                        className={`admin-chip ${
+                          user.status === "inactive" ? "admin-chip--muted" : ""
+                        }`}
                       >
-                        Подробнее
-                      </button>
+                        {user.status === "active" ? "Активен" : "Неактивен"}
+                      </span>
+                      <div className="admin-directory-row__actions">
+                        <button
+                          className="secondary-button"
+                          onClick={() => navigate(getAdminUserViewPath(user))}
+                          type="button"
+                        >
+                          Подробнее
+                        </button>
+                        <button
+                          className="ghost-button admin-directory-row__status-action"
+                          disabled={busyAction === `status-${user.role}-${user.id}`}
+                          onClick={() => void handleToggleAdminUserStatus(user)}
+                          type="button"
+                        >
+                          {user.status === "active" ? "Отключить" : "Активировать"}
+                        </button>
+                      </div>
                     </article>
                   );
                 })
@@ -1441,99 +1540,32 @@ export function HomePage() {
           </div>
         </motion.section>
 
-        <motion.section className="home-card home-card--wide admin-system-card" layout {...CARD_MOTION}>
-          <div className="admin-section-heading">
-            <p className="card__eyebrow">Группы</p>
-            <h2>Группы и подгруппы</h2>
-          </div>
-
-          <div className="admin-organization-grid">
-            <form className="home-form admin-panel-block" onSubmit={handleCreateGroup}>
-              <label className="field">
-                <span>Название группы</span>
-                <input
-                  value={groupName}
-                  onChange={(event) => setGroupName(event.target.value)}
-                  placeholder="Например: Б9124-09.03.04"
-                  required
-                />
-              </label>
-              <button className="primary-button" disabled={busyAction === "group"}>
-                {busyAction === "group" ? "Создаю..." : "Создать группу"}
-              </button>
-            </form>
-
-            <form className="home-form admin-panel-block" onSubmit={handleCreateSubgroup}>
-              <label className="field">
-                <span>Группа</span>
-                <select
-                  value={subgroupGroupId}
-                  onChange={(event) => setSubgroupGroupId(event.target.value)}
-                  disabled={!data.groups.length}
-                  required
-                >
-                  {data.groups.map((group) => (
-                    <option key={group.id} value={group.id}>
-                      {group.name}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <label className="field">
-                <span>Номер подгруппы</span>
-                <input
-                  min={1}
-                  type="number"
-                  value={subgroupNum}
-                  onChange={(event) => setSubgroupNum(event.target.value)}
-                  placeholder="1"
-                  required
-                />
-              </label>
-              <button
-                className="primary-button"
-                disabled={busyAction === "subgroup" || !subgroupGroupId}
-              >
-                {busyAction === "subgroup" ? "Создаю..." : "Создать подгруппу"}
-              </button>
-            </form>
-          </div>
-
-          <div className="admin-group-list">
-            {data.groups.length ? (
-              data.groups.map((group) => {
-                const groupStudents = data.students.filter(
-                  (student) => student.group_id === group.id,
-                );
-                const groupSubgroups = subgroupsByGroupId.get(group.id) ?? [];
-                return (
-                  <article className="admin-group-card" key={group.id}>
-                    <strong>{group.name}</strong>
-                    <span>Студентов: {groupStudents.length}</span>
-                    <div className="admin-chip-list">
-                      {groupSubgroups.length ? (
-                        groupSubgroups.map((subgroup) => (
-                          <span className="admin-chip" key={subgroup.id}>
-                            Подгруппа {subgroup.subgroup_num}
-                          </span>
-                        ))
-                      ) : (
-                        <span className="home-hint">Подгруппы не созданы</span>
-                      )}
-                    </div>
-                  </article>
-                );
-              })
-            ) : (
-              <p className="home-hint">Группы пока не созданы.</p>
-            )}
+        <motion.section
+          className="home-card home-card--wide admin-system-card admin-groups-compact-card"
+          {...CARD_MOTION}
+        >
+          <div className="admin-section-heading admin-section-heading--with-action">
+            <div>
+              <p className="card__eyebrow">Группы</p>
+              <h2>Группы и подгруппы</h2>
+              <p className="card__text">
+                {data.groups.length} групп, {data.subgroups.length} подгрупп.
+              </p>
+            </div>
+            <button
+              className="primary-button admin-groups-compact-card__button"
+              onClick={() => openAdminModalTab("group")}
+              type="button"
+            >
+              Управлять группами
+            </button>
           </div>
         </motion.section>
 
-        <motion.section className="home-card home-card--wide admin-discipline-card" layout {...CARD_MOTION}>
+        <motion.section className="home-card home-card--wide admin-discipline-card" {...CARD_MOTION}>
           <div className="admin-section-heading">
             <p className="card__eyebrow">Дисциплины</p>
-            <h2>Организационные дисциплины</h2>
+            <h2>Дисциплины</h2>
           </div>
 
           <form className="home-form admin-discipline-create admin-create-discipline-form" onSubmit={handleCreateDiscipline}>
@@ -1592,7 +1624,7 @@ export function HomePage() {
           {renderDisciplineRows()}
         </motion.section>
 
-        <motion.section className="home-card home-card--wide admin-discipline-card" layout {...CARD_MOTION}>
+        <motion.section className="home-card home-card--wide admin-discipline-card" {...CARD_MOTION}>
           <div className="admin-section-heading">
             <p className="card__eyebrow">Назначения</p>
             <h2>Закрепление за дисциплиной</h2>
@@ -1712,7 +1744,6 @@ export function HomePage() {
                 <motion.article
                   className="admin-discipline-row"
                   key={discipline.id}
-                  layout
                   initial={{ opacity: 0, y: 12 }}
                   animate={{ opacity: 1, y: 0 }}
                   transition={{ duration: 0.28, ease: REVEAL_EASE }}
@@ -1741,7 +1772,6 @@ export function HomePage() {
                   <div className="discipline-row__actions">
                     <MotionLink
                       className="secondary-button discipline-row__action"
-                      layout
                       to={`/disciplines/${disciplinePathValue(discipline, discipline.id)}`}
                       {...ACTION_MOTION}
                     >
@@ -1749,7 +1779,6 @@ export function HomePage() {
                     </MotionLink>
                     <MotionLink
                       className="primary-button discipline-row__action"
-                      layout
                       to={`/disciplines/${disciplinePathValue(discipline, discipline.id)}/knowledge`}
                       {...ACTION_MOTION}
                     >
@@ -1768,7 +1797,7 @@ export function HomePage() {
 
     return (
       <motion.section className="home-section admin-admin-stack" {...buildReveal(0.06)}>
-        <motion.section className="home-card home-card--wide admin-system-card" layout {...CARD_MOTION}>
+        <motion.section className="home-card home-card--wide admin-system-card" {...CARD_MOTION}>
           <div className="admin-section-heading">
             <p className="card__eyebrow">Пользователи</p>
             <h2>Создание пользователя</h2>
@@ -1794,7 +1823,7 @@ export function HomePage() {
           </div>
         </motion.section>
 
-        <motion.section className="home-card home-card--wide admin-discipline-card" layout {...CARD_MOTION}>
+        <motion.section className="home-card home-card--wide admin-discipline-card" {...CARD_MOTION}>
           <div className="admin-section-heading">
             <p className="card__eyebrow">Назначение</p>
             <h2>Закрепление дисциплины за преподавателями</h2>
@@ -1845,7 +1874,7 @@ export function HomePage() {
           </form>
         </motion.section>
 
-        <motion.section className="home-card home-card--wide admin-discipline-card" layout {...CARD_MOTION}>
+        <motion.section className="home-card home-card--wide admin-discipline-card" {...CARD_MOTION}>
           <div className="admin-section-heading">
             <p className="card__eyebrow">Дисциплины</p>
             <h2>Список дисциплин</h2>
@@ -1893,7 +1922,6 @@ export function HomePage() {
       <motion.section className="home-section" {...buildReveal(0.06)}>
         <motion.section
           className="home-card home-card--wide home-card--spotlight admin-discipline-card"
-          layout
           {...CARD_MOTION}
         >
           <div className="admin-section-heading admin-section-heading--with-action">
@@ -2061,7 +2089,6 @@ export function HomePage() {
               <motion.button
                 className="primary-button"
                 disabled={busyAction === "discipline" || !canCreateDiscipline}
-                layout
                 {...ACTION_MOTION}
               >
                 {busyAction === "discipline" ? "Создаю..." : "Создать дисциплину"}
@@ -2100,7 +2127,6 @@ export function HomePage() {
       <motion.section className="home-section" {...buildReveal(0.06)}>
         <motion.section
           className="home-card home-card--wide home-card--spotlight admin-discipline-card"
-          layout
           {...CARD_MOTION}
         >
           <div className="admin-section-heading">
@@ -2177,7 +2203,6 @@ export function HomePage() {
               <motion.button
                 className="primary-button"
                 disabled={busyAction === "discipline" || !canCreateDiscipline}
-                layout
                 {...ACTION_MOTION}
               >
                 {busyAction === "discipline" ? "Создаю..." : "Создать дисциплину"}
@@ -2229,7 +2254,6 @@ export function HomePage() {
                     <motion.article
                       className="admin-discipline-row"
                       key={discipline.id}
-                      layout
                       initial={{ opacity: 0, y: 12 }}
                       animate={{ opacity: 1, y: 0 }}
                       transition={{ duration: 0.28, ease: REVEAL_EASE }}
@@ -2260,7 +2284,6 @@ export function HomePage() {
                       <div className="discipline-row__actions">
                         <MotionLink
                           className="secondary-button discipline-row__action"
-                          layout
                           to={`/disciplines/${disciplinePathValue(discipline, discipline.id)}`}
                           {...ACTION_MOTION}
                         >
@@ -2268,7 +2291,6 @@ export function HomePage() {
                         </MotionLink>
                         <MotionLink
                           className="primary-button discipline-row__action"
-                          layout
                           to={`/disciplines/${disciplinePathValue(discipline, discipline.id)}/knowledge`}
                           {...ACTION_MOTION}
                         >
@@ -2291,7 +2313,7 @@ export function HomePage() {
   function renderAdminUsersSection() {
     return (
       <motion.section className="home-section" {...buildReveal(0.1)}>
-        <motion.section className="home-card home-card--wide admin-system-card" layout {...CARD_MOTION}>
+        <motion.section className="home-card home-card--wide admin-system-card" {...CARD_MOTION}>
           <div className="admin-section-heading">
             <div>
               <p className="card__eyebrow">Пользователи</p>
@@ -2367,24 +2389,6 @@ export function HomePage() {
               </button>
             ))}
           </nav>
-          {isAdminMode ? (
-            <div className="admin-topbar-profile">
-              <div className="admin-topbar-profile__user">
-                <div className="admin-topbar-profile__avatar">{initialsOf(activePersonName)}</div>
-                <div>
-                  <strong>{activePersonName ?? "Администратор"}</strong>
-                  <span>Администратор</span>
-                </div>
-              </div>
-              <button className="ghost-button home-hero__logout" onClick={() => setExitConfirmOpen(true)} type="button">
-                Выход
-              </button>
-            </div>
-          ) : (
-            <button className="ghost-button home-hero__logout" onClick={() => setExitConfirmOpen(true)} type="button">
-              Выход
-            </button>
-          )}
         </div>
 
         <div className="home-hero__body">
@@ -2440,7 +2444,7 @@ export function HomePage() {
       <AnimatePresence>{renderAdminManagementModal()}</AnimatePresence>
       <AnimatePresence>{renderAdminUserDetailsModal()}</AnimatePresence>
 
-      <LayoutGroup>
+      <>
         <main className="home-sections">
           {loading ? (
             <section className="status-view">
@@ -2457,7 +2461,6 @@ export function HomePage() {
           <motion.section className="home-section" {...buildReveal(0.06)}>
             <motion.section
               className={`home-card home-card--wide home-card--spotlight ${isAdminMode ? "admin-discipline-card" : ""}`}
-              layout
               {...CARD_MOTION}
             >
               <div className="home-card__header">
@@ -2494,7 +2497,6 @@ export function HomePage() {
                     <motion.button
                       className="primary-button"
                       disabled={busyAction === "discipline" || !canCreateDiscipline}
-                      layout
                       {...ACTION_MOTION}
                     >
                       {busyAction === "discipline" ? "Создаю..." : "Создать дисциплину"}
@@ -2533,7 +2535,6 @@ export function HomePage() {
                       disabled={
                         busyAction === "discipline" || !canCreateDiscipline
                       }
-                      layout
                       {...ACTION_MOTION}
                     >
                       {busyAction === "discipline" ? "Создаю..." : "Создать дисциплину"}
@@ -2628,7 +2629,6 @@ export function HomePage() {
                     <motion.article
                       className="discipline-row"
                       key={discipline.id}
-                      layout
                       initial={{ opacity: 0, y: 12 }}
                       animate={{ opacity: 1, y: 0 }}
                       transition={{ duration: 0.28, ease: REVEAL_EASE }}
@@ -2644,7 +2644,6 @@ export function HomePage() {
                       <div className="discipline-row__actions">
                         <MotionLink
                           className="secondary-button discipline-row__action"
-                          layout
                           to={`/disciplines/${disciplinePathValue(discipline, discipline.id)}`}
                           {...ACTION_MOTION}
                         >
@@ -2652,7 +2651,6 @@ export function HomePage() {
                         </MotionLink>
                         <MotionLink
                           className="primary-button discipline-row__action"
-                          layout
                           to={`/disciplines/${disciplinePathValue(discipline, discipline.id)}/knowledge`}
                           {...ACTION_MOTION}
                         >
@@ -2661,7 +2659,6 @@ export function HomePage() {
                         {!isExpertMode ? (
                           <MotionLink
                             className="secondary-button discipline-row__action"
-                            layout
                             to={`/disciplines/${disciplinePathValue(discipline, discipline.id)}/trajectory`}
                             {...ACTION_MOTION}
                           >
@@ -2680,7 +2677,6 @@ export function HomePage() {
             <motion.section className="home-section" {...buildReveal(0.08)}>
               <motion.section
                 className="home-card home-card--wide teacher-search-card"
-                layout
                 {...CARD_MOTION}
               >
                 <div className="home-card__header">
@@ -2702,11 +2698,9 @@ export function HomePage() {
                 <div className="teacher-student-search__results">
                   {searchableStudents.length ? (
                     searchableStudents.slice(0, 12).map((student) => (
-                      <MotionLink
+                      <motion.article
                         className="overview-row teacher-student-search__row"
                         key={student.id}
-                        layout
-                        to={`/students/${student.id}`}
                         {...ACTION_MOTION}
                       >
                         <strong>{student.name}</strong>
@@ -2714,7 +2708,7 @@ export function HomePage() {
                           {student.login} ·{" "}
                           {groupById.get(student.group_id)?.name ?? "Группа не найдена"}
                         </span>
-                      </MotionLink>
+                      </motion.article>
                     ))
                   ) : (
                     <p className="home-hint">Студенты по запросу не найдены.</p>
@@ -2726,7 +2720,7 @@ export function HomePage() {
 
           {isExpertMode ? (
             <motion.section className="home-section" {...buildReveal(0.12)}>
-              <motion.section className="home-card home-card--wide" layout {...CARD_MOTION}>
+              <motion.section className="home-card home-card--wide" {...CARD_MOTION}>
                 <p className="card__eyebrow">Текущая рабочая область</p>
                 <div className="home-lists">
                   <div>
@@ -2765,12 +2759,7 @@ export function HomePage() {
             )
           )}
         </main>
-      </LayoutGroup>
-      <ExitConfirmDialog
-        open={exitConfirmOpen}
-        onCancel={() => setExitConfirmOpen(false)}
-        onConfirm={() => navigate("/")}
-      />
+      </>
     </div>
   );
 }

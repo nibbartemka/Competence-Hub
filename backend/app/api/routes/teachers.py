@@ -6,14 +6,14 @@ from sqlalchemy import select
 from app.api.crud import commit_or_409, not_found
 from app.api.deps import DbSession
 from app.models import Group, Teacher, TeacherDiscipline, TeacherGroup
-from app.schemas import TeacherCreate, TeacherRead
+from app.schemas import TeacherCreate, TeacherRead, TeacherUpdate
 
 
 router = APIRouter(prefix="/teachers", tags=["Teachers"])
 
 
 async def _build_teacher_reads(
-    rows: list[tuple[UUID, str, str]],
+    rows: list[tuple[UUID, str, str, bool]],
     session: DbSession,
 ) -> list[TeacherRead]:
     if not rows:
@@ -50,16 +50,17 @@ async def _build_teacher_reads(
             id=teacher_id,
             name=name,
             login=login,
+            is_active=is_active,
             discipline_ids=discipline_ids_by_teacher.get(teacher_id, []),
             group_ids=group_ids_by_teacher.get(teacher_id, []),
         )
-        for teacher_id, name, login in rows
+        for teacher_id, name, login, is_active in rows
     ]
 
 
 async def get_teacher_for_read(teacher_id: UUID, session: DbSession) -> TeacherRead:
     result = await session.execute(
-        select(Teacher.id, Teacher.name, Teacher.login).where(Teacher.id == teacher_id)
+        select(Teacher.id, Teacher.name, Teacher.login, Teacher.is_active).where(Teacher.id == teacher_id)
     )
     row = result.one_or_none()
     if row is None:
@@ -70,7 +71,7 @@ async def get_teacher_for_read(teacher_id: UUID, session: DbSession) -> TeacherR
 @router.get("/", response_model=list[TeacherRead])
 async def list_teachers(session: DbSession) -> list[TeacherRead]:
     result = await session.execute(
-        select(Teacher.id, Teacher.name, Teacher.login).order_by(Teacher.name)
+        select(Teacher.id, Teacher.name, Teacher.login, Teacher.is_active).order_by(Teacher.name)
     )
     return await _build_teacher_reads(list(result.all()), session)
 
@@ -96,4 +97,19 @@ async def create_teacher(payload: TeacherCreate, session: DbSession) -> TeacherR
 
 @router.get("/{teacher_id}", response_model=TeacherRead)
 async def get_teacher(teacher_id: UUID, session: DbSession) -> TeacherRead:
+    return await get_teacher_for_read(teacher_id, session)
+
+
+@router.put("/{teacher_id}", response_model=TeacherRead)
+async def update_teacher(
+    teacher_id: UUID,
+    payload: TeacherUpdate,
+    session: DbSession,
+) -> TeacherRead:
+    teacher = await session.get(Teacher, teacher_id)
+    if teacher is None:
+        raise not_found("Teacher", teacher_id)
+    if payload.is_active is not None:
+        teacher.is_active = payload.is_active
+    await commit_or_409(session)
     return await get_teacher_for_read(teacher_id, session)

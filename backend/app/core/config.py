@@ -61,9 +61,16 @@ class AppSettings(BaseModel):
     PORT: int = 8000
 
 
+class RedisSettings(BaseModel):
+    URL: str = "redis://localhost:6379/0"
+    SESSION_TTL_SECONDS: int = 60 * 60 * 24
+    ENABLED: bool = True
+
+
 class Settings(BaseSettings):
     APP: AppSettings = AppSettings()
     SQLITE: SQLiteSettings = SQLiteSettings()
+    REDIS: RedisSettings = RedisSettings()
 
     # POSTGRES: PostgresSettings
 

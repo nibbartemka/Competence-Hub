@@ -1,6 +1,6 @@
 import { motion } from "motion/react";
 import { useEffect, useMemo, useState } from "react";
-import { Link, useNavigate, useParams } from "react-router-dom";
+import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
 
 import {
   fetchDisciplines,
@@ -13,8 +13,8 @@ import {
   isAbortError,
 } from "./api";
 import { disciplinePathValue } from "./disciplineRouting";
-import { ExitConfirmDialog } from "./ExitConfirmDialog";
 import { revealMotion } from "./motionPresets";
+import { getSessionHomePath, readSession, sessionMatches } from "./session";
 import type {
   Discipline,
   Group,
@@ -57,6 +57,8 @@ function getTrajectoryPath(
 export default function StudentDashboardPage() {
   const { studentId } = useParams<{ studentId: string }>();
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  const isAdminViewer = searchParams.get("viewer") === "admin" && readSession()?.role === "admin";
 
   const [student, setStudent] = useState<Student | null>(null);
   const [groups, setGroups] = useState<Group[]>([]);
@@ -67,7 +69,13 @@ export default function StudentDashboardPage() {
   const [groupStudents, setGroupStudents] = useState<Student[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
-  const [exitConfirmOpen, setExitConfirmOpen] = useState(false);
+
+  useEffect(() => {
+    const activeSession = readSession();
+    if (!isAdminViewer && !sessionMatches(activeSession, "student", studentId)) {
+      navigate(getSessionHomePath(activeSession), { replace: true });
+    }
+  }, [isAdminViewer, navigate, studentId]);
 
   useEffect(() => {
     if (!studentId) {
@@ -204,10 +212,12 @@ export default function StudentDashboardPage() {
     <div className="page-shell role-page immersive-page immersive-page--student">
       <motion.header className="hero immersive-page__hero role-dashboard-hero" {...revealMotion(0.02)}>
         <div>
-          <p className="hero__eyebrow">Кабинет студента</p>
+          <p className="hero__eyebrow">{isAdminViewer ? "Просмотр студента" : "Кабинет студента"}</p>
           <h1>{student?.name ?? "Студент"}</h1>
           <p className="hero__subtitle">
-            Назначенные траектории, текущий контроль, прогресс по темам и состав учебной группы.
+            {isAdminViewer
+              ? "Администратор просматривает страницу без доступа к прохождению контроля."
+              : "Назначенные траектории, текущий контроль, прогресс по темам и состав учебной группы."}
           </p>
         </div>
         <div className="hero__controls hero__controls--stack">
@@ -217,13 +227,6 @@ export default function StudentDashboardPage() {
             type="button"
           >
             Назад
-          </button>
-          <button
-            className="ghost-button"
-            onClick={() => setExitConfirmOpen(true)}
-            type="button"
-          >
-            Выход
           </button>
           <div className="student-profile-compact student-profile-card">
             <span className="student-profile-compact__label">Профиль</span>
@@ -288,13 +291,8 @@ export default function StudentDashboardPage() {
                   const discipline = disciplineById.get(trajectory.discipline_id);
                   const progress = clampPercent(trajectory.progress_percent);
 
-                  return (
-                    <MotionLink
-                      className="student-trajectory-card"
-                      key={trajectory.id}
-                      to={getTrajectoryPath(trajectory, discipline, studentId)}
-                      {...revealMotion(0.02)}
-                    >
+                  const cardContent = (
+                    <>
                       <div className="student-trajectory-card__head">
                         <div>
                           <strong>{trajectory.name}</strong>
@@ -312,9 +310,27 @@ export default function StudentDashboardPage() {
                         </span>
                       </div>
                       <div className="student-trajectory-card__footer">
-                        <span>Продолжить</span>
+                        <span>{isAdminViewer ? "Только просмотр" : "Продолжить"}</span>
                         <span>{trajectory.topic_count} тем</span>
                       </div>
+                    </>
+                  );
+
+                  return isAdminViewer ? (
+                    <article
+                      className="student-trajectory-card student-trajectory-card--readonly"
+                      key={trajectory.id}
+                    >
+                      {cardContent}
+                    </article>
+                  ) : (
+                    <MotionLink
+                      className="student-trajectory-card"
+                      key={trajectory.id}
+                      to={getTrajectoryPath(trajectory, discipline, studentId)}
+                      {...revealMotion(0.02)}
+                    >
+                      {cardContent}
                     </MotionLink>
                   );
                 })
@@ -346,12 +362,18 @@ export default function StudentDashboardPage() {
                     <span>Прогресс: {clampPercent(currentTrajectory.progress_percent)}%</span>
                   </div>
                   <div className="role-action-row">
-                    <MotionLink
-                      className="primary-button"
-                      to={getTrajectoryPath(currentTrajectory, currentDiscipline, studentId)}
-                    >
-                      Открыть граф тем
-                    </MotionLink>
+                    {isAdminViewer ? (
+                      <span className="role-muted-note">
+                        Администратор видит траекторию без доступа к прохождению контроля.
+                      </span>
+                    ) : (
+                      <MotionLink
+                        className="primary-button"
+                        to={getTrajectoryPath(currentTrajectory, currentDiscipline, studentId)}
+                      >
+                        Открыть граф тем
+                      </MotionLink>
+                    )}
                   </div>
                 </div>
               ) : (
@@ -372,13 +394,17 @@ export default function StudentDashboardPage() {
                   Студент выбирает доступную тему, получает текущее задание, отправляет ответ и
                   переходит к следующему заданию по результатам адаптивной выдачи.
                 </span>
-                {currentTrajectory ? (
+                {currentTrajectory && !isAdminViewer ? (
                   <MotionLink
                     className="ghost-button"
                     to={getTrajectoryPath(currentTrajectory, currentDiscipline, studentId)}
                   >
                     Перейти к текущей траектории
                   </MotionLink>
+                ) : isAdminViewer ? (
+                  <span className="role-muted-note">
+                    Прохождение заданий доступно только владельцу профиля студента.
+                  </span>
                 ) : null}
               </div>
             </motion.section>
@@ -448,9 +474,9 @@ export default function StudentDashboardPage() {
                       <div className="role-inline-list">
                         {disciplineTeachers.length ? (
                           disciplineTeachers.map((teacher) => (
-                            <MotionLink key={teacher.id} to={`/teachers/${teacher.id}`}>
+                            <span key={teacher.id}>
                               {teacher.name}
-                            </MotionLink>
+                            </span>
                           ))
                         ) : (
                           <span>преподаватель не назначен</span>
@@ -494,11 +520,6 @@ export default function StudentDashboardPage() {
         </main>
       )}
 
-      <ExitConfirmDialog
-        open={exitConfirmOpen}
-        onCancel={() => setExitConfirmOpen(false)}
-        onConfirm={() => navigate("/")}
-      />
     </div>
   );
 }

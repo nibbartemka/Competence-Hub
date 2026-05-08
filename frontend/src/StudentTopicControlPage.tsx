@@ -7,6 +7,7 @@ import {
   isAbortError,
   submitStudentTaskScore,
 } from "./api";
+import { getSessionHomePath, readSession, sessionMatches } from "./session";
 import type { StudentAssignedTask, StudentTopicControl } from "./types";
 
 const LAST_STUDENT_STORAGE_KEY = "competence-hub:last-student-id";
@@ -72,9 +73,19 @@ export default function StudentTopicControlPage() {
   const [error, setError] = useState("");
   const [continuePractice, setContinuePractice] = useState(false);
 
+  useEffect(() => {
+    const activeSession = readSession();
+    if (!sessionMatches(activeSession, "student", studentId)) {
+      navigate(getSessionHomePath(activeSession), { replace: true });
+    }
+  }, [navigate, studentId]);
+
   async function loadControl(signal?: AbortSignal, nextContinuePractice = continuePractice) {
     if (!studentId || !trajectoryId) {
       throw new Error("Не удалось определить студента или траекторию.");
+    }
+    if (!sessionMatches(readSession(), "student", studentId)) {
+      throw new Error("Прохождение контроля доступно только владельцу профиля студента.");
     }
 
     rememberStudentId(studentId);
