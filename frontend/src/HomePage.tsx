@@ -153,13 +153,12 @@ export function HomePage() {
   const [adminUserGroupFilter, setAdminUserGroupFilter] = useState("");
   const [adminUserSubgroupFilter, setAdminUserSubgroupFilter] = useState("");
   const [adminUserDisciplineFilter, setAdminUserDisciplineFilter] = useState("");
-  const [adminUserStatusFilter, setAdminUserStatusFilter] =
-    useState<AdminUserStatusFilter>("active");
   const [selectedAdminUser, setSelectedAdminUser] = useState<AdminDirectoryUser | null>(
     null,
   );
   const [adminDisciplineSearch, setAdminDisciplineSearch] = useState("");
   const [adminTeacherFilterId, setAdminTeacherFilterId] = useState("");
+  const [assignmentTeacherSearch, setAssignmentTeacherSearch] = useState("");
   const [assignmentDisciplineId, setAssignmentDisciplineId] = useState("");
   const [assignmentTeacherIds, setAssignmentTeacherIds] = useState<string[]>([]);
   const [assignmentExpertIds, setAssignmentExpertIds] = useState<string[]>([]);
@@ -273,27 +272,30 @@ export function HomePage() {
         .join(" ");
       const searchableText =
         `${discipline.name} ${linkedTeacherNames}`.toLowerCase();
-      const matchesSearch = !adminDisciplineSearch.trim()
+      return !adminDisciplineSearch.trim()
         ? true
         : searchableText.includes(adminDisciplineSearch.trim().toLowerCase());
-      const matchesTeacher = !adminTeacherFilterId
-        ? true
-        : discipline.teacher_ids.includes(adminTeacherFilterId);
-      return matchesSearch && matchesTeacher;
     });
-  }, [
-    adminDisciplineSearch,
-    adminTeacherFilterId,
-    isAdminMode,
-    teacherById,
-    visibleDisciplines,
-  ]);
+  }, [adminDisciplineSearch, isAdminMode, teacherById, visibleDisciplines]);
   const selectedAssignmentDiscipline = useMemo(
     () =>
       visibleDisciplines.find((discipline) => discipline.id === assignmentDisciplineId) ??
       null,
     [assignmentDisciplineId, visibleDisciplines],
   );
+  const assignmentTeacherOptions = useMemo(() => {
+    const query = assignmentTeacherSearch.trim().toLowerCase();
+    if (!query) {
+      return [];
+    }
+    const selectedTeacherIds = new Set(assignmentTeacherIds);
+    return availableTeacherOptions
+      .filter(
+        (teacher) =>
+          !selectedTeacherIds.has(teacher.id) && teacher.name.toLowerCase().includes(query),
+      )
+      .slice(0, 8);
+  }, [assignmentTeacherIds, assignmentTeacherSearch, availableTeacherOptions]);
   const adminDirectoryUsers = useMemo<AdminDirectoryUser[]>(() => {
     const studentUsers = data.students.map((student) => {
       const disciplineIds = data.disciplines
@@ -371,15 +373,12 @@ export function HomePage() {
         !adminUserSubgroupFilter || user.subgroupId === adminUserSubgroupFilter;
       const matchesDiscipline =
         !adminUserDisciplineFilter || user.disciplineIds.includes(adminUserDisciplineFilter);
-      const matchesStatus =
-        adminUserStatusFilter === "all" || user.status === adminUserStatusFilter;
       return (
         matchesSearch &&
         matchesRole &&
         matchesGroup &&
         matchesSubgroup &&
-        matchesDiscipline &&
-        matchesStatus
+        matchesDiscipline
       );
     });
   }, [
@@ -388,7 +387,6 @@ export function HomePage() {
     adminUserGroupFilter,
     adminUserRoleFilter,
     adminUserSearch,
-    adminUserStatusFilter,
     adminUserSubgroupFilter,
     disciplineById,
     groupById,
@@ -437,25 +435,17 @@ export function HomePage() {
     );
   }
 
-  async function handleToggleAdminUserStatus(user: AdminDirectoryUser) {
-    const nextIsActive = user.status !== "active";
-    try {
-      setBusyAction(`status-${user.role}-${user.id}`);
-      if (user.role === "student") {
-        await updateStudent(user.id, { is_active: nextIsActive });
-      } else if (user.role === "teacher") {
-        await updateTeacher(user.id, { is_active: nextIsActive });
-      } else if (user.role === "expert") {
-        await updateExpert(user.id, { is_active: nextIsActive });
-      } else {
-        await updateAdmin(user.id, { is_active: nextIsActive });
-      }
-      await refreshAfterChange(nextIsActive ? "Профиль активирован." : "Профиль отключен.");
-    } catch (error) {
-      pushNotification("error", extractErrorMessage(error));
-    } finally {
-      setBusyAction("");
-    }
+  function handleAddAssignmentTeacher(teacherId: string) {
+    setAssignmentTeacherIds((current) =>
+      current.includes(teacherId) ? current : [...current, teacherId],
+    );
+    setAssignmentTeacherSearch("");
+  }
+
+  function handleRemoveAssignmentTeacher(teacherId: string) {
+    setAssignmentTeacherIds((current) =>
+      current.filter((currentTeacherId) => currentTeacherId !== teacherId),
+    );
   }
 
   async function handleDeleteAdminUser(user: AdminDirectoryUser) {
@@ -632,12 +622,14 @@ export function HomePage() {
 
   useEffect(() => {
     if (!selectedAssignmentDiscipline) {
+      setAssignmentTeacherSearch("");
       setAssignmentTeacherIds([]);
       setAssignmentExpertIds([]);
       setAssignmentGroupIds([]);
       return;
     }
 
+    setAssignmentTeacherSearch("");
     setAssignmentTeacherIds(selectedAssignmentDiscipline.teacher_ids ?? []);
     setAssignmentExpertIds(selectedAssignmentDiscipline.expert_ids ?? []);
     setAssignmentGroupIds(selectedAssignmentDiscipline.group_ids ?? []);
@@ -1485,19 +1477,6 @@ export function HomePage() {
                 ))}
               </select>
             </label>
-            <label className="field">
-              <span>Статус</span>
-              <select
-                value={adminUserStatusFilter}
-                onChange={(event) =>
-                  setAdminUserStatusFilter(event.target.value as AdminUserStatusFilter)
-                }
-              >
-                <option value="all">Все статусы</option>
-                <option value="active">Активные</option>
-                <option value="inactive">Неактивные</option>
-              </select>
-            </label>
           </div>
 
           <div className="admin-directory-table">
@@ -1506,7 +1485,6 @@ export function HomePage() {
               <span>Роль</span>
               <span>Группа</span>
               <span>Дисциплины</span>
-              <span>Статус</span>
               <span>Действия</span>
             </div>
             <div className="admin-directory-table__body">
@@ -1520,7 +1498,6 @@ export function HomePage() {
                     .filter(Boolean) as string[];
                   const subgroup = user.subgroupId ? subgroupById.get(user.subgroupId) : null;
                   const isDeleting = busyAction === `delete-${user.role}-${user.id}`;
-                  const isTogglingStatus = busyAction === `status-${user.role}-${user.id}`;
                   const isCurrentAdminProfile = isCurrentAdminDirectoryUser(user);
 
                   return (
@@ -1535,13 +1512,6 @@ export function HomePage() {
                         {subgroup ? ` · подгруппа ${subgroup.subgroup_num}` : ""}
                       </span>
                       <span>{disciplines.length ? disciplines.join(", ") : "Не назначены"}</span>
-                      <span
-                        className={`admin-chip ${
-                          user.status === "inactive" ? "admin-chip--muted" : ""
-                        }`}
-                      >
-                        {user.status === "active" ? "Активен" : "Неактивен"}
-                      </span>
                       <div className="admin-directory-row__actions">
                         <button
                           className="secondary-button"
@@ -1550,14 +1520,6 @@ export function HomePage() {
                           type="button"
                         >
                           Подробнее
-                        </button>
-                        <button
-                          className="ghost-button admin-directory-row__status-action"
-                          disabled={isDeleting || isTogglingStatus}
-                          onClick={() => void handleToggleAdminUserStatus(user)}
-                          type="button"
-                        >
-                          {user.status === "active" ? "Отключить" : "Активировать"}
                         </button>
                         <button
                           className="secondary-button secondary-button--danger"
@@ -2133,19 +2095,6 @@ export function HomePage() {
                     ))}
                   </select>
                 </label>
-                <label className="field">
-                  <span>Статус</span>
-                  <select
-                    value={adminUserStatusFilter}
-                    onChange={(event) =>
-                      setAdminUserStatusFilter(event.target.value as AdminUserStatusFilter)
-                    }
-                  >
-                    <option value="all">Все статусы</option>
-                    <option value="active">Активные</option>
-                    <option value="inactive">Неактивные</option>
-                  </select>
-                </label>
               </div>
 
               <div className="admin-directory-table">
@@ -2154,7 +2103,6 @@ export function HomePage() {
                   <span>Роль</span>
                   <span>Группа</span>
                   <span>Дисциплины</span>
-                  <span>Статус</span>
                   <span>Действия</span>
                 </div>
                 <div className="admin-directory-table__body">
@@ -2168,7 +2116,6 @@ export function HomePage() {
                         .filter(Boolean) as string[];
                       const subgroup = user.subgroupId ? subgroupById.get(user.subgroupId) : null;
                       const isDeleting = busyAction === `delete-${user.role}-${user.id}`;
-                      const isTogglingStatus = busyAction === `status-${user.role}-${user.id}`;
                       const isCurrentAdminProfile = isCurrentAdminDirectoryUser(user);
 
                       return (
@@ -2183,13 +2130,6 @@ export function HomePage() {
                             {subgroup ? ` · подгруппа ${subgroup.subgroup_num}` : ""}
                           </span>
                           <span>{disciplines.length ? disciplines.join(", ") : "Не назначены"}</span>
-                          <span
-                            className={`admin-chip ${
-                              user.status === "inactive" ? "admin-chip--muted" : ""
-                            }`}
-                          >
-                            {user.status === "active" ? "Активен" : "Неактивен"}
-                          </span>
                           <div className="admin-directory-row__actions">
                             <button
                               className="secondary-button"
@@ -2198,14 +2138,6 @@ export function HomePage() {
                               type="button"
                             >
                               Подробнее
-                            </button>
-                            <button
-                              className="ghost-button admin-directory-row__status-action"
-                              disabled={isDeleting || isTogglingStatus}
-                              onClick={() => void handleToggleAdminUserStatus(user)}
-                              type="button"
-                            >
-                              {user.status === "active" ? "Отключить" : "Активировать"}
                             </button>
                             <button
                               className="secondary-button secondary-button--danger"
@@ -2460,12 +2392,71 @@ export function HomePage() {
                     </select>
                   </label>
                   <button
-                    className="primary-button"
+                    className="primary-button admin-assignment-save-button"
                     disabled={!assignmentDisciplineId || busyAction === "discipline-assignments"}
                     type="submit"
                   >
                     {busyAction === "discipline-assignments" ? "Сохраняю..." : "Сохранить"}
                   </button>
+                </div>
+
+                <div className="admin-assignment-checks admin-assignment-checks--teachers admin-assignment-checks--teachers-upgraded">
+                  <div className="admin-assignment-picker">
+                    <label className="field">
+                      <span>Поиск преподавателя</span>
+                      <input
+                        value={assignmentTeacherSearch}
+                        onChange={(event) => setAssignmentTeacherSearch(event.target.value)}
+                        placeholder="Введите имя преподавателя"
+                      />
+                    </label>
+
+                    <div className="admin-assignment-picker__section">
+                      <span className="admin-assignment-picker__label">Выбраны для привязки</span>
+                      {assignmentTeacherIds.length ? (
+                        <div className="admin-chip-list">
+                          {assignmentTeacherIds.map((teacherId) => (
+                            <button
+                              className="admin-chip admin-chip--button"
+                              key={teacherId}
+                              onClick={() => handleRemoveAssignmentTeacher(teacherId)}
+                              type="button"
+                            >
+                              {teacherById.get(teacherId)?.name ?? teacherId} ×
+                            </button>
+                          ))}
+                        </div>
+                      ) : (
+                        <p className="home-hint">Пока не выбран ни один преподаватель.</p>
+                      )}
+                    </div>
+
+                    <div className="admin-assignment-picker__section">
+                      <span className="admin-assignment-picker__label">Результаты поиска</span>
+                      {!availableTeacherOptions.length ? (
+                        <p className="home-hint">Преподаватели пока не созданы.</p>
+                      ) : !assignmentTeacherSearch.trim() ? (
+                        <p className="home-hint">Начните вводить имя преподавателя.</p>
+                      ) : assignmentTeacherOptions.length ? (
+                        <div className="admin-assignment-results">
+                          {assignmentTeacherOptions.map((teacher) => (
+                            <button
+                              className="secondary-button admin-assignment-results__item"
+                              key={teacher.id}
+                              onClick={() => handleAddAssignmentTeacher(teacher.id)}
+                              type="button"
+                            >
+                              {teacher.name}
+                            </button>
+                          ))}
+                        </div>
+                      ) : (
+                        <p className="home-hint">
+                          По запросу никто не найден или все уже добавлены.
+                        </p>
+                      )}
+                    </div>
+                  </div>
                 </div>
 
                 <div className="admin-assignment-checks admin-assignment-checks--teachers">
@@ -2509,6 +2500,24 @@ export function HomePage() {
             </div>
             {adminDisciplineListExpanded ? (
               <>
+                <div className="admin-discipline-toolbar admin-discipline-toolbar--list admin-discipline-toolbar--list-upgraded">
+                  <label className="field">
+                    <span>Поиск</span>
+                    <input
+                      value={adminDisciplineSearch}
+                      onChange={(event) => setAdminDisciplineSearch(event.target.value)}
+                      placeholder="Дисциплина, преподаватель"
+                    />
+                  </label>
+                  <button
+                    className="secondary-button admin-discipline-filters__reset"
+                    onClick={() => setAdminDisciplineSearch("")}
+                    type="button"
+                  >
+                    Сбросить
+                  </button>
+                </div>
+
                 <div className="admin-discipline-toolbar admin-discipline-toolbar--list">
                   <label className="field">
                     <span>Поиск</span>

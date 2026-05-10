@@ -4908,7 +4908,12 @@ body:has(.session-profile-header) .home-shell {
 }
 
 .admin-discipline-toolbar--list {
+  grid-template-columns: minmax(0, 1fr) auto;
   margin-bottom: 18px;
+}
+
+.admin-discipline-toolbar--list-upgraded + .admin-discipline-toolbar--list {
+  display: none;
 }
 
 .admin-assignment-grid {
@@ -4928,9 +4933,55 @@ body:has(.session-profile-header) .home-shell {
   grid-template-columns: 1fr;
 }
 
+.admin-assignment-checks--teachers-upgraded + .admin-assignment-checks--teachers {
+  display: none;
+}
+
 .admin-assignment-checklist {
   align-content: start;
   min-height: 100%;
+}
+
+.admin-assignment-picker {
+  display: grid;
+  gap: 16px;
+}
+
+.admin-assignment-picker__section {
+  display: grid;
+  gap: 10px;
+}
+
+.admin-assignment-picker__label {
+  color: #7388a7;
+  font-size: 0.82rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.admin-assignment-results {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.admin-assignment-results__item {
+  min-width: 0;
+}
+
+.admin-chip--button {
+  border: 0;
+  cursor: pointer;
+}
+
+.admin-assignment-save-button {
+  font-size: 0;
+}
+
+.admin-assignment-save-button::after {
+  content: "Привязать";
+  font-size: 1rem;
 }
 
 .admin-create-discipline-form {
@@ -5023,10 +5074,23 @@ body:has(.session-profile-header) .home-shell {
 
 .admin-filter-grid {
   display: grid;
-  grid-template-columns: minmax(260px, 1.25fr) repeat(5, minmax(180px, 1fr));
+  grid-template-columns: minmax(260px, 1.25fr) repeat(4, minmax(180px, 1fr));
   gap: 20px;
   align-items: end;
   margin: 18px 0 24px;
+}
+
+.admin-filter-grid > .field {
+  min-width: 0;
+  max-width: 100%;
+}
+
+.admin-filter-grid > .field input,
+.admin-filter-grid > .field select {
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
+  box-sizing: border-box;
 }
 
 .admin-directory-table {
@@ -5044,7 +5108,6 @@ body:has(.session-profile-header) .home-shell {
     minmax(110px, 0.6fr)
     minmax(180px, 0.9fr)
     minmax(220px, 1fr)
-    minmax(110px, 0.5fr)
     minmax(132px, 0.56fr);
   column-gap: 18px;
   row-gap: 18px;
