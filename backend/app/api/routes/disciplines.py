@@ -29,9 +29,17 @@ from app.schemas import (
     DisciplineRead,
     KnowledgeElementRead,
     KnowledgeElementRelationRead,
+    KnowledgeGraphExportFile,
+    KnowledgeGraphImportPreviewResponse,
+    KnowledgeGraphImportRequest,
+    KnowledgeGraphImportResult,
     TopicDependencyRead,
     TopicKnowledgeElementRead,
     TopicRead,
+)
+from app.services.knowledge_graph_import import (
+    build_knowledge_graph_import_preview,
+    execute_knowledge_graph_import,
 )
 
 
@@ -393,6 +401,42 @@ async def get_discipline_knowledge_graph(
             for item in knowledge_element_relations
         ],
     )
+
+
+@router.post(
+    "/{discipline_identifier}/knowledge-graph/import-preview",
+    response_model=KnowledgeGraphImportPreviewResponse,
+)
+async def preview_knowledge_graph_import(
+    discipline_identifier: str,
+    payload: KnowledgeGraphExportFile,
+    session: DbSession,
+) -> KnowledgeGraphImportPreviewResponse:
+    discipline_model = await get_discipline_model(discipline_identifier, session)
+    return await build_knowledge_graph_import_preview(
+        session,
+        target_discipline_id=discipline_model.id,
+        payload=payload,
+    )
+
+
+@router.post(
+    "/{discipline_identifier}/knowledge-graph/import",
+    response_model=KnowledgeGraphImportResult,
+)
+async def import_knowledge_graph(
+    discipline_identifier: str,
+    payload: KnowledgeGraphImportRequest,
+    session: DbSession,
+) -> KnowledgeGraphImportResult:
+    discipline_model = await get_discipline_model(discipline_identifier, session)
+    result = await execute_knowledge_graph_import(
+        session,
+        target_discipline_id=discipline_model.id,
+        request=payload,
+    )
+    await commit_or_409(session)
+    return result
 
 
 @router.delete("/{discipline_identifier}", status_code=status.HTTP_204_NO_CONTENT)

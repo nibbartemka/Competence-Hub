@@ -11,6 +11,17 @@ from .knowledge_element_relations import (
 )
 from .relations import RelationCreate, RelationRead, RelationUpdate
 from .knowledge_graph_view import DisciplineKnowledgeGraphRead
+from .knowledge_graph_io import (
+    ImportPreviewElementRow,
+    ImportPreviewKnowledgeElementRelationRow,
+    ImportPreviewTopicDependencyRow,
+    ImportPreviewTopicKnowledgeElementRow,
+    ImportPreviewTopicRow,
+    KnowledgeGraphExportFile,
+    KnowledgeGraphImportPreviewResponse,
+    KnowledgeGraphImportRequest,
+    KnowledgeGraphImportResult,
+)
 from .knowledge_elements import (
     KnowledgeElementCreate,
     KnowledgeElementRead,
@@ -82,6 +93,15 @@ __all__ = [
     "TeacherRead",
     "TeacherUpdate",
     "DisciplineKnowledgeGraphRead",
+    "ImportPreviewElementRow",
+    "ImportPreviewKnowledgeElementRelationRow",
+    "ImportPreviewTopicDependencyRow",
+    "ImportPreviewTopicKnowledgeElementRow",
+    "ImportPreviewTopicRow",
+    "KnowledgeGraphExportFile",
+    "KnowledgeGraphImportPreviewResponse",
+    "KnowledgeGraphImportRequest",
+    "KnowledgeGraphImportResult",
     "TopicCreate",
     "TopicRead",
     "TopicUpdate",
