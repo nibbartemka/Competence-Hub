@@ -12,6 +12,7 @@ import {
 } from "./api";
 import { disciplinePathValue, matchesDisciplineIdentifier } from "./disciplineRouting";
 import { GraphEditor } from "./components/GraphEditor";
+import { KnowledgeGraphImportModal } from "./KnowledgeGraphImportModal";
 import {
     GraphNode,
     GraphNodeRuntimeStateProvider,
@@ -225,6 +226,7 @@ export function KnowledgeGraphView({ disciplineId }: KnowledgeGraphViewProps) {
     const [unlinkedLoading, setUnlinkedLoading] = useState(true);
     const [unlinkedError, setUnlinkedError] = useState("");
     const [exportingImage, setExportingImage] = useState(false);
+    const [importOpen, setImportOpen] = useState(false);
     const [competenceFilters, setCompetenceFilters] = useState(DEFAULT_COMPETENCE_FILTERS);
     const [relationshipFocusEnabled, setRelationshipFocusEnabled] = useState(false);
 
@@ -521,6 +523,30 @@ export function KnowledgeGraphView({ disciplineId }: KnowledgeGraphViewProps) {
         }
     }
 
+    function handleDownloadGraphJson() {
+        if (!graphData) return;
+
+        const payload = {
+            format_version: 1,
+            exported_at: new Date().toISOString(),
+            source_discipline: graphData.discipline,
+            topics: graphData.topics,
+            topic_dependencies: graphData.topic_dependencies,
+            knowledge_elements: graphData.knowledge_elements,
+            topic_knowledge_elements: graphData.topic_knowledge_elements,
+            knowledge_element_relations: graphData.knowledge_element_relations,
+        };
+
+        const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
+        const url = URL.createObjectURL(blob);
+        const anchor = document.createElement("a");
+        const slug = graphData.discipline.slug || disciplineId || "discipline";
+        anchor.href = url;
+        anchor.download = `knowledge-graph-${slug}-${Date.now()}.json`;
+        anchor.click();
+        URL.revokeObjectURL(url);
+    }
+
     async function refreshSelectedDisciplineGraph() {
         const { debug, graph: nextGraph } = await fetchKnowledgeGraphDirect(disciplineId);
 
@@ -718,6 +744,22 @@ export function KnowledgeGraphView({ disciplineId }: KnowledgeGraphViewProps) {
                                 >
                                     {exportingImage ? "Сохраняю..." : "Сохранить PNG"}
                                 </button>
+                                <button
+                                    className="secondary-button graph-export-button"
+                                    disabled={!graphData || loading}
+                                    onClick={handleDownloadGraphJson}
+                                    type="button"
+                                >
+                                    Сохранить JSON
+                                </button>
+                                <button
+                                    className="secondary-button graph-export-button"
+                                    disabled={!resolvedDisciplineId || loading}
+                                    onClick={() => setImportOpen(true)}
+                                    type="button"
+                                >
+                                    Импорт JSON
+                                </button>
                                 {view.level === "elements" ? (
                                     <button
                                         className={relationshipFocusEnabled ? "primary-button" : "secondary-button"}
@@ -875,6 +917,13 @@ export function KnowledgeGraphView({ disciplineId }: KnowledgeGraphViewProps) {
                 </motion.div>
             ) : null}
             </AnimatePresence>
+
+            <KnowledgeGraphImportModal
+                disciplineId={resolvedDisciplineId || disciplineId || ""}
+                onClose={() => setImportOpen(false)}
+                onImported={() => void refreshSelectedDisciplineGraph()}
+                open={importOpen}
+            />
         </div>
     );
 }
