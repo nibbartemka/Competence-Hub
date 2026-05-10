@@ -147,6 +147,97 @@ export type DisciplineKnowledgeGraph = {
   knowledge_element_relations: KnowledgeElementRelation[];
 };
 
+/** JSON-файл экспорта / тело запроса preview (совместимо с графом дисциплины). */
+export type KnowledgeGraphExportFile = {
+  format_version: number;
+  exported_at?: string | null;
+  source_discipline?: Discipline | null;
+  topics: Topic[];
+  topic_dependencies: TopicDependency[];
+  knowledge_elements: KnowledgeElement[];
+  topic_knowledge_elements: TopicKnowledgeElement[];
+  knowledge_element_relations: KnowledgeElementRelation[];
+};
+
+export type ImportPreviewTopicRow = {
+  export_id: string;
+  name: string;
+  description: string | null;
+  is_duplicate: boolean;
+  existing_topic_id: string | null;
+};
+
+export type ImportPreviewElementRow = {
+  export_id: string;
+  name: string;
+  competence_type: CompetenceType;
+  description: string | null;
+  is_duplicate: boolean;
+  existing_element_id: string | null;
+};
+
+export type ImportPreviewTopicDependencyRow = {
+  export_id: string;
+  prerequisite_topic_export_id: string;
+  dependent_topic_export_id: string;
+  relation_type: TopicDependencyRelationType;
+  description: string | null;
+  is_duplicate: boolean;
+  prerequisite_is_duplicate: boolean;
+  dependent_is_duplicate: boolean;
+};
+
+export type ImportPreviewTopicKnowledgeElementRow = {
+  export_id: string;
+  topic_export_id: string;
+  element_export_id: string;
+  role: TopicKnowledgeElementRole;
+  note: string | null;
+  is_duplicate: boolean;
+  topic_is_duplicate: boolean;
+  element_is_duplicate: boolean;
+};
+
+export type ImportPreviewKnowledgeElementRelationRow = {
+  export_id: string;
+  source_element_export_id: string;
+  target_element_export_id: string;
+  relation_type: KnowledgeElementRelationType;
+  description: string | null;
+  is_duplicate: boolean;
+  source_is_duplicate: boolean;
+  target_is_duplicate: boolean;
+};
+
+export type KnowledgeGraphImportPreviewResponse = {
+  target_discipline_id: string;
+  topics: ImportPreviewTopicRow[];
+  knowledge_elements: ImportPreviewElementRow[];
+  topic_dependencies: ImportPreviewTopicDependencyRow[];
+  topic_knowledge_elements: ImportPreviewTopicKnowledgeElementRow[];
+  knowledge_element_relations: ImportPreviewKnowledgeElementRelationRow[];
+};
+
+export type KnowledgeGraphImportRequest = {
+  export: KnowledgeGraphExportFile;
+  selected_topic_export_ids: string[];
+  selected_element_export_ids: string[];
+  selected_topic_dependency_export_ids: string[];
+  selected_topic_knowledge_element_export_ids: string[];
+  selected_knowledge_element_relation_export_ids: string[];
+};
+
+export type KnowledgeGraphImportResult = {
+  created_topics: number;
+  created_knowledge_elements: number;
+  created_topic_dependencies: number;
+  created_topic_knowledge_elements: number;
+  created_knowledge_element_relations: number;
+  skipped_duplicate_topic_dependencies: number;
+  skipped_duplicate_topic_knowledge_elements: number;
+  skipped_duplicate_knowledge_element_relations: number;
+};
+
 export type LearningTrajectoryElement = {
   id: string;
   trajectory_topic_id: string;

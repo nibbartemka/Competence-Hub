@@ -10,6 +10,10 @@ import type {
   GraphLayoutPayload,
   Group,
   KnowledgeElement,
+  KnowledgeGraphExportFile,
+  KnowledgeGraphImportPreviewResponse,
+  KnowledgeGraphImportRequest,
+  KnowledgeGraphImportResult,
   KnowledgeElementRelation,
   KnowledgeElementRelationType,
   Relation,
@@ -338,6 +342,29 @@ export function fetchDisciplineKnowledgeGraph(
   return request<DisciplineKnowledgeGraph>(
     `/disciplines/${disciplineId}/knowledge-graph`,
     { signal },
+  );
+}
+
+export function previewKnowledgeGraphImport(
+  disciplineId: string,
+  payload: KnowledgeGraphExportFile,
+) {
+  return request<KnowledgeGraphImportPreviewResponse>(
+    `/disciplines/${disciplineId}/knowledge-graph/import-preview`,
+    {
+      method: "POST",
+      body: payload,
+    },
+  );
+}
+
+export function importKnowledgeGraph(disciplineId: string, payload: KnowledgeGraphImportRequest) {
+  return request<KnowledgeGraphImportResult>(
+    `/disciplines/${disciplineId}/knowledge-graph/import`,
+    {
+      method: "POST",
+      body: payload,
+    },
   );
 }
 
