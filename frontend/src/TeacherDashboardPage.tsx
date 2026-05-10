@@ -3,6 +3,7 @@ import { useEffect, useMemo, useState } from "react";
 import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
 
 import {
+  deleteTeacher,
   fetchDisciplines,
   fetchGroups,
   fetchLearningTrajectories,
@@ -58,6 +59,7 @@ export default function TeacherDashboardPage() {
   const [selectedDisciplineId, setSelectedDisciplineId] = useState("");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [deleting, setDeleting] = useState(false);
 
   useEffect(() => {
     const activeSession = readSession();
@@ -193,6 +195,31 @@ export default function TeacherDashboardPage() {
     return null;
   }
 
+  async function handleDelete() {
+    if (!isAdminViewer || !teacher) {
+      return;
+    }
+
+    const confirmed = window.confirm(
+      `Удалить преподавателя "${teacher.name}"? Это действие нельзя отменить.`,
+    );
+    if (!confirmed) {
+      return;
+    }
+
+    try {
+      setDeleting(true);
+      await deleteTeacher(teacher.id);
+      navigate(getSessionHomePath(readSession()), { replace: true });
+    } catch (deleteError) {
+      setError(
+        deleteError instanceof Error ? deleteError.message : "Не удалось удалить преподавателя.",
+      );
+    } finally {
+      setDeleting(false);
+    }
+  }
+
   return (
     <div className="page-shell role-page immersive-page immersive-page--teacher">
       <motion.header className="hero immersive-page__hero role-dashboard-hero" {...revealMotion(0.02)}>
@@ -215,6 +242,16 @@ export default function TeacherDashboardPage() {
           >
             Назад
           </button>
+          {isAdminViewer ? (
+            <button
+              className="secondary-button secondary-button--danger"
+              disabled={!teacher || deleting}
+              onClick={() => void handleDelete()}
+              type="button"
+            >
+              Удалить преподавателя
+            </button>
+          ) : null}
         </div>
       </motion.header>
 

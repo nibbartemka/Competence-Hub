@@ -3,6 +3,7 @@ import { useEffect, useMemo, useState } from "react";
 import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
 
 import {
+  deleteStudent,
   fetchDisciplines,
   fetchGroups,
   fetchStudent,
@@ -69,6 +70,7 @@ export default function StudentDashboardPage() {
   const [groupStudents, setGroupStudents] = useState<Student[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [deleting, setDeleting] = useState(false);
 
   useEffect(() => {
     const activeSession = readSession();
@@ -208,6 +210,29 @@ export default function StudentDashboardPage() {
     ? disciplineById.get(currentTrajectory.discipline_id)
     : undefined;
 
+  async function handleDelete() {
+    if (!isAdminViewer || !student) {
+      return;
+    }
+
+    const confirmed = window.confirm(
+      `Удалить студента "${student.name}"? Это действие нельзя отменить.`,
+    );
+    if (!confirmed) {
+      return;
+    }
+
+    try {
+      setDeleting(true);
+      await deleteStudent(student.id);
+      navigate(getSessionHomePath(readSession()), { replace: true });
+    } catch (deleteError) {
+      setError(deleteError instanceof Error ? deleteError.message : "Не удалось удалить студента.");
+    } finally {
+      setDeleting(false);
+    }
+  }
+
   return (
     <div className="page-shell role-page immersive-page immersive-page--student">
       <motion.header className="hero immersive-page__hero role-dashboard-hero" {...revealMotion(0.02)}>
@@ -228,6 +253,16 @@ export default function StudentDashboardPage() {
           >
             Назад
           </button>
+          {isAdminViewer ? (
+            <button
+              className="secondary-button secondary-button--danger"
+              disabled={!student || deleting}
+              onClick={() => void handleDelete()}
+              type="button"
+            >
+              Удалить студента
+            </button>
+          ) : null}
           <div className="student-profile-compact student-profile-card">
             <span className="student-profile-compact__label">Профиль</span>
             <strong className="student-profile-card__name">{student?.login ?? "login"}</strong>

@@ -205,6 +205,12 @@ export function updateAdmin(adminId: string, payload: { is_active?: boolean }) {
   });
 }
 
+export function deleteAdmin(adminId: string) {
+  return request<void>(`/admins/${adminId}`, {
+    method: "DELETE",
+  });
+}
+
 export function fetchExperts(signal?: AbortSignal) {
   return request<Expert[]>("/experts/", { signal });
 }
@@ -224,6 +230,12 @@ export function updateExpert(expertId: string, payload: { is_active?: boolean })
   return request<Expert>(`/experts/${expertId}`, {
     method: "PUT",
     body: payload,
+  });
+}
+
+export function deleteExpert(expertId: string) {
+  return request<void>(`/experts/${expertId}`, {
+    method: "DELETE",
   });
 }
 
@@ -280,6 +292,12 @@ export function updateStudent(studentId: string, payload: { is_active?: boolean 
   });
 }
 
+export function deleteStudent(studentId: string) {
+  return request<void>(`/students/${studentId}`, {
+    method: "DELETE",
+  });
+}
+
 export function fetchTeachers(signal?: AbortSignal) {
   return request<Teacher[]>("/teachers/", { signal });
 }
@@ -304,6 +322,12 @@ export function updateTeacher(teacherId: string, payload: { is_active?: boolean 
   return request<Teacher>(`/teachers/${teacherId}`, {
     method: "PUT",
     body: payload,
+  });
+}
+
+export function deleteTeacher(teacherId: string) {
+  return request<void>(`/teachers/${teacherId}`, {
+    method: "DELETE",
   });
 }
 

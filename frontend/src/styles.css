@@ -19,6 +19,7 @@
   --page-side-gutter: clamp(24px, 8vw, 220px);
   --page-max-width: 1440px;
   --page-content-width: min(var(--page-max-width), calc(100vw - (var(--page-side-gutter) * 2)));
+  --session-profile-safe-top: 116px;
 }
 
 * {
@@ -63,6 +64,17 @@ textarea {
 .immersive-page {
   position: relative;
   overflow: hidden;
+}
+
+body:has(.session-profile-header) .immersive-page,
+body:has(.session-profile-header) .page-shell,
+body:has(.session-profile-header) .student-home-page,
+body:has(.session-profile-header) .home-shell {
+  padding-top: var(--session-profile-safe-top);
+}
+
+.home-page--admin.immersive-page {
+  padding-top: 28px;
 }
 
 .immersive-page::before,
@@ -1647,6 +1659,10 @@ textarea {
     rgba(255, 255, 255, 0.72);
   box-shadow: 0 28px 74px rgba(29, 51, 82, 0.12);
   backdrop-filter: blur(16px);
+}
+
+.home-hero--admin {
+  margin-top: 0;
 }
 
 .home-hero h1 {
@@ -4823,6 +4839,10 @@ textarea {
   gap: 20px;
 }
 
+.admin-section-toggle {
+  flex: 0 0 auto;
+}
+
 .admin-add-user-button {
   flex: 0 0 auto;
   min-width: 220px;
@@ -4882,6 +4902,10 @@ textarea {
   align-items: end;
 }
 
+.admin-discipline-create--admin {
+  grid-template-columns: minmax(0, 1fr) auto;
+}
+
 .admin-discipline-toolbar--list {
   margin-bottom: 18px;
 }
@@ -4897,6 +4921,10 @@ textarea {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 14px;
+}
+
+.admin-assignment-checks--teachers {
+  grid-template-columns: 1fr;
 }
 
 .admin-assignment-checklist {
@@ -5011,16 +5039,16 @@ textarea {
 .admin-directory-row {
   display: grid;
   grid-template-columns:
-    minmax(240px, 1.15fr)
-    minmax(150px, 0.72fr)
-    minmax(240px, 0.92fr)
-    minmax(320px, 1.25fr)
-    minmax(150px, 0.52fr)
-    minmax(240px, auto);
-  column-gap: 36px;
+    minmax(190px, 1.1fr)
+    minmax(110px, 0.6fr)
+    minmax(180px, 0.9fr)
+    minmax(220px, 1fr)
+    minmax(110px, 0.5fr)
+    minmax(132px, 0.56fr);
+  column-gap: 18px;
   row-gap: 18px;
   align-items: center;
-  min-width: 1260px;
+  min-width: 0;
 }
 
 .admin-directory-table__head {
@@ -5050,6 +5078,11 @@ textarea {
   color: #4f6686;
 }
 
+.admin-directory-row > *,
+.admin-directory-table__head > * {
+  min-width: 0;
+}
+
 .admin-directory-row strong {
   display: block;
   color: #223a5c;
@@ -5062,15 +5095,19 @@ textarea {
 }
 
 .admin-directory-row__actions {
-  display: flex;
-  gap: 10px;
-  justify-content: flex-end;
+  display: grid;
+  gap: 8px;
+  justify-items: stretch;
 }
 
 .admin-directory-row__actions .secondary-button,
 .admin-directory-row__actions .ghost-button {
-  min-width: 108px;
+  width: 100%;
+  min-height: 34px;
+  padding-block: 8px;
   padding-inline: 16px;
+  white-space: normal;
+  line-height: 1.1;
 }
 
 .admin-chip--muted {
@@ -5118,9 +5155,17 @@ textarea {
 
 .session-profile-header {
   position: fixed;
-  top: 34px;
-  right: 28px;
+  top: 28px;
+  right: max(28px, calc((100vw - var(--page-content-width)) / 2));
   z-index: 80;
+  display: grid;
+  justify-items: end;
+  gap: 12px;
+  width: min(540px, calc(100vw - 56px));
+}
+
+.session-profile-header__bar {
+  width: 100%;
   display: flex;
   align-items: center;
   gap: 10px;
@@ -5136,10 +5181,13 @@ textarea {
   display: flex;
   align-items: center;
   gap: 10px;
+  min-width: 0;
+  flex: 1 1 auto;
   border: 0;
   background: transparent;
   color: #223a5c;
   text-align: left;
+  cursor: pointer;
 }
 
 .session-profile-header__avatar {
@@ -5154,14 +5202,20 @@ textarea {
   font-weight: 900;
 }
 
+.session-profile-header__avatar--large {
+  width: 56px;
+  height: 56px;
+  font-size: 1rem;
+  flex: none;
+}
+
 .session-profile-header__identity {
   display: grid;
   gap: 2px;
-  min-width: 150px;
+  min-width: 0;
 }
 
 .session-profile-header__identity strong {
-  max-width: 230px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -5174,38 +5228,108 @@ textarea {
 
 .session-profile-header__actions {
   display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
   gap: 8px;
 }
 
-.session-profile-modal {
-  width: min(720px, 100%);
+.session-profile-sheet {
+  width: min(540px, calc(100vw - 56px));
+  max-height: calc(100vh - 112px);
+  display: grid;
+  gap: 18px;
+  padding: 20px;
+  border: 1px solid rgba(125, 148, 186, 0.18);
+  border-radius: 28px;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.97), rgba(244, 248, 252, 0.94)),
+    rgba(255, 255, 255, 0.96);
+  box-shadow: 0 28px 60px rgba(81, 111, 160, 0.18);
+  backdrop-filter: blur(14px);
+  overflow: auto;
+}
+
+.session-profile-sheet__header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.session-profile-sheet__intro {
+  display: flex;
+  align-items: flex-start;
+  gap: 14px;
+  min-width: 0;
+}
+
+.session-profile-sheet__copy {
+  min-width: 0;
+}
+
+.session-profile-sheet__copy h2 {
+  margin: 8px 0 6px;
+  color: #223a5c;
+}
+
+.session-profile-sheet__copy .card__text {
+  margin: 0;
+}
+
+.session-profile-sheet__body {
+  display: grid;
+  gap: 14px;
 }
 
 @media (max-width: 760px) {
+  .home-page--admin.immersive-page {
+    padding-top: calc(var(--session-profile-safe-top) + 8px);
+  }
+
+  body:has(.session-profile-header) {
+    --session-profile-safe-top: 164px;
+  }
+
   .session-profile-header {
     left: 12px;
     right: 12px;
     top: 18px;
-    justify-content: space-between;
+    width: auto;
   }
 
-  .session-profile-header__identity {
-    min-width: 0;
+  .session-profile-header__bar,
+  .session-profile-sheet {
+    width: 100%;
   }
 
-  .session-profile-header__identity strong {
-    max-width: 140px;
+  .session-profile-header__bar,
+  .session-profile-sheet__header,
+  .session-profile-sheet__intro {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .session-profile-header__actions {
+    justify-content: flex-start;
+  }
+
+  .session-profile-header__actions .secondary-button,
+  .session-profile-header__actions .ghost-button,
+  .session-profile-sheet__header .ghost-button {
+    width: 100%;
+  }
+
+  .admin-detail-grid {
+    grid-template-columns: 1fr;
   }
 }
 
 .admin-discipline-table--org .admin-discipline-table__head,
 .admin-discipline-table--org .admin-discipline-row {
   grid-template-columns:
-    minmax(230px, 1.1fr)
-    minmax(190px, 0.9fr)
-    minmax(190px, 0.9fr)
-    minmax(170px, 0.75fr)
-    auto;
+    minmax(240px, 1.2fr)
+    minmax(220px, 1fr)
+    minmax(130px, auto);
 }
 
 .admin-discipline-row--org {

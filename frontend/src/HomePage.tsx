@@ -10,6 +10,10 @@ import {
   createStudent,
   createSubgroup,
   createTeacher,
+  deleteAdmin,
+  deleteExpert,
+  deleteStudent,
+  deleteTeacher,
   fetchAdmins,
   fetchDisciplines,
   fetchExperts,
@@ -41,6 +45,8 @@ type DashboardData = {
 type AdminUserRoleFilter = "all" | "student" | "teacher" | "expert" | "admin";
 type AdminUserStatusFilter = "all" | "active" | "inactive";
 type AdminModalTab = "group" | "subgroup" | "teacher" | "student" | "expert" | "admin";
+type AdminCreateUserTab = "student" | "teacher" | "expert" | "admin";
+type AdminGroupTab = "group" | "subgroup";
 
 type AdminDirectoryUser = {
   id: string;
@@ -161,11 +167,18 @@ export function HomePage() {
   const [loading, setLoading] = useState(true);
   const [busyAction, setBusyAction] = useState("");
   const [notifications, setNotifications] = useState<ToastMessage[]>([]);
+  const [adminUsersExpanded, setAdminUsersExpanded] = useState(true);
+  const [adminCreateUsersExpanded, setAdminCreateUsersExpanded] = useState(true);
+  const [adminDisciplineListExpanded, setAdminDisciplineListExpanded] = useState(true);
+  const [adminCreateUserTab, setAdminCreateUserTab] =
+    useState<AdminCreateUserTab>("student");
+  const [adminGroupTab, setAdminGroupTab] = useState<AdminGroupTab>("group");
   const [adminModalOpen, setAdminModalOpen] = useState(false);
   const [adminModalTab, setAdminModalTab] = useState<AdminModalTab>("student");
   const notificationTimersRef = useRef(new Map<string, number>());
   const sessionRole = isAdminMode ? "admin" : isExpertMode ? "expert" : "teacher";
   const sessionUserId = isAdminMode ? adminId : isExpertMode ? expertId : teacherId;
+  const currentSession = readSession();
 
   const groupById = useMemo(
     () => new Map(data.groups.map((group) => [group.id, group])),
@@ -258,14 +271,8 @@ export function HomePage() {
       const linkedTeacherNames = discipline.teacher_ids
         .map((linkedTeacherId) => teacherById.get(linkedTeacherId)?.name ?? "")
         .join(" ");
-      const linkedExpertNames = discipline.expert_ids
-        .map((linkedExpertId) => expertById.get(linkedExpertId)?.name ?? "")
-        .join(" ");
-      const linkedGroupNames = discipline.group_ids
-        .map((linkedGroupId) => groupById.get(linkedGroupId)?.name ?? "")
-        .join(" ");
       const searchableText =
-        `${discipline.name} ${linkedTeacherNames} ${linkedExpertNames} ${linkedGroupNames}`.toLowerCase();
+        `${discipline.name} ${linkedTeacherNames}`.toLowerCase();
       const matchesSearch = !adminDisciplineSearch.trim()
         ? true
         : searchableText.includes(adminDisciplineSearch.trim().toLowerCase());
@@ -277,8 +284,6 @@ export function HomePage() {
   }, [
     adminDisciplineSearch,
     adminTeacherFilterId,
-    expertById,
-    groupById,
     isAdminMode,
     teacherById,
     visibleDisciplines,
@@ -424,6 +429,14 @@ export function HomePage() {
     return `/admin/users/${user.role}/${user.id}`;
   }
 
+  function isCurrentAdminDirectoryUser(user: AdminDirectoryUser) {
+    return (
+      user.role === "admin" &&
+      currentSession?.role === "admin" &&
+      currentSession.userId === user.id
+    );
+  }
+
   async function handleToggleAdminUserStatus(user: AdminDirectoryUser) {
     const nextIsActive = user.status !== "active";
     try {
@@ -438,6 +451,40 @@ export function HomePage() {
         await updateAdmin(user.id, { is_active: nextIsActive });
       }
       await refreshAfterChange(nextIsActive ? "Профиль активирован." : "Профиль отключен.");
+    } catch (error) {
+      pushNotification("error", extractErrorMessage(error));
+    } finally {
+      setBusyAction("");
+    }
+  }
+
+  async function handleDeleteAdminUser(user: AdminDirectoryUser) {
+    if (isCurrentAdminDirectoryUser(user)) {
+      return;
+    }
+
+    const confirmed = window.confirm(
+      `Удалить пользователя "${user.name}" (${user.roleLabel})? Это действие нельзя отменить.`,
+    );
+    if (!confirmed) {
+      return;
+    }
+
+    try {
+      setBusyAction(`delete-${user.role}-${user.id}`);
+      if (user.role === "student") {
+        await deleteStudent(user.id);
+      } else if (user.role === "teacher") {
+        await deleteTeacher(user.id);
+      } else if (user.role === "expert") {
+        await deleteExpert(user.id);
+      } else {
+        await deleteAdmin(user.id);
+      }
+      if (selectedAdminUser?.id === user.id && selectedAdminUser.role === user.role) {
+        setSelectedAdminUser(null);
+      }
+      await refreshAfterChange("Пользователь удален.");
     } catch (error) {
       pushNotification("error", extractErrorMessage(error));
     } finally {
@@ -663,8 +710,8 @@ export function HomePage() {
       setBusyAction("discipline-assignments");
       await updateDisciplineAssignments(assignmentDisciplineId, {
         teacher_ids: assignmentTeacherIds,
-        expert_ids: assignmentExpertIds,
-        group_ids: assignmentGroupIds,
+        expert_ids: selectedAssignmentDiscipline?.expert_ids ?? assignmentExpertIds,
+        group_ids: selectedAssignmentDiscipline?.group_ids ?? assignmentGroupIds,
       });
       await refreshAfterChange("Назначения дисциплины сохранены.");
     } catch (error) {
@@ -1311,8 +1358,6 @@ export function HomePage() {
         <div className="admin-discipline-table__head">
           <span>Дисциплина</span>
           <span>Преподаватели</span>
-          <span>Эксперты</span>
-          <span>Группы</span>
           <span>Действия</span>
         </div>
         <div className="admin-discipline-table__body">
@@ -1321,13 +1366,6 @@ export function HomePage() {
               const teachers = discipline.teacher_ids
                 .map((linkedTeacherId) => teacherById.get(linkedTeacherId)?.name)
                 .filter(Boolean) as string[];
-              const experts = discipline.expert_ids
-                .map((linkedExpertId) => expertById.get(linkedExpertId)?.name)
-                .filter(Boolean) as string[];
-              const groups = discipline.group_ids
-                .map((groupId) => groupById.get(groupId)?.name)
-                .filter(Boolean) as string[];
-
               return (
                 <article className="admin-discipline-row admin-discipline-row--org" key={discipline.id}>
                   <div className="admin-discipline-row__identity">
@@ -1335,18 +1373,6 @@ export function HomePage() {
                     <small>ID: {shortId(discipline.id)}</small>
                   </div>
                   <div>{renderListValue(teachers)}</div>
-                  <div>{renderListValue(experts)}</div>
-                  <div className="admin-discipline-row__groups">
-                    {groups.length ? (
-                      groups.map((group) => (
-                        <span className="admin-chip" key={group}>
-                          {group}
-                        </span>
-                      ))
-                    ) : (
-                      <span className="home-hint">Не назначены</span>
-                    )}
-                  </div>
                   <div className="discipline-row__actions">
                     <MotionLink
                       className="secondary-button discipline-row__action"
@@ -1493,6 +1519,9 @@ export function HomePage() {
                     .map((disciplineId) => disciplineById.get(disciplineId)?.name)
                     .filter(Boolean) as string[];
                   const subgroup = user.subgroupId ? subgroupById.get(user.subgroupId) : null;
+                  const isDeleting = busyAction === `delete-${user.role}-${user.id}`;
+                  const isTogglingStatus = busyAction === `status-${user.role}-${user.id}`;
+                  const isCurrentAdminProfile = isCurrentAdminDirectoryUser(user);
 
                   return (
                     <article className="admin-directory-row" key={`${user.role}-${user.id}`}>
@@ -1516,6 +1545,7 @@ export function HomePage() {
                       <div className="admin-directory-row__actions">
                         <button
                           className="secondary-button"
+                          disabled={isDeleting}
                           onClick={() => navigate(getAdminUserViewPath(user))}
                           type="button"
                         >
@@ -1523,11 +1553,19 @@ export function HomePage() {
                         </button>
                         <button
                           className="ghost-button admin-directory-row__status-action"
-                          disabled={busyAction === `status-${user.role}-${user.id}`}
+                          disabled={isDeleting || isTogglingStatus}
                           onClick={() => void handleToggleAdminUserStatus(user)}
                           type="button"
                         >
                           {user.status === "active" ? "Отключить" : "Активировать"}
+                        </button>
+                        <button
+                          className="secondary-button secondary-button--danger"
+                          disabled={isDeleting || isCurrentAdminProfile}
+                          onClick={() => void handleDeleteAdminUser(user)}
+                          type="button"
+                        >
+                          {isCurrentAdminProfile ? "Текущий админ" : "Удалить"}
                         </button>
                       </div>
                     </article>
@@ -1715,6 +1753,803 @@ export function HomePage() {
               </div>
             </div>
           </form>
+        </motion.section>
+      </motion.section>
+    );
+  }
+
+  function renderAdminDashboardLayout() {
+    const renderListValue = (items: string[], empty = "Не назначено") =>
+      items.length ? items.join(", ") : empty;
+
+    const renderDisciplineRows = () => (
+      <div className="admin-discipline-table admin-discipline-table--org">
+        <div className="admin-discipline-table__head">
+          <span>Дисциплина</span>
+          <span>Преподаватели</span>
+          <span>Эксперты</span>
+          <span>Группы</span>
+          <span>Действия</span>
+        </div>
+        <div className="admin-discipline-table__body">
+          {adminVisibleDisciplines.length ? (
+            adminVisibleDisciplines.map((discipline) => {
+              const teachers = discipline.teacher_ids
+                .map((linkedTeacherId) => teacherById.get(linkedTeacherId)?.name)
+                .filter(Boolean) as string[];
+              const experts = discipline.expert_ids
+                .map((linkedExpertId) => expertById.get(linkedExpertId)?.name)
+                .filter(Boolean) as string[];
+              const groups = discipline.group_ids
+                .map((groupId) => groupById.get(groupId)?.name)
+                .filter(Boolean) as string[];
+
+              return (
+                <article className="admin-discipline-row admin-discipline-row--org" key={discipline.id}>
+                  <div className="admin-discipline-row__identity">
+                    <strong>{discipline.name}</strong>
+                    <small>ID: {shortId(discipline.id)}</small>
+                  </div>
+                  <div>{renderListValue(teachers)}</div>
+                  <div>{renderListValue(experts)}</div>
+                  <div className="admin-discipline-row__groups">
+                    {groups.length ? (
+                      groups.map((group) => (
+                        <span className="admin-chip" key={group}>
+                          {group}
+                        </span>
+                      ))
+                    ) : (
+                      <span className="home-hint">Не назначены</span>
+                    )}
+                  </div>
+                  <div className="discipline-row__actions">
+                    <MotionLink
+                      className="secondary-button discipline-row__action"
+                      to={`/disciplines/${disciplinePathValue(discipline, discipline.id)}`}
+                    >
+                      Паспорт
+                    </MotionLink>
+                  </div>
+                </article>
+              );
+            })
+          ) : (
+            <p className="home-hint">Дисциплины не найдены.</p>
+          )}
+        </div>
+      </div>
+    );
+
+    const renderAdminCreateUserForm = () => {
+      if (adminCreateUserTab === "teacher") {
+        return (
+          <form className="home-form" onSubmit={handleCreateTeacher}>
+            <div className="admin-panel-block__heading">
+              <p className="card__eyebrow">Преподаватели</p>
+              <h3>Создать преподавателя</h3>
+            </div>
+            <label className="field">
+              <span>ФИО преподавателя</span>
+              <input
+                value={teacherName}
+                onChange={(event) => setTeacherName(event.target.value)}
+                placeholder="Петров Петр"
+                required
+              />
+            </label>
+            <label className="field">
+              <span>Логин</span>
+              <input
+                value={teacherLogin}
+                onChange={(event) => setTeacherLogin(event.target.value)}
+                placeholder="petrov"
+                required
+              />
+            </label>
+            <label className="field">
+              <span>Пароль</span>
+              <input
+                onChange={(event) => setTeacherPassword(event.target.value)}
+                placeholder="Введите пароль"
+                required
+                type="password"
+                value={teacherPassword}
+              />
+            </label>
+            <div className="home-checklist">
+              <span>Учебные группы преподавателя</span>
+              {data.groups.length ? (
+                data.groups.map((group) => (
+                  <label className="home-check" key={group.id}>
+                    <input
+                      checked={teacherGroupIds.includes(group.id)}
+                      onChange={() =>
+                        setTeacherGroupIds((current) => toggleId(current, group.id))
+                      }
+                      type="checkbox"
+                    />
+                    {group.name}
+                  </label>
+                ))
+              ) : (
+                <p className="home-hint">Сначала создайте хотя бы одну группу.</p>
+              )}
+            </div>
+            <button className="primary-button" disabled={busyAction === "teacher"} type="submit">
+              {busyAction === "teacher" ? "Создаю..." : "Создать преподавателя"}
+            </button>
+          </form>
+        );
+      }
+
+      if (adminCreateUserTab === "expert") {
+        return (
+          <form className="home-form" onSubmit={handleCreateExpert}>
+            <div className="admin-panel-block__heading">
+              <p className="card__eyebrow">Эксперты</p>
+              <h3>Создать эксперта</h3>
+            </div>
+            <label className="field">
+              <span>ФИО эксперта</span>
+              <input
+                value={expertName}
+                onChange={(event) => setExpertName(event.target.value)}
+                placeholder="Смирнова Анна"
+                required
+              />
+            </label>
+            <label className="field">
+              <span>Логин</span>
+              <input
+                value={expertLogin}
+                onChange={(event) => setExpertLogin(event.target.value)}
+                placeholder="asmirnova"
+                required
+              />
+            </label>
+            <label className="field">
+              <span>Пароль</span>
+              <input
+                onChange={(event) => setExpertPassword(event.target.value)}
+                placeholder="Введите пароль"
+                required
+                type="password"
+                value={expertPassword}
+              />
+            </label>
+            <button className="primary-button" disabled={busyAction === "expert"} type="submit">
+              {busyAction === "expert" ? "Создаю..." : "Создать эксперта"}
+            </button>
+          </form>
+        );
+      }
+
+      if (adminCreateUserTab === "admin") {
+        return (
+          <form className="home-form" onSubmit={handleCreateAdmin}>
+            <div className="admin-panel-block__heading">
+              <p className="card__eyebrow">Администраторы</p>
+              <h3>Создать администратора</h3>
+            </div>
+            <label className="field">
+              <span>Имя администратора</span>
+              <input
+                value={adminName}
+                onChange={(event) => setAdminName(event.target.value)}
+                placeholder="Новый администратор"
+                required
+              />
+            </label>
+            <label className="field">
+              <span>Логин</span>
+              <input
+                value={adminLogin}
+                onChange={(event) => setAdminLogin(event.target.value)}
+                placeholder="newadmin"
+                required
+              />
+            </label>
+            <label className="field">
+              <span>Пароль</span>
+              <input
+                onChange={(event) => setAdminPassword(event.target.value)}
+                placeholder="Введите пароль"
+                required
+                type="password"
+                value={adminPassword}
+              />
+            </label>
+            <button className="primary-button" disabled={busyAction === "admin"} type="submit">
+              {busyAction === "admin" ? "Создаю..." : "Создать администратора"}
+            </button>
+          </form>
+        );
+      }
+
+      return (
+        <form className="home-form" onSubmit={handleCreateStudent}>
+          <div className="admin-panel-block__heading">
+            <p className="card__eyebrow">Студенты</p>
+            <h3>Создать студента</h3>
+          </div>
+          <label className="field">
+            <span>ФИО студента</span>
+            <input
+              value={studentName}
+              onChange={(event) => setStudentName(event.target.value)}
+              placeholder="Иванов Иван"
+              required
+            />
+          </label>
+          <label className="field">
+            <span>Логин</span>
+            <input
+              value={studentLogin}
+              onChange={(event) => setStudentLogin(event.target.value)}
+              placeholder="ivanov"
+              required
+            />
+          </label>
+          <label className="field">
+            <span>Пароль</span>
+            <input
+              onChange={(event) => setStudentPassword(event.target.value)}
+              placeholder="Введите пароль"
+              required
+              type="password"
+              value={studentPassword}
+            />
+          </label>
+          <label className="field">
+            <span>Группа</span>
+            <select
+              value={studentGroupId}
+              onChange={(event) => setStudentGroupId(event.target.value)}
+              disabled={!data.groups.length}
+              required
+            >
+              {data.groups.map((group) => (
+                <option key={group.id} value={group.id}>
+                  {group.name}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="field">
+            <span>Подгруппа</span>
+            <select
+              value={studentSubgroupId}
+              onChange={(event) => setStudentSubgroupId(event.target.value)}
+              disabled={!studentGroupId}
+            >
+              <option value="">Без подгруппы</option>
+              {(subgroupsByGroupId.get(studentGroupId) ?? []).map((subgroup) => (
+                <option key={subgroup.id} value={subgroup.id}>
+                  Подгруппа {subgroup.subgroup_num}
+                </option>
+              ))}
+            </select>
+          </label>
+          {!data.groups.length ? (
+            <p className="home-hint">Сначала создайте группу, затем можно добавить студента.</p>
+          ) : null}
+          <button
+            className="primary-button"
+            disabled={busyAction === "student" || !studentGroupId}
+            type="submit"
+          >
+            {busyAction === "student" ? "Создаю..." : "Создать студента"}
+          </button>
+        </form>
+      );
+    };
+
+    return (
+      <motion.section className="home-section admin-admin-stack" {...buildReveal(0.06)}>
+        <motion.section className="home-card home-card--wide admin-system-card" {...CARD_MOTION}>
+          <div className="admin-section-heading admin-section-heading--with-action">
+            <div>
+              <p className="card__eyebrow">Пользователи</p>
+              <h2>Все пользователи системы</h2>
+              <p className="card__text">
+                {filteredAdminDirectoryUsers.length} из {adminDirectoryUsers.length} записей по текущему фильтру.
+              </p>
+            </div>
+            <button
+              className="secondary-button admin-section-toggle"
+              onClick={() => setAdminUsersExpanded((expanded) => !expanded)}
+              type="button"
+            >
+              {adminUsersExpanded ? "Свернуть список" : "Развернуть список"}
+            </button>
+          </div>
+
+          {adminUsersExpanded ? (
+            <>
+              <div className="admin-filter-grid">
+                <label className="field">
+                  <span>Поиск</span>
+                  <input
+                    value={adminUserSearch}
+                    onChange={(event) => setAdminUserSearch(event.target.value)}
+                    placeholder="ФИО, логин, группа, дисциплины"
+                  />
+                </label>
+                <label className="field">
+                  <span>Роль</span>
+                  <select
+                    value={adminUserRoleFilter}
+                    onChange={(event) =>
+                      setAdminUserRoleFilter(event.target.value as AdminUserRoleFilter)
+                    }
+                  >
+                    <option value="all">Все роли</option>
+                    <option value="student">Студенты</option>
+                    <option value="teacher">Преподаватели</option>
+                    <option value="expert">Эксперты</option>
+                    <option value="admin">Администраторы</option>
+                  </select>
+                </label>
+                <label className="field">
+                  <span>Группа</span>
+                  <select
+                    value={adminUserGroupFilter}
+                    onChange={(event) => setAdminUserGroupFilter(event.target.value)}
+                  >
+                    <option value="">Все группы</option>
+                    {data.groups.map((group) => (
+                      <option key={group.id} value={group.id}>
+                        {group.name}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label className="field">
+                  <span>Подгруппа</span>
+                  <select
+                    value={adminUserSubgroupFilter}
+                    onChange={(event) => setAdminUserSubgroupFilter(event.target.value)}
+                  >
+                    <option value="">Все подгруппы</option>
+                    {data.subgroups.map((subgroup) => (
+                      <option key={subgroup.id} value={subgroup.id}>
+                        {groupById.get(subgroup.group_id)?.name ?? "Группа"} · {subgroup.subgroup_num}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label className="field">
+                  <span>Дисциплина</span>
+                  <select
+                    value={adminUserDisciplineFilter}
+                    onChange={(event) => setAdminUserDisciplineFilter(event.target.value)}
+                  >
+                    <option value="">Все дисциплины</option>
+                    {data.disciplines.map((discipline) => (
+                      <option key={discipline.id} value={discipline.id}>
+                        {discipline.name}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label className="field">
+                  <span>Статус</span>
+                  <select
+                    value={adminUserStatusFilter}
+                    onChange={(event) =>
+                      setAdminUserStatusFilter(event.target.value as AdminUserStatusFilter)
+                    }
+                  >
+                    <option value="all">Все статусы</option>
+                    <option value="active">Активные</option>
+                    <option value="inactive">Неактивные</option>
+                  </select>
+                </label>
+              </div>
+
+              <div className="admin-directory-table">
+                <div className="admin-directory-table__head">
+                  <span>Пользователь</span>
+                  <span>Роль</span>
+                  <span>Группа</span>
+                  <span>Дисциплины</span>
+                  <span>Статус</span>
+                  <span>Действия</span>
+                </div>
+                <div className="admin-directory-table__body">
+                  {filteredAdminDirectoryUsers.length ? (
+                    filteredAdminDirectoryUsers.map((user) => {
+                      const groups = user.groupIds
+                        .map((groupId) => groupById.get(groupId)?.name)
+                        .filter(Boolean) as string[];
+                      const disciplines = user.disciplineIds
+                        .map((disciplineId) => disciplineById.get(disciplineId)?.name)
+                        .filter(Boolean) as string[];
+                      const subgroup = user.subgroupId ? subgroupById.get(user.subgroupId) : null;
+                      const isDeleting = busyAction === `delete-${user.role}-${user.id}`;
+                      const isTogglingStatus = busyAction === `status-${user.role}-${user.id}`;
+                      const isCurrentAdminProfile = isCurrentAdminDirectoryUser(user);
+
+                      return (
+                        <article className="admin-directory-row" key={`${user.role}-${user.id}`}>
+                          <div>
+                            <strong>{user.name}</strong>
+                            <small>{user.login}</small>
+                          </div>
+                          <span>{user.roleLabel}</span>
+                          <span>
+                            {groups.length ? groups.join(", ") : "Не назначена"}
+                            {subgroup ? ` · подгруппа ${subgroup.subgroup_num}` : ""}
+                          </span>
+                          <span>{disciplines.length ? disciplines.join(", ") : "Не назначены"}</span>
+                          <span
+                            className={`admin-chip ${
+                              user.status === "inactive" ? "admin-chip--muted" : ""
+                            }`}
+                          >
+                            {user.status === "active" ? "Активен" : "Неактивен"}
+                          </span>
+                          <div className="admin-directory-row__actions">
+                            <button
+                              className="secondary-button"
+                              disabled={isDeleting}
+                              onClick={() => navigate(getAdminUserViewPath(user))}
+                              type="button"
+                            >
+                              Подробнее
+                            </button>
+                            <button
+                              className="ghost-button admin-directory-row__status-action"
+                              disabled={isDeleting || isTogglingStatus}
+                              onClick={() => void handleToggleAdminUserStatus(user)}
+                              type="button"
+                            >
+                              {user.status === "active" ? "Отключить" : "Активировать"}
+                            </button>
+                            <button
+                              className="secondary-button secondary-button--danger"
+                              disabled={isDeleting || isCurrentAdminProfile}
+                              onClick={() => void handleDeleteAdminUser(user)}
+                              type="button"
+                            >
+                              {isCurrentAdminProfile ? "Текущий админ" : "Удалить"}
+                            </button>
+                          </div>
+                        </article>
+                      );
+                    })
+                  ) : (
+                    <p className="home-hint">Пользователи не найдены.</p>
+                  )}
+                </div>
+              </div>
+            </>
+          ) : (
+            <p className="card__text">Список пользователей скрыт. Разверните блок, чтобы посмотреть записи и фильтры.</p>
+          )}
+        </motion.section>
+
+        <motion.section className="home-card home-card--wide admin-system-card" {...CARD_MOTION}>
+          <div className="admin-section-heading admin-section-heading--with-action">
+            <div>
+              <p className="card__eyebrow">Создание</p>
+              <h2>Создание пользователей</h2>
+              <p className="card__text">Выберите тип учетной записи и заполните форму ниже.</p>
+            </div>
+            <button
+              className="secondary-button admin-section-toggle"
+              onClick={() => setAdminCreateUsersExpanded((expanded) => !expanded)}
+              type="button"
+            >
+              {adminCreateUsersExpanded ? "Свернуть блок" : "Развернуть блок"}
+            </button>
+          </div>
+
+          {adminCreateUsersExpanded ? (
+            <>
+              <div className="admin-user-type-grid">
+                {[
+                  ["student", "Создать студента"],
+                  ["teacher", "Создать преподавателя"],
+                  ["expert", "Создать эксперта"],
+                  ["admin", "Создать администратора"],
+                ].map(([key, label]) => (
+                  <button
+                    className={
+                      adminCreateUserTab === key
+                        ? "primary-button admin-user-type-button"
+                        : "secondary-button admin-user-type-button"
+                    }
+                    key={key}
+                    onClick={() => setAdminCreateUserTab(key as AdminCreateUserTab)}
+                    type="button"
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
+
+              <section className="admin-panel-block">{renderAdminCreateUserForm()}</section>
+            </>
+          ) : (
+            <p className="card__text">Блок создания пользователей свернут.</p>
+          )}
+        </motion.section>
+
+        <motion.section className="home-card home-card--wide admin-system-card" {...CARD_MOTION}>
+          <div className="admin-section-heading">
+            <p className="card__eyebrow">Группы</p>
+            <h2>Создание групп и подгрупп</h2>
+            <p className="card__text">
+              {data.groups.length} групп, {data.subgroups.length} подгрупп.
+            </p>
+          </div>
+
+          <div className="admin-organization-grid">
+            <section className="admin-panel-block">
+              <div className="admin-modal-tabs" role="tablist" aria-label="Создание групп">
+                <button
+                  className={adminGroupTab === "group" ? "primary-button" : "secondary-button"}
+                  onClick={() => setAdminGroupTab("group")}
+                  type="button"
+                >
+                  Новая группа
+                </button>
+                <button
+                  className={adminGroupTab === "subgroup" ? "primary-button" : "secondary-button"}
+                  onClick={() => setAdminGroupTab("subgroup")}
+                  type="button"
+                >
+                  Новая подгруппа
+                </button>
+              </div>
+
+              {adminGroupTab === "group" ? (
+                <form className="home-form" onSubmit={handleCreateGroup}>
+                  <div className="admin-panel-block__heading">
+                    <p className="card__eyebrow">Группа</p>
+                    <h3>Создать учебную группу</h3>
+                  </div>
+                  <label className="field">
+                    <span>Название группы</span>
+                    <input
+                      value={groupName}
+                      onChange={(event) => setGroupName(event.target.value)}
+                      placeholder="Например: Б9124-09.03.04"
+                      required
+                    />
+                  </label>
+                  <button className="primary-button" disabled={busyAction === "group"} type="submit">
+                    {busyAction === "group" ? "Создаю..." : "Создать группу"}
+                  </button>
+                </form>
+              ) : (
+                <form className="home-form" onSubmit={handleCreateSubgroup}>
+                  <div className="admin-panel-block__heading">
+                    <p className="card__eyebrow">Подгруппа</p>
+                    <h3>Создать подгруппу</h3>
+                  </div>
+                  <label className="field">
+                    <span>Группа</span>
+                    <select
+                      value={subgroupGroupId}
+                      onChange={(event) => setSubgroupGroupId(event.target.value)}
+                      disabled={!data.groups.length}
+                      required
+                    >
+                      {data.groups.map((group) => (
+                        <option key={group.id} value={group.id}>
+                          {group.name}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <label className="field">
+                    <span>Номер подгруппы</span>
+                    <input
+                      min={1}
+                      onChange={(event) => setSubgroupNum(event.target.value)}
+                      placeholder="1"
+                      required
+                      type="number"
+                      value={subgroupNum}
+                    />
+                  </label>
+                  {!data.groups.length ? (
+                    <p className="home-hint">Сначала создайте хотя бы одну группу.</p>
+                  ) : null}
+                  <button
+                    className="primary-button"
+                    disabled={busyAction === "subgroup" || !subgroupGroupId}
+                    type="submit"
+                  >
+                    {busyAction === "subgroup" ? "Создаю..." : "Создать подгруппу"}
+                  </button>
+                </form>
+              )}
+            </section>
+
+            <section className="admin-panel-block">
+              <div className="admin-panel-block__heading">
+                <p className="card__eyebrow">Структура</p>
+                <h3>Текущие группы</h3>
+              </div>
+              {data.groups.length ? (
+                <div className="admin-group-list">
+                  {data.groups.map((group) => {
+                    const groupSubgroups = subgroupsByGroupId.get(group.id) ?? [];
+                    return (
+                      <article className="admin-group-card" key={group.id}>
+                        <strong>{group.name}</strong>
+                        <span>
+                          {groupSubgroups.length
+                            ? `Подгруппы: ${groupSubgroups.map((subgroup) => subgroup.subgroup_num).join(", ")}`
+                            : "Подгрупп пока нет"}
+                        </span>
+                      </article>
+                    );
+                  })}
+                </div>
+              ) : (
+                <p className="home-hint">Группы пока не созданы.</p>
+              )}
+            </section>
+          </div>
+        </motion.section>
+
+        <motion.section className="home-card home-card--wide admin-discipline-card" {...CARD_MOTION}>
+          <div className="admin-section-heading">
+            <p className="card__eyebrow">Дисциплины</p>
+            <h2>Дисциплины и закрепление дисциплин</h2>
+            <p className="card__text">
+              Администратор создает дисциплины и назначает преподавателей. Граф знаний ведет эксперт и этот блок здесь не редактируется.
+            </p>
+          </div>
+
+          <div className="admin-discipline-split">
+            <section className="admin-panel-block">
+              <form className="home-form admin-create-discipline-form" onSubmit={handleCreateDiscipline}>
+                <div className="admin-panel-block__heading">
+                  <p className="card__eyebrow">Новая дисциплина</p>
+                  <h3>Создать дисциплину</h3>
+                </div>
+                <div className="admin-discipline-create admin-discipline-create--admin">
+                  <label className="field">
+                    <span>Название новой дисциплины</span>
+                    <input
+                      value={disciplineName}
+                      onChange={(event) => setDisciplineName(event.target.value)}
+                      placeholder="Например: Теория графов"
+                      required
+                    />
+                  </label>
+                  <button
+                    className="primary-button"
+                    disabled={busyAction === "discipline" || !canCreateDiscipline}
+                    type="submit"
+                  >
+                    {busyAction === "discipline" ? "Создаю..." : "Создать дисциплину"}
+                  </button>
+                </div>
+                <p className="home-hint">
+                  После создания дисциплины назначьте ей преподавателей в соседнем блоке.
+                </p>
+              </form>
+            </section>
+
+            <section className="admin-panel-block">
+              <div className="admin-panel-block__heading">
+                <p className="card__eyebrow">Назначения</p>
+                <h3>Закрепить дисциплину</h3>
+              </div>
+              <form className="home-form" onSubmit={handleUpdateDisciplineAssignments}>
+                <div className="admin-assignment-grid">
+                  <label className="field">
+                    <span>Дисциплина</span>
+                    <select
+                      value={assignmentDisciplineId}
+                      onChange={(event) => setAssignmentDisciplineId(event.target.value)}
+                      disabled={!visibleDisciplines.length}
+                    >
+                      {visibleDisciplines.map((discipline) => (
+                        <option key={discipline.id} value={discipline.id}>
+                          {discipline.name}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <button
+                    className="primary-button"
+                    disabled={!assignmentDisciplineId || busyAction === "discipline-assignments"}
+                    type="submit"
+                  >
+                    {busyAction === "discipline-assignments" ? "Сохраняю..." : "Сохранить"}
+                  </button>
+                </div>
+
+                <div className="admin-assignment-checks admin-assignment-checks--teachers">
+                  <div className="home-checklist admin-assignment-checklist">
+                    <span>Преподаватели</span>
+                    {data.teachers.length ? (
+                      data.teachers.map((teacher) => (
+                        <label className="home-check" key={teacher.id}>
+                          <input
+                            checked={assignmentTeacherIds.includes(teacher.id)}
+                            onChange={() =>
+                              setAssignmentTeacherIds((current) => toggleId(current, teacher.id))
+                            }
+                            type="checkbox"
+                          />
+                          {teacher.name}
+                        </label>
+                      ))
+                    ) : (
+                      <p className="home-hint">Преподаватели пока не созданы.</p>
+                    )}
+                  </div>
+                </div>
+              </form>
+            </section>
+          </div>
+
+          <section className="admin-panel-block">
+            <div className="admin-section-heading admin-section-heading--with-action">
+              <div>
+                <p className="card__eyebrow">Список дисциплин</p>
+                <h3>Все дисциплины и закрепления</h3>
+              </div>
+              <button
+                className="secondary-button admin-section-toggle"
+                onClick={() => setAdminDisciplineListExpanded((expanded) => !expanded)}
+                type="button"
+              >
+                {adminDisciplineListExpanded ? "Свернуть список" : "Развернуть список"}
+              </button>
+            </div>
+            {adminDisciplineListExpanded ? (
+              <>
+                <div className="admin-discipline-toolbar admin-discipline-toolbar--list">
+                  <label className="field">
+                    <span>Поиск</span>
+                    <input
+                      value={adminDisciplineSearch}
+                      onChange={(event) => setAdminDisciplineSearch(event.target.value)}
+                      placeholder="Дисциплина, преподаватель"
+                    />
+                  </label>
+                  <label className="field">
+                    <span>Преподаватель</span>
+                    <select
+                      value={adminTeacherFilterId}
+                      onChange={(event) => setAdminTeacherFilterId(event.target.value)}
+                    >
+                      <option value="">Все преподаватели</option>
+                      {data.teachers.map((teacher) => (
+                        <option key={teacher.id} value={teacher.id}>
+                          {teacher.name}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <button
+                    className="secondary-button admin-discipline-filters__reset"
+                    onClick={() => {
+                      setAdminDisciplineSearch("");
+                      setAdminTeacherFilterId("");
+                    }}
+                    type="button"
+                  >
+                    Сбросить
+                  </button>
+                </div>
+
+                {renderDisciplineRows()}
+              </>
+            ) : (
+              <p className="card__text">Список дисциплин свернут.</p>
+            )}
+          </section>
         </motion.section>
       </motion.section>
     );
@@ -2370,8 +3205,11 @@ export function HomePage() {
   }
 
   return (
-    <div className="home-page immersive-page immersive-page--teacher">
-      <motion.header className="home-hero teacher-home-hero" {...buildReveal(0.02)}>
+    <div className={`home-page home-page--${mode} immersive-page immersive-page--teacher`}>
+      <motion.header
+        className={`home-hero ${isTeacherMode ? "teacher-home-hero" : ""} ${isAdminMode ? "home-hero--admin" : ""}`}
+        {...buildReveal(0.02)}
+      >
         <div className="home-hero__topline">
           <div className="home-hero__brand">
             <span className="home-hero__logo" aria-hidden="true" />
@@ -2396,12 +3234,6 @@ export function HomePage() {
             <h1>{pageTitle}</h1>
             <p className="home-hero__text">{pageDescription}</p>
           </div>
-
-          {isAdminMode ? (
-            <aside className="admin-hero-illustration" aria-hidden="true">
-              <div className="admin-hero-illustration__panel" />
-            </aside>
-          ) : null}
 
           {isTeacherMode ? (
             <aside className="home-hero__aside teacher-home-hero__aside">
@@ -2454,7 +3286,7 @@ export function HomePage() {
           ) : (
             isAdminMode ? (
               <>
-                {renderAdminDashboardSection()}
+                {renderAdminDashboardLayout()}
               </>
             ) : (
             <>

@@ -3,7 +3,7 @@ from uuid import UUID
 from fastapi import APIRouter, status
 from sqlalchemy import select
 
-from app.api.crud import commit_or_409, not_found
+from app.api.crud import commit_or_409, delete_and_commit, not_found
 from app.api.deps import DbSession
 from app.models import Group, Student, Subgroup
 from app.schemas import StudentCreate, StudentRead, StudentUpdate
@@ -115,3 +115,11 @@ async def update_student(
         group_id=student.group_id,
         subgroup_id=student.subgroup_id,
     )
+
+
+@router.delete("/{student_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_student(student_id: UUID, session: DbSession) -> None:
+    student = await session.get(Student, student_id)
+    if student is None:
+        raise not_found("Student", student_id)
+    await delete_and_commit(session, student)

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 
 import { fetchActiveSession, isAbortError, logout } from "./api";
@@ -33,6 +33,7 @@ export function SessionProfileHeader() {
   const location = useLocation();
   const [session, setSession] = useState<ActiveSession | null>(() => readSession());
   const [profileOpen, setProfileOpen] = useState(false);
+  const profilePanelRef = useRef<HTMLElement | null>(null);
 
   const isAuthPage =
     location.pathname === "/" ||
@@ -40,6 +41,32 @@ export function SessionProfileHeader() {
     location.pathname.startsWith("/login/");
 
   useEffect(() => subscribeToSessionChanges(() => setSession(readSession())), []);
+
+  useEffect(() => {
+    if (!profileOpen) {
+      return;
+    }
+
+    function handlePointerDown(event: PointerEvent) {
+      if (!profilePanelRef.current?.contains(event.target as Node)) {
+        setProfileOpen(false);
+      }
+    }
+
+    function handleKeyDown(event: KeyboardEvent) {
+      if (event.key === "Escape") {
+        setProfileOpen(false);
+      }
+    }
+
+    window.addEventListener("pointerdown", handlePointerDown);
+    window.addEventListener("keydown", handleKeyDown);
+
+    return () => {
+      window.removeEventListener("pointerdown", handlePointerDown);
+      window.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [profileOpen]);
 
   useEffect(() => {
     const cachedSession = readSession();
@@ -77,6 +104,10 @@ export function SessionProfileHeader() {
     return () => controller.abort();
   }, [isAuthPage, location.pathname, navigate]);
 
+  useEffect(() => {
+    setProfileOpen(false);
+  }, [location.pathname]);
+
   const profileName = session?.displayName || session?.login || "Пользователь";
   const profileInitials = useMemo(() => initialsOf(profileName) || "CH", [profileName]);
 
@@ -97,62 +128,89 @@ export function SessionProfileHeader() {
   }
 
   return (
-    <aside className="session-profile-header" aria-label="Текущий профиль">
-      <button
-        className="session-profile-header__summary"
-        onClick={() => navigate(getSessionHomePath(session))}
-        type="button"
-      >
-        <span className="session-profile-header__avatar">{profileInitials}</span>
-        <span className="session-profile-header__identity">
-          <strong>{profileName}</strong>
-          <small>{ROLE_LABELS[session.role]}</small>
-        </span>
-      </button>
-      <div className="session-profile-header__actions">
-        <button className="secondary-button" onClick={() => setProfileOpen(true)} type="button">
-          Профиль
+    <aside
+      aria-label="Текущий профиль"
+      className="session-profile-header"
+      ref={profilePanelRef}
+    >
+      <div className="session-profile-header__bar">
+        <button
+          className="session-profile-header__summary"
+          onClick={() => {
+            setProfileOpen(false);
+            navigate(getSessionHomePath(session));
+          }}
+          type="button"
+        >
+          <span className="session-profile-header__avatar">{profileInitials}</span>
+          <span className="session-profile-header__identity">
+            <strong>{profileName}</strong>
+            <small>{ROLE_LABELS[session.role]}</small>
+          </span>
         </button>
-        <button className="ghost-button" onClick={handleLogout} type="button">
-          Выйти
-        </button>
+        <div className="session-profile-header__actions">
+          <button
+            aria-controls="session-profile-sheet"
+            aria-expanded={profileOpen}
+            className="secondary-button"
+            onClick={() => setProfileOpen((open) => !open)}
+            type="button"
+          >
+            Профиль
+          </button>
+          <button className="ghost-button" onClick={handleLogout} type="button">
+            Выйти
+          </button>
+        </div>
       </div>
 
       {profileOpen ? (
-        <div className="modal-backdrop" onClick={() => setProfileOpen(false)}>
-          <div className="modal-panel session-profile-modal" onClick={(event) => event.stopPropagation()}>
-            <header className="modal-panel__header">
-              <div>
+        <section
+          aria-label="Панель профиля"
+          aria-modal="false"
+          className="session-profile-sheet"
+          id="session-profile-sheet"
+          role="dialog"
+        >
+          <header className="session-profile-sheet__header">
+            <div className="session-profile-sheet__intro">
+              <span className="session-profile-header__avatar session-profile-header__avatar--large">
+                {profileInitials}
+              </span>
+              <div className="session-profile-sheet__copy">
                 <p className="card__eyebrow">Текущий профиль</p>
                 <h2>{profileName}</h2>
-                <p className="card__text">Вы сейчас работаете в системе с этой ролью.</p>
+                <p className="card__text">
+                  Вы сейчас работаете в системе с этой ролью.
+                </p>
               </div>
-              <button className="ghost-button" onClick={() => setProfileOpen(false)} type="button">
-                Назад
-              </button>
-            </header>
-            <div className="modal-panel__body">
-              <div className="admin-detail-grid">
-                <div className="admin-detail-card">
-                  <span>Роль</span>
-                  <strong>{ROLE_LABELS[session.role]}</strong>
-                </div>
-                <div className="admin-detail-card">
-                  <span>Логин</span>
-                  <strong>{session.login || "не указан"}</strong>
-                </div>
-                <div className="admin-detail-card">
-                  <span>Сессия</span>
-                  <strong>Активна</strong>
-                </div>
-                <div className="admin-detail-card">
-                  <span>Доступ</span>
-                  <strong>Личный кабинет</strong>
-                </div>
+            </div>
+            <button className="ghost-button" onClick={() => setProfileOpen(false)} type="button">
+              Назад
+            </button>
+          </header>
+
+          <div className="session-profile-sheet__body">
+            <div className="admin-detail-grid">
+              <div className="admin-detail-card">
+                <span>Роль</span>
+                <strong>{ROLE_LABELS[session.role]}</strong>
+              </div>
+              <div className="admin-detail-card">
+                <span>Логин</span>
+                <strong>{session.login || "не указан"}</strong>
+              </div>
+              <div className="admin-detail-card">
+                <span>Сессия</span>
+                <strong>Активна</strong>
+              </div>
+              <div className="admin-detail-card">
+                <span>Доступ</span>
+                <strong>Личный кабинет</strong>
               </div>
             </div>
           </div>
-        </div>
+        </section>
       ) : null}
     </aside>
   );

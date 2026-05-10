@@ -2,6 +2,8 @@ import { useEffect, useMemo, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 
 import {
+  deleteAdmin,
+  deleteExpert,
   fetchAdmins,
   fetchDisciplines,
   fetchExperts,
@@ -30,6 +32,8 @@ export default function AdminUserProfilePage() {
   const [disciplines, setDisciplines] = useState<Discipline[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [deleting, setDeleting] = useState(false);
+  const currentSession = readSession();
 
   useEffect(() => {
     const session = readSession();
@@ -81,6 +85,37 @@ export default function AdminUserProfilePage() {
     return null;
   }
 
+  const isCurrentAdminProfile =
+    role === "admin" && currentSession?.role === "admin" && currentSession.userId === userId;
+  const userRoleLabel = role && role in ROLE_LABELS ? ROLE_LABELS[role] : "Пользователь";
+
+  async function handleDelete() {
+    if (!user || isCurrentAdminProfile) {
+      return;
+    }
+
+    const confirmed = window.confirm(
+      `Удалить пользователя "${user.name}" (${userRoleLabel})? Это действие нельзя отменить.`,
+    );
+    if (!confirmed) {
+      return;
+    }
+
+    try {
+      setDeleting(true);
+      if (role === "admin") {
+        await deleteAdmin(user.id);
+      } else {
+        await deleteExpert(user.id);
+      }
+      navigate(getSessionHomePath(currentSession), { replace: true });
+    } catch (deleteError) {
+      setError(deleteError instanceof Error ? deleteError.message : "Не удалось удалить профиль.");
+    } finally {
+      setDeleting(false);
+    }
+  }
+
   return (
     <div className="page-shell role-page immersive-page immersive-page--teacher">
       <header className="hero immersive-page__hero role-dashboard-hero">
@@ -94,6 +129,14 @@ export default function AdminUserProfilePage() {
         <div className="hero__controls">
           <button className="ghost-button" onClick={() => navigate(getSessionHomePath())} type="button">
             К кабинету администратора
+          </button>
+          <button
+            className="secondary-button secondary-button--danger"
+            disabled={!user || deleting || isCurrentAdminProfile}
+            onClick={() => void handleDelete()}
+            type="button"
+          >
+            {isCurrentAdminProfile ? "Текущий админ" : "Удалить пользователя"}
           </button>
         </div>
       </header>
