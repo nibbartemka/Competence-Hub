@@ -28,6 +28,7 @@ import type {
 type GraphEditorProps = {
   disciplineId: string;
   disciplineElements: KnowledgeElement[];
+  initialTab?: EditorTab;
   knowledgeElementRelations: KnowledgeElementRelation[];
   onDataChanged: () => Promise<void>;
   topics: Topic[];
@@ -222,11 +223,12 @@ function resolveRelationElements(
 export function GraphEditor({
   disciplineId,
   disciplineElements,
+  initialTab = "topics",
   knowledgeElementRelations,
   onDataChanged,
   topics,
 }: GraphEditorProps) {
-  const [activeTab, setActiveTab] = useState<EditorTab>("topics");
+  const [activeTab, setActiveTab] = useState<EditorTab>(initialTab);
   const [allElements, setAllElements] = useState<KnowledgeElement[]>([]);
   const [relationCatalog, setRelationCatalog] = useState<Relation[]>([]);
   const [busyAction, setBusyAction] = useState("");
@@ -289,6 +291,10 @@ export function GraphEditor({
   );
 
   const relationElements = sortedAllElements;
+
+  useEffect(() => {
+    setActiveTab(initialTab);
+  }, [initialTab]);
 
   const sortedElementRelations = useMemo(
     () =>

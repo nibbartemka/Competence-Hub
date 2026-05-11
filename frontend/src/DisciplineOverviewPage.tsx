@@ -12,7 +12,7 @@ import {
 } from "./api";
 import { disciplinePathValue } from "./disciplineRouting";
 import { actionHoverMotion, cardHoverMotion, revealMotion } from "./motionPresets";
-import { getSessionHomePath } from "./session";
+import { getSessionHomePath, readSession } from "./session";
 import type {
   DisciplineKnowledgeGraph,
   Group,
@@ -37,6 +37,7 @@ function trajectoryStatusLabel(status: LearningTrajectorySummary["status"]) {
 export default function DisciplineOverviewPage() {
   const { disciplineId } = useParams<{ disciplineId: string }>();
   const navigate = useNavigate();
+  const isExpertSession = readSession()?.role === "expert";
 
   const [graph, setGraph] = useState<DisciplineKnowledgeGraph | null>(null);
   const [groups, setGroups] = useState<Group[]>([]);
@@ -60,10 +61,12 @@ export default function DisciplineOverviewPage() {
           fetchGroups(controller.signal),
           fetchTeachers(controller.signal),
         ]);
-        const nextTrajectories = await fetchLearningTrajectories(
-          { discipline_id: nextGraph.discipline.id },
-          controller.signal,
-        );
+        const nextTrajectories = isExpertSession
+          ? []
+          : await fetchLearningTrajectories(
+              { discipline_id: nextGraph.discipline.id },
+              controller.signal,
+            );
         const nextSubgroups = (
           await Promise.all(
             nextGroups.map((group) => fetchSubgroups(group.id, controller.signal)),
@@ -84,7 +87,7 @@ export default function DisciplineOverviewPage() {
 
     void load();
     return () => controller.abort();
-  }, [disciplineId]);
+  }, [disciplineId, isExpertSession]);
 
   const groupById = useMemo(() => new Map(groups.map((group) => [group.id, group])), [groups]);
   const subgroupById = useMemo(
@@ -126,13 +129,15 @@ export default function DisciplineOverviewPage() {
           >
             Граф знаний
           </MotionLink>
-          <MotionLink
-            className="secondary-button"
-            to={`/disciplines/${disciplinePathValue(graph?.discipline, disciplineId)}/trajectory`}
-            {...actionHoverMotion}
-          >
-            Траектории
-          </MotionLink>
+          {!isExpertSession ? (
+            <MotionLink
+              className="secondary-button"
+              to={`/disciplines/${disciplinePathValue(graph?.discipline, disciplineId)}/trajectory`}
+              {...actionHoverMotion}
+            >
+              Траектории
+            </MotionLink>
+          ) : null}
         </div>
       </motion.header>
 
@@ -199,42 +204,44 @@ export default function DisciplineOverviewPage() {
             )}
           </motion.section>
 
-          <motion.section
-            className="card card--soft overview-card overview-card--wide"
-            {...revealMotion(0.14)}
-            {...cardHoverMotion}
-          >
-            <p className="card__eyebrow">Траектории</p>
-            <div className="trajectory-saved-list">
-              {trajectories.length ? (
-                trajectories.map((trajectory) => {
-                  const subgroup = trajectory.subgroup_id
-                    ? subgroupById.get(trajectory.subgroup_id)
-                    : null;
-                  const group = trajectory.group_id ? groupById.get(trajectory.group_id) : null;
+          {!isExpertSession ? (
+            <motion.section
+              className="card card--soft overview-card overview-card--wide"
+              {...revealMotion(0.14)}
+              {...cardHoverMotion}
+            >
+              <p className="card__eyebrow">Траектории</p>
+              <div className="trajectory-saved-list">
+                {trajectories.length ? (
+                  trajectories.map((trajectory) => {
+                    const subgroup = trajectory.subgroup_id
+                      ? subgroupById.get(trajectory.subgroup_id)
+                      : null;
+                    const group = trajectory.group_id ? groupById.get(trajectory.group_id) : null;
 
-                  return (
-                    <MotionLink
-                      className="trajectory-saved-card"
-                      key={trajectory.id}
-                      to={`/disciplines/${disciplinePathValue(graph?.discipline, disciplineId)}/trajectories/${trajectory.id}`}
-                      {...actionHoverMotion}
-                    >
-                      <strong>{trajectory.name}</strong>
-                      <span>
-                        {trajectoryStatusLabel(trajectory.status)} ·{" "}
-                        {trajectory.is_actual ? "актуальна" : "устарела"} ·{" "}
-                        {group?.name ?? "без группы"}
-                        {subgroup ? ` / подгруппа ${subgroup.subgroup_num}` : ""}
-                      </span>
-                    </MotionLink>
-                  );
-                })
-              ) : (
-                <p className="card__text">Траекторий пока нет.</p>
-              )}
-            </div>
-          </motion.section>
+                    return (
+                      <MotionLink
+                        className="trajectory-saved-card"
+                        key={trajectory.id}
+                        to={`/disciplines/${disciplinePathValue(graph?.discipline, disciplineId)}/trajectories/${trajectory.id}`}
+                        {...actionHoverMotion}
+                      >
+                        <strong>{trajectory.name}</strong>
+                        <span>
+                          {trajectoryStatusLabel(trajectory.status)} ·{" "}
+                          {trajectory.is_actual ? "актуальна" : "устарела"} ·{" "}
+                          {group?.name ?? "без группы"}
+                          {subgroup ? ` / подгруппа ${subgroup.subgroup_num}` : ""}
+                        </span>
+                      </MotionLink>
+                    );
+                  })
+                ) : (
+                  <p className="card__text">Траекторий пока нет.</p>
+                )}
+              </div>
+            </motion.section>
+          ) : null}
         </main>
       ) : null}
     </div>

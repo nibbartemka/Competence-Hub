@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { AnimatePresence, motion } from "motion/react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import RelationGraph, {
     type RGOptions,
     type RelationGraphComponent,
@@ -26,6 +26,7 @@ import {
 import { usePersistedGraphViewport } from "./graphViewport";
 import { buildElementScene, buildTopicScene } from "./graphScene";
 import { actionHoverMotion, cardHoverMotion, revealMotion } from "./motionPresets";
+import { getSessionHomePath, readSession } from "./session";
 import type {
     CompetenceType,
     DetailCard,
@@ -209,8 +210,16 @@ interface KnowledgeGraphViewProps {
     disciplineId: string;
 }
 
+function parseEditorTab(value: string | null) {
+    if (value === "topics" || value === "elements" || value === "relations") {
+        return value;
+    }
+    return null;
+}
+
 export function KnowledgeGraphView({ disciplineId }: KnowledgeGraphViewProps) {
     const navigate = useNavigate();
+    const [searchParams, setSearchParams] = useSearchParams();
     const graphRef = useRef<RelationGraphComponent>();
 
     const [disciplines, setDisciplines] = useState<Discipline[]>([]);
@@ -229,6 +238,8 @@ export function KnowledgeGraphView({ disciplineId }: KnowledgeGraphViewProps) {
     const [importOpen, setImportOpen] = useState(false);
     const [competenceFilters, setCompetenceFilters] = useState(DEFAULT_COMPETENCE_FILTERS);
     const [relationshipFocusEnabled, setRelationshipFocusEnabled] = useState(false);
+    const requestedEditorTab = parseEditorTab(searchParams.get("editor"));
+    const isExpertSession = readSession()?.role === "expert";
 
     const currentDiscipline = disciplines.find((d) => matchesDisciplineIdentifier(d, disciplineId));
     const resolvedDiscipline = graphData?.discipline ?? currentDiscipline ?? null;
@@ -472,6 +483,22 @@ export function KnowledgeGraphView({ disciplineId }: KnowledgeGraphViewProps) {
         }
     }, [relationshipFocusEnabled, view.level]);
 
+    useEffect(() => {
+        setEditorOpen(Boolean(requestedEditorTab));
+    }, [requestedEditorTab]);
+
+    function openEditor(tab: "topics" | "elements" | "relations" = "topics") {
+        const nextParams = new URLSearchParams(searchParams);
+        nextParams.set("editor", tab);
+        setSearchParams(nextParams, { replace: true });
+    }
+
+    function closeEditor() {
+        const nextParams = new URLSearchParams(searchParams);
+        nextParams.delete("editor");
+        setSearchParams(nextParams, { replace: true });
+    }
+
     async function applyView(nextView: ViewMode, preferredNodeId?: string) {
         if (!graphData) return;
 
@@ -595,10 +622,10 @@ export function KnowledgeGraphView({ disciplineId }: KnowledgeGraphViewProps) {
                 <div className="hero__controls">
                     <button
                         className="ghost-button hero__back-button"
-                        onClick={() => navigate("/")}
+                        onClick={() => navigate(getSessionHomePath())}
                         type="button"
                     >
-                        Назад на главную
+                        Назад
                     </button>
 
                     <label className="field">
@@ -638,21 +665,23 @@ export function KnowledgeGraphView({ disciplineId }: KnowledgeGraphViewProps) {
 
                             <button
                                 className="primary-button inspector-actions__editor"
-                                onClick={() => setEditorOpen(true)}
+                                onClick={() => openEditor("topics")}
                                 type="button"
                                 disabled={!disciplineId}
                             >
                                 Редактор
                             </button>
 
-                            <button
-                                className="secondary-button"
-                                onClick={() => navigate(`/disciplines/${resolvedDisciplinePath}/trajectory`)}
-                                type="button"
-                                disabled={!disciplineId}
-                            >
-                                Собрать траекторию
-                            </button>
+                            {!isExpertSession ? (
+                                <button
+                                    className="secondary-button"
+                                    onClick={() => navigate(`/disciplines/${resolvedDisciplinePath}/trajectory`)}
+                                    type="button"
+                                    disabled={!disciplineId}
+                                >
+                                    Собрать траекторию
+                                </button>
+                            ) : null}
                         </div>
 
                         <h2>{scene?.title ?? resolvedDiscipline?.name ?? "Граф дисциплины"}</h2>
@@ -878,7 +907,7 @@ export function KnowledgeGraphView({ disciplineId }: KnowledgeGraphViewProps) {
             {editorOpen && disciplineId ? (
                 <motion.div
                     className="modal-backdrop"
-                    onClick={() => setEditorOpen(false)}
+                    onClick={closeEditor}
                     role="presentation"
                     initial={{ opacity: 0 }}
                     animate={{ opacity: 1 }}
@@ -897,7 +926,7 @@ export function KnowledgeGraphView({ disciplineId }: KnowledgeGraphViewProps) {
                                 <p className="card__eyebrow">Редактор</p>
                                 <h2>Редактор графа знаний</h2>
                             </div>
-                            <button className="ghost-button" onClick={() => setEditorOpen(false)} type="button">
+                            <button className="ghost-button" onClick={closeEditor} type="button">
                                 Закрыть
                             </button>
                         </div>
@@ -905,6 +934,7 @@ export function KnowledgeGraphView({ disciplineId }: KnowledgeGraphViewProps) {
                         <div className="modal-panel__body">
                             <GraphEditor
                                 disciplineId={resolvedDisciplineId || disciplineId}
+                                initialTab={requestedEditorTab ?? "topics"}
                                 topics={graphData?.topics ?? []}
                                 disciplineElements={graphData?.knowledge_elements ?? []}
                                 knowledgeElementRelations={

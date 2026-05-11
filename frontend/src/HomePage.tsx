@@ -15,6 +15,7 @@ import {
   deleteStudent,
   deleteTeacher,
   fetchAdmins,
+  fetchDisciplineKnowledgeGraph,
   fetchDisciplines,
   fetchExperts,
   fetchGroups,
@@ -30,7 +31,22 @@ import {
 } from "./api";
 import { disciplinePathValue } from "./disciplineRouting";
 import { getSessionHomePath, readSession, sessionMatches } from "./session";
-import type { Admin, Discipline, Expert, Group, Student, Subgroup, Teacher } from "./types";
+import type {
+  Admin,
+  CompetenceType,
+  Discipline,
+  DisciplineKnowledgeGraph,
+  Expert,
+  Group,
+  KnowledgeElement,
+  KnowledgeElementRelation,
+  Student,
+  Subgroup,
+  Teacher,
+  Topic,
+  TopicDependency,
+  TopicKnowledgeElement,
+} from "./types";
 
 type DashboardData = {
   admins: Admin[];
@@ -69,6 +85,17 @@ type ToastMessage = Feedback & {
   id: string;
 };
 
+type ExpertElementTypeFilter = "all" | CompetenceType;
+
+type ExpertGraphDiagnostics = {
+  cyclicDependencies: string[][];
+  isolatedElements: KnowledgeElement[];
+  isolatedTopics: Topic[];
+  requiredNotFormed: KnowledgeElement[];
+  topicsWithoutFormedElements: Topic[];
+  totalIssues: number;
+};
+
 const MotionLink = motion(Link);
 const REVEAL_EASE = [0.22, 1, 0.36, 1] as const;
 const CARD_MOTION = {} as const;
@@ -100,6 +127,174 @@ function buildReveal(delay = 0) {
       delay,
       ease: REVEAL_EASE,
     },
+  };
+}
+
+function competenceLabel(value: CompetenceType) {
+  switch (value) {
+    case "know":
+      return "Знать";
+    case "can":
+      return "Уметь";
+    case "master":
+      return "Владеть";
+    default:
+      return value;
+  }
+}
+
+function relationLabel(value: string) {
+  const labels: Record<string, string> = {
+    automates: "Переходит во владение",
+    builds_on: "Строится на",
+    contrasts_with: "Противопоставляется",
+    contains: "Содержит",
+    generalizes: "Обобщает",
+    implements: "Реализует",
+    part_of: "Является частью",
+    property_of: "Свойство объекта",
+    refines: "Уточняет",
+    requires: "Требует",
+    similar: "Родственно",
+    used_with: "Используется вместе",
+  };
+  return labels[value] ?? value;
+}
+
+function buildTopicCycles(topics: Topic[], dependencies: TopicDependency[]) {
+  const adjacency = new Map<string, string[]>();
+  const topicById = new Map(topics.map((topic) => [topic.id, topic]));
+  for (const topic of topics) {
+    adjacency.set(topic.id, []);
+  }
+  for (const dependency of dependencies) {
+    adjacency.get(dependency.prerequisite_topic_id)?.push(dependency.dependent_topic_id);
+  }
+
+  const visiting = new Set<string>();
+  const visited = new Set<string>();
+  const stack: string[] = [];
+  const cycles = new Set<string>();
+
+  function dfs(topicId: string) {
+    visiting.add(topicId);
+    stack.push(topicId);
+
+    for (const nextTopicId of adjacency.get(topicId) ?? []) {
+      if (visiting.has(nextTopicId)) {
+        const startIndex = stack.indexOf(nextTopicId);
+        const cycleIds = stack.slice(startIndex).concat(nextTopicId);
+        const cycleNames = cycleIds.map(
+          (cycleTopicId) => topicById.get(cycleTopicId)?.name ?? cycleTopicId,
+        );
+        cycles.add(cycleNames.join(" -> "));
+        continue;
+      }
+
+      if (!visited.has(nextTopicId)) {
+        dfs(nextTopicId);
+      }
+    }
+
+    stack.pop();
+    visiting.delete(topicId);
+    visited.add(topicId);
+  }
+
+  for (const topic of topics) {
+    if (!visited.has(topic.id)) {
+      dfs(topic.id);
+    }
+  }
+
+  return [...cycles].map((cycle) => cycle.split(" -> "));
+}
+
+function buildExpertGraphDiagnostics(graph: DisciplineKnowledgeGraph): ExpertGraphDiagnostics {
+  const topicLinksByTopicId = new Map<string, TopicKnowledgeElement[]>();
+  const topicDependencyCounts = new Map<string, number>();
+  const elementConnectionCounts = new Map<string, number>();
+  const elementById = new Map(graph.knowledge_elements.map((element) => [element.id, element]));
+
+  for (const topic of graph.topics) {
+    topicLinksByTopicId.set(topic.id, []);
+    topicDependencyCounts.set(topic.id, 0);
+  }
+
+  for (const element of graph.knowledge_elements) {
+    elementConnectionCounts.set(element.id, 0);
+  }
+
+  for (const link of graph.topic_knowledge_elements) {
+    topicLinksByTopicId.set(link.topic_id, [...(topicLinksByTopicId.get(link.topic_id) ?? []), link]);
+    elementConnectionCounts.set(
+      link.element_id,
+      (elementConnectionCounts.get(link.element_id) ?? 0) + 1,
+    );
+  }
+
+  for (const dependency of graph.topic_dependencies) {
+    topicDependencyCounts.set(
+      dependency.prerequisite_topic_id,
+      (topicDependencyCounts.get(dependency.prerequisite_topic_id) ?? 0) + 1,
+    );
+    topicDependencyCounts.set(
+      dependency.dependent_topic_id,
+      (topicDependencyCounts.get(dependency.dependent_topic_id) ?? 0) + 1,
+    );
+  }
+
+  for (const relation of graph.knowledge_element_relations) {
+    elementConnectionCounts.set(
+      relation.source_element_id,
+      (elementConnectionCounts.get(relation.source_element_id) ?? 0) + 1,
+    );
+    elementConnectionCounts.set(
+      relation.target_element_id,
+      (elementConnectionCounts.get(relation.target_element_id) ?? 0) + 1,
+    );
+  }
+
+  const isolatedTopics = graph.topics.filter(
+    (topic) => (topicDependencyCounts.get(topic.id) ?? 0) === 0,
+  );
+  const isolatedElements = graph.knowledge_elements.filter(
+    (element) => (elementConnectionCounts.get(element.id) ?? 0) === 0,
+  );
+  const topicsWithoutFormedElements = graph.topics.filter((topic) =>
+    !(topicLinksByTopicId.get(topic.id) ?? []).some((link) => link.role === "formed"),
+  );
+
+  const formedElementIds = new Set(
+    graph.topic_knowledge_elements
+      .filter((link) => link.role === "formed")
+      .map((link) => link.element_id),
+  );
+  const requiredElementIds = new Set(
+    graph.topic_knowledge_elements
+      .filter((link) => link.role === "required")
+      .map((link) => link.element_id),
+  );
+  const requiredNotFormed = [...requiredElementIds]
+    .filter((elementId) => !formedElementIds.has(elementId))
+    .map((elementId) => elementById.get(elementId))
+    .filter(Boolean) as KnowledgeElement[];
+
+  const cyclicDependencies = buildTopicCycles(graph.topics, graph.topic_dependencies);
+  const totalIssues =
+    isolatedTopics.length +
+    isolatedElements.length +
+    topicsWithoutFormedElements.length +
+    requiredNotFormed.length +
+    cyclicDependencies.length;
+
+  return {
+    cyclicDependencies,
+    isolatedElements,
+    isolatedTopics,
+    requiredNotFormed,
+    topicsWithoutFormedElements,
+    totalIssues,
   };
 }
 
@@ -145,6 +340,14 @@ export function HomePage() {
   const [adminLogin, setAdminLogin] = useState("");
   const [adminPassword, setAdminPassword] = useState("");
   const [studentSearch, setStudentSearch] = useState("");
+  const [expertDisciplineSearch, setExpertDisciplineSearch] = useState("");
+  const [expertElementSearch, setExpertElementSearch] = useState("");
+  const [expertElementTypeFilter, setExpertElementTypeFilter] =
+    useState<ExpertElementTypeFilter>("all");
+  const [expertSelectedDisciplineId, setExpertSelectedDisciplineId] = useState("");
+  const [expertGraphs, setExpertGraphs] = useState<Record<string, DisciplineKnowledgeGraph>>({});
+  const [expertGraphsLoading, setExpertGraphsLoading] = useState(false);
+  const [expertGraphsError, setExpertGraphsError] = useState("");
   const [subgroupGroupId, setSubgroupGroupId] = useState("");
   const [subgroupNum, setSubgroupNum] = useState("");
   const [adminUserSearch, setAdminUserSearch] = useState("");
@@ -296,6 +499,69 @@ export function HomePage() {
       )
       .slice(0, 8);
   }, [assignmentTeacherIds, assignmentTeacherSearch, availableTeacherOptions]);
+  const expertDisciplineGraphs = useMemo(
+    () =>
+      visibleDisciplines
+        .map((discipline) => expertGraphs[discipline.id])
+        .filter(Boolean) as DisciplineKnowledgeGraph[],
+    [expertGraphs, visibleDisciplines],
+  );
+  const filteredExpertDisciplineGraphs = useMemo(() => {
+    const query = expertDisciplineSearch.trim().toLowerCase();
+    if (!query) {
+      return expertDisciplineGraphs;
+    }
+    return expertDisciplineGraphs.filter((graph) => {
+      const teacherNames = graph.discipline.teacher_ids
+        .map((linkedTeacherId) => teacherById.get(linkedTeacherId)?.name ?? "")
+        .join(" ");
+      return `${graph.discipline.name} ${teacherNames}`.toLowerCase().includes(query);
+    });
+  }, [expertDisciplineGraphs, expertDisciplineSearch, teacherById]);
+  const selectedExpertGraph = useMemo(() => {
+    if (!expertDisciplineGraphs.length) {
+      return null;
+    }
+    return (
+      expertDisciplineGraphs.find((graph) => graph.discipline.id === expertSelectedDisciplineId) ??
+      filteredExpertDisciplineGraphs[0] ??
+      expertDisciplineGraphs[0]
+    );
+  }, [expertDisciplineGraphs, expertSelectedDisciplineId, filteredExpertDisciplineGraphs]);
+  const selectedExpertGraphDiagnostics = useMemo(
+    () => (selectedExpertGraph ? buildExpertGraphDiagnostics(selectedExpertGraph) : null),
+    [selectedExpertGraph],
+  );
+  const selectedExpertTopics = useMemo(
+    () =>
+      selectedExpertGraph
+        ? selectedExpertGraph.topics
+            .slice()
+            .sort((left, right) => left.name.localeCompare(right.name, "ru"))
+        : [],
+    [selectedExpertGraph],
+  );
+  const selectedExpertElements = useMemo(() => {
+    if (!selectedExpertGraph) {
+      return [];
+    }
+    const query = expertElementSearch.trim().toLowerCase();
+    return selectedExpertGraph.knowledge_elements
+      .filter((element) =>
+        expertElementTypeFilter === "all"
+          ? true
+          : element.competence_type === expertElementTypeFilter,
+      )
+      .filter((element) =>
+        query ? `${element.name} ${element.description ?? ""}`.toLowerCase().includes(query) : true,
+      )
+      .slice()
+      .sort((left, right) => left.name.localeCompare(right.name, "ru"));
+  }, [expertElementSearch, expertElementTypeFilter, selectedExpertGraph]);
+  const selectedExpertRelations = useMemo(
+    () => selectedExpertGraph?.knowledge_element_relations ?? [],
+    [selectedExpertGraph],
+  );
   const adminDirectoryUsers = useMemo<AdminDirectoryUser[]>(() => {
     const studentUsers = data.students.map((student) => {
       const disciplineIds = data.disciplines
@@ -393,15 +659,6 @@ export function HomePage() {
     subgroupById,
   ]);
   const topNavButtons = [
-    ...(!isAdminMode
-      ? [
-          {
-            key: "back",
-            label: "Назад",
-            onClick: () => navigate(-1),
-          },
-        ]
-      : []),
     ...(isTeacherMode && teacherId
       ? [
           {
@@ -619,6 +876,70 @@ export function HomePage() {
 
     setAssignmentDisciplineId(visibleDisciplines[0]?.id ?? "");
   }, [assignmentDisciplineId, isAdminMode, visibleDisciplines]);
+
+  useEffect(() => {
+    if (!isExpertMode) {
+      setExpertGraphs({});
+      setExpertGraphsError("");
+      setExpertGraphsLoading(false);
+      return;
+    }
+
+    if (!visibleDisciplines.length) {
+      setExpertGraphs({});
+      setExpertGraphsError("");
+      setExpertGraphsLoading(false);
+      return;
+    }
+
+    const controller = new AbortController();
+
+    async function loadExpertGraphs() {
+      try {
+        setExpertGraphsLoading(true);
+        setExpertGraphsError("");
+        const graphs = await Promise.all(
+          visibleDisciplines.map((discipline) =>
+            fetchDisciplineKnowledgeGraph(discipline.id, controller.signal),
+          ),
+        );
+        if (controller.signal.aborted) {
+          return;
+        }
+        setExpertGraphs(
+          Object.fromEntries(graphs.map((graph) => [graph.discipline.id, graph])),
+        );
+      } catch (error) {
+        if (!isAbortError(error) && !controller.signal.aborted) {
+          setExpertGraphsError(extractErrorMessage(error));
+        }
+      } finally {
+        if (!controller.signal.aborted) {
+          setExpertGraphsLoading(false);
+        }
+      }
+    }
+
+    void loadExpertGraphs();
+    return () => controller.abort();
+  }, [isExpertMode, visibleDisciplines]);
+
+  useEffect(() => {
+    if (!isExpertMode) {
+      return;
+    }
+
+    if (
+      expertSelectedDisciplineId &&
+      expertDisciplineGraphs.some(
+        (graph) => graph.discipline.id === expertSelectedDisciplineId,
+      )
+    ) {
+      return;
+    }
+
+    setExpertSelectedDisciplineId(expertDisciplineGraphs[0]?.discipline.id ?? "");
+  }, [expertDisciplineGraphs, expertSelectedDisciplineId, isExpertMode]);
 
   useEffect(() => {
     if (!selectedAssignmentDiscipline) {
@@ -1715,6 +2036,79 @@ export function HomePage() {
               </div>
             </div>
           </form>
+        </motion.section>
+      </motion.section>
+    );
+  }
+
+  function renderExpertDashboardLayout() {
+    return (
+      <motion.section className="home-section" {...buildReveal(0.06)}>
+        <motion.section className="home-card home-card--wide expert-dashboard-card" {...CARD_MOTION}>
+          <div className="home-card__header">
+            <div>
+              <p className="card__eyebrow">Мои дисциплины</p>
+              <h2>Список дисциплин эксперта</h2>
+              <p className="card__text">
+                Эксперт работает только с графом знаний. Траектории здесь недоступны, это зона преподавателя.
+              </p>
+            </div>
+          </div>
+
+          <div className="expert-toolbar">
+            <label className="field">
+              <span>Поиск дисциплины или преподавателя</span>
+              <input
+                value={expertDisciplineSearch}
+                onChange={(event) => setExpertDisciplineSearch(event.target.value)}
+                placeholder="Например: Теория графов или Петров"
+              />
+            </label>
+            <div className="expert-toolbar__summary">
+              <strong>{filteredExpertDisciplineGraphs.length}</strong>
+              <span>дисциплин в текущем списке</span>
+            </div>
+          </div>
+
+          {expertGraphsLoading ? (
+            <p className="card__text">Собираю данные по дисциплинам...</p>
+          ) : expertGraphsError ? (
+            <p className="card__text">{expertGraphsError}</p>
+          ) : filteredExpertDisciplineGraphs.length ? (
+            <div className="expert-discipline-grid">
+              {filteredExpertDisciplineGraphs.map((graph) => {
+                const graphTeachers = graph.discipline.teacher_ids
+                  .map((teacherId) => teacherById.get(teacherId)?.name)
+                  .filter(Boolean);
+                const graphPath = disciplinePathValue(graph.discipline, graph.discipline.id);
+
+                return (
+                  <article className="expert-discipline-card" key={graph.discipline.id}>
+                    <div className="expert-discipline-card__select">
+                      <span className="card__eyebrow">Дисциплина</span>
+                      <strong>{graph.discipline.name}</strong>
+                      <small>
+                        Преподаватели:{" "}
+                        {graphTeachers.length ? graphTeachers.join(", ") : "не назначены"}
+                      </small>
+                    </div>
+
+                    <div className="expert-discipline-card__actions">
+                      <MotionLink
+                        className="primary-button"
+                        to={`/disciplines/${graphPath}/knowledge`}
+                        {...ACTION_MOTION}
+                      >
+                        Открыть граф
+                      </MotionLink>
+                    </div>
+                  </article>
+                );
+              })}
+            </div>
+          ) : (
+            <p className="card__text">По текущему поиску дисциплины не найдены.</p>
+          )}
         </motion.section>
       </motion.section>
     );
@@ -3297,6 +3691,10 @@ export function HomePage() {
               <>
                 {renderAdminDashboardLayout()}
               </>
+            ) : isExpertMode ? (
+              <>
+                {renderExpertDashboardLayout()}
+              </>
             ) : (
             <>
           <motion.section className="home-section" {...buildReveal(0.06)}>
@@ -3559,43 +3957,6 @@ export function HomePage() {
             </motion.section>
           ) : null}
 
-          {isExpertMode ? (
-            <motion.section className="home-section" {...buildReveal(0.12)}>
-              <motion.section className="home-card home-card--wide" {...CARD_MOTION}>
-                <p className="card__eyebrow">Текущая рабочая область</p>
-                <div className="home-lists">
-                  <div>
-                    <h3>Дисциплины эксперта</h3>
-                    {visibleDisciplines.length ? (
-                      visibleDisciplines.map((discipline) => (
-                        <span key={discipline.id}>{discipline.name}</span>
-                      ))
-                    ) : (
-                      <p className="home-hint">Дисциплины пока не созданы.</p>
-                    )}
-                  </div>
-                  <div>
-                    <h3>Последние преподаватели</h3>
-                    {data.teachers.length ? (
-                      data.teachers.slice(0, 8).map((teacher) => (
-                        <span key={teacher.id}>{teacher.name}</span>
-                      ))
-                    ) : (
-                      <p className="home-hint">Преподаватели пока не созданы.</p>
-                    )}
-                  </div>
-                  <div>
-                    <h3>Экспертный контур</h3>
-                    <p className="home-hint">
-                      Открывайте дисциплины выше и переходите в граф знаний. Работа с
-                      траекториями и учебными группами остается в зоне преподавателя и
-                      администратора.
-                    </p>
-                  </div>
-                </div>
-              </motion.section>
-            </motion.section>
-          ) : null}
             </>
             )
           )}
