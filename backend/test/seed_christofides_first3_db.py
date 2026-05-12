@@ -480,9 +480,20 @@ def add_element_relations(
         ("choose_graph_type", "classify_graph_type", KnowledgeElementRelationType.AUTOMATES, "Навык закрепляет классификацию графовых моделей."),
     ]
 
+    topic_ids_by_element_id: dict[object, set[object]] = {}
+    for link in session.scalars(select(TopicKnowledgeElement)).all():
+        topic_ids_by_element_id.setdefault(link.element_id, set()).add(link.topic_id)
+
     for source_key, target_key, relation_type, description in relation_specs:
+        shared_topic_ids = (
+            topic_ids_by_element_id.get(elements[source_key].id, set())
+            & topic_ids_by_element_id.get(elements[target_key].id, set())
+        )
+        if not shared_topic_ids:
+            continue
         session.add(
             KnowledgeElementRelation(
+                topic_id=sorted(shared_topic_ids, key=str)[0],
                 source_element_id=elements[source_key].id,
                 target_element_id=elements[target_key].id,
                 relation_id=relation_catalog[relation_type].id,

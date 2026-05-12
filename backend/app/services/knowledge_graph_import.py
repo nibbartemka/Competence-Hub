@@ -60,10 +60,28 @@ def _validate_export_consistency(payload: KnowledgeGraphExportFile) -> None:
             )
 
     for ker in payload.knowledge_element_relations:
+        if ker.topic_id not in topic_ids:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="В файле есть связь элементов с неизвестным id темы.",
+            )
         if ker.source_element_id not in element_ids or ker.target_element_id not in element_ids:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="В файле есть связь элементов, ссылающаяся на неизвестный элемент.",
+            )
+        source_linked = any(
+            link.topic_id == ker.topic_id and link.element_id == ker.source_element_id
+            for link in payload.topic_knowledge_elements
+        )
+        target_linked = any(
+            link.topic_id == ker.topic_id and link.element_id == ker.target_element_id
+            for link in payload.topic_knowledge_elements
+        )
+        if not source_linked or not target_linked:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="В файле есть связь элементов вне темы, к которой привязаны оба элемента.",
             )
 
 
@@ -151,7 +169,7 @@ async def build_knowledge_graph_import_preview(
         for row in tke_result.scalars().all():
             existing_tke.add((row.topic_id, row.element_id))
 
-    existing_ker: set[tuple[UUID, UUID, UUID]] = set()
+    existing_ker: set[tuple[UUID, UUID, UUID, UUID]] = set()
     if element_ids_in_discipline:
         ker_q = await session.execute(
             select(KnowledgeElementRelation).where(
@@ -162,7 +180,7 @@ async def build_knowledge_graph_import_preview(
             )
         )
         for row in ker_q.scalars().all():
-            existing_ker.add((row.source_element_id, row.target_element_id, row.relation_id))
+            existing_ker.add((row.topic_id, row.source_element_id, row.target_element_id, row.relation_id))
 
     relation_type_to_id = await _load_relation_id_by_type(session)
 
@@ -262,26 +280,30 @@ async def build_knowledge_graph_import_preview(
 
     ker_preview: list[ImportPreviewKnowledgeElementRelationRow] = []
     for ker in payload.knowledge_element_relations:
+        topic_ex = export_topic_by_id.get(ker.topic_id)
         s_ex = export_element_by_id.get(ker.source_element_id)
         t_ex = export_element_by_id.get(ker.target_element_id)
-        if s_ex is None or t_ex is None:
+        if topic_ex is None or s_ex is None or t_ex is None:
             continue
 
+        topic_tgt = target_topics_by_name.get(topic_ex.name)
         s_key = (s_ex.name, s_ex.competence_type.value)
         t_key = (t_ex.name, t_ex.competence_type.value)
         s_tgt = target_elements_by_key.get(s_key)
         t_tgt = target_elements_by_key.get(t_key)
+        topic_dup = topic_tgt is not None
         s_dup = s_tgt is not None
         t_dup = t_tgt is not None
 
         rel_id = relation_type_to_id.get(ker.relation_type.value)
         is_dup = False
-        if rel_id is not None and s_dup and t_dup:
-            is_dup = (s_tgt.id, t_tgt.id, rel_id) in existing_ker
+        if rel_id is not None and topic_dup and s_dup and t_dup:
+            is_dup = (topic_tgt.id, s_tgt.id, t_tgt.id, rel_id) in existing_ker
 
         ker_preview.append(
             ImportPreviewKnowledgeElementRelationRow(
                 export_id=ker.id,
+                topic_export_id=ker.topic_id,
                 source_element_export_id=ker.source_element_id,
                 target_element_export_id=ker.target_element_id,
                 relation_type=ker.relation_type,
@@ -532,10 +554,12 @@ async def execute_knowledge_graph_import(
 
         src = resolve_element_id(ker.source_element_id)
         tgt = resolve_element_id(ker.target_element_id)
+        topic_target = resolve_topic_id(ker.topic_id)
 
         exists = await session.execute(
             select(KnowledgeElementRelation.id).where(
                 and_(
+                    KnowledgeElementRelation.topic_id == topic_target,
                     KnowledgeElementRelation.source_element_id == src,
                     KnowledgeElementRelation.target_element_id == tgt,
                     KnowledgeElementRelation.relation_id == rel_id,
@@ -548,6 +572,7 @@ async def execute_knowledge_graph_import(
 
         session.add(
             KnowledgeElementRelation(
+                topic_id=topic_target,
                 source_element_id=src,
                 target_element_id=tgt,
                 relation_id=rel_id,

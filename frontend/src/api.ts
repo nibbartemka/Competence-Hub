@@ -454,6 +454,12 @@ export function createTopicKnowledgeElement(payload: {
   });
 }
 
+export function deleteTopicKnowledgeElement(topicElementId: string) {
+  return request<void>(`/topic-knowledge-elements/${topicElementId}`, {
+    method: "DELETE",
+  });
+}
+
 export function createTopicDependency(payload: {
   prerequisite_topic_id: string;
   dependent_topic_id: string;
@@ -500,6 +506,7 @@ export function deleteRelation(relationId: string) {
 }
 
 export function createKnowledgeElementRelation(payload: {
+  topic_id: string;
   source_element_id: string;
   target_element_id: string;
   relation_id: string;
@@ -514,6 +521,7 @@ export function createKnowledgeElementRelation(payload: {
 export function updateKnowledgeElementRelation(
   relationId: string,
   payload: {
+    topic_id: string;
     source_element_id: string;
     target_element_id: string;
     relation_id: string;

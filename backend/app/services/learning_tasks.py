@@ -667,6 +667,7 @@ def build_task_relation_read(link) -> LearningTrajectoryTaskRelationRead:
     relation = link.relation
     return LearningTrajectoryTaskRelationRead(
         relation_id=relation.id,
+        topic_id=relation.topic_id,
         source_element_id=relation.source_element_id,
         source_element_name=relation.source_element.name,
         target_element_id=relation.target_element_id,

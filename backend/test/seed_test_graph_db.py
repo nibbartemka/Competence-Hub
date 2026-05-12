@@ -274,34 +274,39 @@ def build_knowledge_graph(
         session.add_all(topic_links)
         session.flush()
 
-    session.add_all(build_knowledge_relations(elements_by_topic, relation_definitions))
+    session.add_all(build_knowledge_relations(topics_by_index, elements_by_topic, relation_definitions))
     session.flush()
     return topics_by_index, elements_by_topic
 
 
 def build_knowledge_relations(
+    topics_by_index: dict[int, Topic],
     elements_by_topic: dict[int, dict[str, KnowledgeElement]],
     relation_definitions: dict[KnowledgeElementRelationType, Relation],
 ) -> list[KnowledgeElementRelation]:
     relations: list[KnowledgeElementRelation] = []
 
     for blueprint in TOPIC_BLUEPRINTS:
+        topic = topics_by_index[blueprint.index]
         current = elements_by_topic[blueprint.index]
         relations.extend(
             [
                 KnowledgeElementRelation(
+                    topic_id=topic.id,
                     source_element_id=current["know_detail"].id,
                     target_element_id=current["know_core"].id,
                     relation_id=relation_definitions[KnowledgeElementRelationType.REFINES].id,
                     description="Уточняющее понятие конкретизирует базовое.",
                 ),
                 KnowledgeElementRelation(
+                    topic_id=topic.id,
                     source_element_id=current["can"].id,
                     target_element_id=current["know_core"].id,
                     relation_id=relation_definitions[KnowledgeElementRelationType.IMPLEMENTS].id,
                     description="Теоретическое знание выражается в действии.",
                 ),
                 KnowledgeElementRelation(
+                    topic_id=topic.id,
                     source_element_id=current["master"].id,
                     target_element_id=current["can"].id,
                     relation_id=relation_definitions[KnowledgeElementRelationType.AUTOMATES].id,
@@ -315,18 +320,21 @@ def build_knowledge_relations(
             relations.extend(
                 [
                     KnowledgeElementRelation(
+                        topic_id=topic.id,
                         source_element_id=current["know_core"].id,
                         target_element_id=prerequisite["know_core"].id,
                         relation_id=relation_definitions[KnowledgeElementRelationType.REQUIRES].id,
                         description="Новое понятие опирается на базу предыдущей темы.",
                     ),
                     KnowledgeElementRelation(
+                        topic_id=topic.id,
                         source_element_id=current["know_detail"].id,
                         target_element_id=prerequisite["know_detail"].id,
                         relation_id=relation_definitions[KnowledgeElementRelationType.BUILDS_ON].id,
                         description="Уточнение строится на ранее изученном уточнении.",
                     ),
                     KnowledgeElementRelation(
+                        topic_id=topic.id,
                         source_element_id=current["know_core"].id,
                         target_element_id=prerequisite["know_detail"].id,
                         relation_id=relation_definitions[KnowledgeElementRelationType.USED_WITH].id,

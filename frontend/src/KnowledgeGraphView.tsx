@@ -940,6 +940,7 @@ export function KnowledgeGraphView({ disciplineId }: KnowledgeGraphViewProps) {
                                 knowledgeElementRelations={
                                     graphData?.knowledge_element_relations ?? []
                                 }
+                                topicKnowledgeElements={graphData?.topic_knowledge_elements ?? []}
                                 onDataChanged={refreshSelectedDisciplineGraph}
                             />
                         </div>

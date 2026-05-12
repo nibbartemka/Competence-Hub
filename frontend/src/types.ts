@@ -130,6 +130,7 @@ export type Relation = {
 
 export type KnowledgeElementRelation = {
   id: string;
+  topic_id: string;
   source_element_id: string;
   target_element_id: string;
   relation_id: string;
@@ -200,6 +201,7 @@ export type ImportPreviewTopicKnowledgeElementRow = {
 
 export type ImportPreviewKnowledgeElementRelationRow = {
   export_id: string;
+  topic_export_id: string;
   source_element_export_id: string;
   target_element_export_id: string;
   relation_type: KnowledgeElementRelationType;
@@ -337,6 +339,7 @@ export type LearningTrajectoryTaskElement = {
 
 export type LearningTrajectoryTaskRelation = {
   relation_id: string;
+  topic_id?: string;
   source_element_id: string;
   source_element_name: string;
   target_element_id: string;

@@ -6,7 +6,7 @@ from sqlalchemy.orm import lazyload, selectinload
 
 from app.api.crud import commit_or_409, flush_or_409, not_found
 from app.api.deps import DbSession
-from app.models import KnowledgeElement, KnowledgeElementRelation, Relation
+from app.models import KnowledgeElement, KnowledgeElementRelation, Relation, Topic, TopicKnowledgeElement
 from app.models.enums import CompetenceType, KnowledgeElementRelationType
 from app.schemas import (
     KnowledgeElementRelationCreate,
@@ -69,10 +69,13 @@ def _is_allowed_relation(
 async def list_knowledge_element_relations(
     session: DbSession,
     element_id: UUID | None = None,
+    topic_id: UUID | None = None,
 ) -> list[KnowledgeElementRelation]:
     query = select(KnowledgeElementRelation).options(
         selectinload(KnowledgeElementRelation.relation)
     )
+    if topic_id is not None:
+        query = query.where(KnowledgeElementRelation.topic_id == topic_id)
     if element_id is not None:
         query = query.where(
             or_(
@@ -84,6 +87,37 @@ async def list_knowledge_element_relations(
     return list(result.scalars().all())
 
 
+async def _get_topic(session: DbSession, topic_id: UUID) -> Topic:
+    topic_result = await session.execute(
+        select(Topic).options(lazyload("*")).where(Topic.id == topic_id)
+    )
+    topic = topic_result.scalar_one_or_none()
+    if topic is None:
+        raise not_found("Topic", topic_id)
+    return topic
+
+
+async def _ensure_elements_are_linked_to_topic(
+    session: DbSession,
+    *,
+    topic_id: UUID,
+    source_element_id: UUID,
+    target_element_id: UUID,
+) -> None:
+    links_result = await session.execute(
+        select(TopicKnowledgeElement.element_id).where(
+            TopicKnowledgeElement.topic_id == topic_id,
+            TopicKnowledgeElement.element_id.in_([source_element_id, target_element_id]),
+        )
+    )
+    linked_element_ids = set(links_result.scalars().all())
+    if source_element_id not in linked_element_ids or target_element_id not in linked_element_ids:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Both knowledge elements must be linked to the selected topic.",
+        )
+
+
 @router.post(
     "/",
     response_model=KnowledgeElementRelationRead,
@@ -93,6 +127,7 @@ async def create_knowledge_element_relation(
     payload: KnowledgeElementRelationCreate,
     session: DbSession,
 ) -> KnowledgeElementRelation:
+    topic = await _get_topic(session, payload.topic_id)
     source_result = await session.execute(
         select(KnowledgeElement)
         .options(lazyload("*"))
@@ -117,11 +152,24 @@ async def create_knowledge_element_relation(
             detail="Knowledge elements from different disciplines cannot be related.",
         )
 
+    if topic.discipline_id != source_element.discipline_id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Knowledge element relation topic must belong to the same discipline.",
+        )
+
     if source_element.id == target_element.id:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Knowledge element relation cannot point to itself.",
         )
+
+    await _ensure_elements_are_linked_to_topic(
+        session,
+        topic_id=payload.topic_id,
+        source_element_id=payload.source_element_id,
+        target_element_id=payload.target_element_id,
+    )
 
     relation_definition_result = await session.execute(
         select(Relation)
@@ -147,6 +195,7 @@ async def create_knowledge_element_relation(
         )
 
     relation = KnowledgeElementRelation(
+        topic_id=payload.topic_id,
         source_element_id=payload.source_element_id,
         target_element_id=payload.target_element_id,
         relation_id=payload.relation_id,
@@ -175,6 +224,7 @@ async def update_knowledge_element_relation(
     if relation is None:
         raise not_found("Knowledge element relation", relation_id)
 
+    topic = await _get_topic(session, payload.topic_id)
     source_result = await session.execute(
         select(KnowledgeElement)
         .options(lazyload("*"))
@@ -205,6 +255,19 @@ async def update_knowledge_element_relation(
             detail="Knowledge elements from different disciplines cannot be related.",
         )
 
+    if topic.discipline_id != source_element.discipline_id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Knowledge element relation topic must belong to the same discipline.",
+        )
+
+    await _ensure_elements_are_linked_to_topic(
+        session,
+        topic_id=payload.topic_id,
+        source_element_id=payload.source_element_id,
+        target_element_id=payload.target_element_id,
+    )
+
     relation_definition_result = await session.execute(
         select(Relation)
         .options(lazyload("*"))
@@ -228,6 +291,7 @@ async def update_knowledge_element_relation(
             ),
         )
 
+    relation.topic_id = payload.topic_id
     relation.source_element_id = payload.source_element_id
     relation.target_element_id = payload.target_element_id
     relation.relation_id = payload.relation_id

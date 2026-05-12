@@ -842,6 +842,7 @@ export default function App() {
                 topics={graphData?.topics ?? []}
                 disciplineElements={graphData?.knowledge_elements ?? []}
                 knowledgeElementRelations={graphData?.knowledge_element_relations ?? []}
+                topicKnowledgeElements={graphData?.topic_knowledge_elements ?? []}
                 onDataChanged={refreshSelectedDisciplineGraph}
               />
             </div>

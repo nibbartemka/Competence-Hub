@@ -358,6 +358,7 @@ async def get_discipline_knowledge_graph(
                 .options(selectinload(KnowledgeElementRelation.relation))
                 .where(
                     and_(
+                        KnowledgeElementRelation.topic_id.in_(topic_ids),
                         KnowledgeElementRelation.source_element_id.in_(element_ids),
                         KnowledgeElementRelation.target_element_id.in_(element_ids),
                     )

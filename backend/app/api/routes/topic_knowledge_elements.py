@@ -1,12 +1,12 @@
 from uuid import UUID
 
 from fastapi import APIRouter, HTTPException, status
-from sqlalchemy import select
+from sqlalchemy import delete, or_, select
 from sqlalchemy.orm import lazyload
 
 from app.api.crud import commit_or_409, flush_or_409, not_found
 from app.api.deps import DbSession
-from app.models import KnowledgeElement, Topic, TopicKnowledgeElement
+from app.models import KnowledgeElement, KnowledgeElementRelation, Topic, TopicKnowledgeElement
 from app.models.enums import TopicKnowledgeElementRole
 from app.schemas import TopicKnowledgeElementCreate, TopicKnowledgeElementRead
 from app.services.knowledge_graph_integrity import (
@@ -104,6 +104,15 @@ async def delete_topic_knowledge_element(topic_element_id: UUID, session: DbSess
     discipline_id = topic.discipline_id if topic is not None else None
     await ensure_topic_element_link_can_be_removed(session, topic_element.topic_id)
 
+    await session.execute(
+        delete(KnowledgeElementRelation).where(
+            KnowledgeElementRelation.topic_id == topic_element.topic_id,
+            or_(
+                KnowledgeElementRelation.source_element_id == topic_element.element_id,
+                KnowledgeElementRelation.target_element_id == topic_element.element_id,
+            ),
+        )
+    )
     await session.delete(topic_element)
     await flush_or_409(session)
 

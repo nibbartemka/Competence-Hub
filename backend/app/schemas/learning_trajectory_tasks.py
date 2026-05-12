@@ -45,6 +45,7 @@ class LearningTrajectoryTaskElementRead(BaseModel):
 
 class LearningTrajectoryTaskRelationRead(BaseModel):
     relation_id: UUID
+    topic_id: UUID
     source_element_id: UUID
     source_element_name: str
     target_element_id: UUID

@@ -7,6 +7,7 @@ from .relations import RelationRead
 
 
 class KnowledgeElementRelationCreate(BaseModel):
+    topic_id: UUID
     source_element_id: UUID
     target_element_id: UUID
     relation_id: UUID
@@ -14,6 +15,7 @@ class KnowledgeElementRelationCreate(BaseModel):
 
 
 class KnowledgeElementRelationUpdate(BaseModel):
+    topic_id: UUID
     source_element_id: UUID
     target_element_id: UUID
     relation_id: UUID
@@ -24,6 +26,7 @@ class KnowledgeElementRelationRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     id: UUID
+    topic_id: UUID
     source_element_id: UUID
     target_element_id: UUID
     relation_id: UUID

@@ -58,6 +58,13 @@ class Topic(Base):
         lazy="selectin",
     )
 
+    element_relations: Mapped[list["KnowledgeElementRelation"]] = relationship(
+        "KnowledgeElementRelation",
+        back_populates="topic",
+        cascade="all, delete-orphan",
+        lazy="selectin",
+    )
+
 
 class TopicDependency(Base):
     """Canonical direction: dependent_topic_id requires prerequisite_topic_id."""
@@ -241,6 +248,7 @@ class KnowledgeElementRelation(Base):
     __tablename__ = "knowledge_element_relations"
     __table_args__ = (
         UniqueConstraint(
+            "topic_id",
             "source_element_id",
             "target_element_id",
             "relation_id",
@@ -255,6 +263,10 @@ class KnowledgeElementRelation(Base):
     id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
 
+    topic_id: Mapped[UUID] = mapped_column(
+        ForeignKey("topics.id", ondelete="CASCADE"),
+        nullable=False,
+    )
     source_element_id: Mapped[UUID] = mapped_column(
         ForeignKey("knowledge_elements.id", ondelete="CASCADE"),
         nullable=False,
@@ -267,6 +279,12 @@ class KnowledgeElementRelation(Base):
     relation_id: Mapped[UUID] = mapped_column(
         ForeignKey("relations.id", ondelete="CASCADE"),
         nullable=False,
+    )
+
+    topic: Mapped["Topic"] = relationship(
+        "Topic",
+        back_populates="element_relations",
+        lazy="selectin",
     )
 
     source_element: Mapped["KnowledgeElement"] = relationship(

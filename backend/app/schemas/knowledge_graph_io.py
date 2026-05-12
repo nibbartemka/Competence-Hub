@@ -68,6 +68,7 @@ class ImportPreviewTopicKnowledgeElementRow(BaseModel):
 
 class ImportPreviewKnowledgeElementRelationRow(BaseModel):
     export_id: UUID
+    topic_export_id: UUID
     source_element_export_id: UUID
     target_element_export_id: UUID
     relation_type: KnowledgeElementRelationType
