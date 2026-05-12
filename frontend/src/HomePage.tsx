@@ -30,6 +30,7 @@ import {
   updateTeacher,
 } from "./api";
 import { disciplinePathValue } from "./disciplineRouting";
+import { useNotifications } from "./notifications";
 import { getSessionHomePath, readSession, sessionMatches } from "./session";
 import type {
   Admin,
@@ -368,7 +369,7 @@ export function HomePage() {
   const [assignmentGroupIds, setAssignmentGroupIds] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
   const [busyAction, setBusyAction] = useState("");
-  const [notifications, setNotifications] = useState<ToastMessage[]>([]);
+  const [notifications] = useState<ToastMessage[]>([]);
   const [adminUsersExpanded, setAdminUsersExpanded] = useState(true);
   const [adminCreateUsersExpanded, setAdminCreateUsersExpanded] = useState(true);
   const [adminDisciplineListExpanded, setAdminDisciplineListExpanded] = useState(true);
@@ -377,7 +378,7 @@ export function HomePage() {
   const [adminGroupTab, setAdminGroupTab] = useState<AdminGroupTab>("group");
   const [adminModalOpen, setAdminModalOpen] = useState(false);
   const [adminModalTab, setAdminModalTab] = useState<AdminModalTab>("student");
-  const notificationTimersRef = useRef(new Map<string, number>());
+  const { pushNotification } = useNotifications();
   const sessionRole = isAdminMode ? "admin" : isExpertMode ? "expert" : "teacher";
   const sessionUserId = isAdminMode ? adminId : isExpertMode ? expertId : teacherId;
   const currentSession = readSession();
@@ -705,6 +706,8 @@ export function HomePage() {
     );
   }
 
+  function dismissNotification(_id: string) {}
+
   async function handleDeleteAdminUser(user: AdminDirectoryUser) {
     if (isCurrentAdminDirectoryUser(user)) {
       return;
@@ -737,46 +740,6 @@ export function HomePage() {
     } finally {
       setBusyAction("");
     }
-  }
-
-  function dismissNotification(id: string) {
-    const timer = notificationTimersRef.current.get(id);
-    if (timer) {
-      window.clearTimeout(timer);
-      notificationTimersRef.current.delete(id);
-    }
-    setNotifications((current) => current.filter((notification) => notification.id !== id));
-  }
-
-  function pushNotification(kind: Feedback["kind"], text: string) {
-    const id = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
-
-    setNotifications((current) => {
-      const alreadyShown = current.some(
-        (notification) => notification.kind === kind && notification.text === text,
-      );
-      if (alreadyShown) {
-        return current;
-      }
-
-      const next = [...current, { id, kind, text }];
-      if (next.length > 3) {
-        const removed = next.shift();
-        if (removed) {
-          const timer = notificationTimersRef.current.get(removed.id);
-          if (timer) {
-            window.clearTimeout(timer);
-            notificationTimersRef.current.delete(removed.id);
-          }
-        }
-      }
-      return next;
-    });
-
-    const timer = window.setTimeout(() => {
-      dismissNotification(id);
-    }, 4500);
-    notificationTimersRef.current.set(id, timer);
   }
 
   async function loadDashboard(signal?: AbortSignal) {
@@ -823,8 +786,6 @@ export function HomePage() {
     void load();
     return () => {
       controller.abort();
-      notificationTimersRef.current.forEach((timer) => window.clearTimeout(timer));
-      notificationTimersRef.current.clear();
     };
   }, []);
 
@@ -3652,7 +3613,7 @@ export function HomePage() {
       </motion.header>
 
       <AnimatePresence>
-        {notifications.length ? (
+        {false ? (
           <div className="toast-stack" aria-live="polite" aria-label="Уведомления">
             {notifications.map((notification) => (
               <motion.article

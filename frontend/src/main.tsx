@@ -7,6 +7,7 @@ import DisciplineOverviewPage from "./DisciplineOverviewPage";
 import { LandingPage } from "./LandingPage";
 import { HomePage } from "./HomePage";
 import KnowledgeGraph from "./KnowledgeGraph";
+import { NotificationsProvider } from "./notifications";
 import { SessionProfileHeader } from "./SessionProfileHeader";
 import StudentDashboardPage from "./StudentDashboardPage";
 import StudentTopicControlPage from "./StudentTopicControlPage";
@@ -59,6 +60,8 @@ const router = createBrowserRouter([
 
 ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
   <React.StrictMode>
-    <RouterProvider router={router} />
+    <NotificationsProvider>
+      <RouterProvider router={router} />
+    </NotificationsProvider>
   </React.StrictMode>,
 );
