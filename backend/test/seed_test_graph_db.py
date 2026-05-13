@@ -68,6 +68,12 @@ DB_PATH = Path(os.environ.get("COMPETENCE_HUB_DB_PATH", str(ROOT_DIR / "app.db")
 DATABASE_URL = f"sqlite:///{DB_PATH.as_posix()}"
 RNG = random.Random(42)
 
+CAN_OPERATION_REFS: tuple[str, ...] = (
+    "graph.operation.build_adjacency_matrix",
+    "graph.operation.build_incidence_matrix",
+    "graph.operation.build_degree_sequence",
+)
+
 
 @dataclass(frozen=True)
 class TopicBlueprint:
@@ -237,6 +243,7 @@ def build_knowledge_graph(
                 description=f"Умение применять идеи темы «{blueprint.title}» в задачах.",
                 competence_type=CompetenceType.CAN,
                 discipline_id=discipline.id,
+                operation_ref=CAN_OPERATION_REFS[(blueprint.index - 1) % len(CAN_OPERATION_REFS)],
             ),
             "master": KnowledgeElement(
                 name=f"Моделировать прикладные случаи по теме «{blueprint.title}»",
@@ -287,26 +294,26 @@ def build_knowledge_relations(
     relations: list[KnowledgeElementRelation] = []
 
     for blueprint in TOPIC_BLUEPRINTS:
-        topic = topics_by_index[blueprint.index]
         current = elements_by_topic[blueprint.index]
+        current_topic_id = topics_by_index[blueprint.index].id
         relations.extend(
             [
                 KnowledgeElementRelation(
-                    topic_id=topic.id,
+                    topic_id=current_topic_id,
                     source_element_id=current["know_detail"].id,
                     target_element_id=current["know_core"].id,
                     relation_id=relation_definitions[KnowledgeElementRelationType.REFINES].id,
                     description="Уточняющее понятие конкретизирует базовое.",
                 ),
                 KnowledgeElementRelation(
-                    topic_id=topic.id,
+                    topic_id=current_topic_id,
                     source_element_id=current["can"].id,
                     target_element_id=current["know_core"].id,
                     relation_id=relation_definitions[KnowledgeElementRelationType.IMPLEMENTS].id,
                     description="Теоретическое знание выражается в действии.",
                 ),
                 KnowledgeElementRelation(
-                    topic_id=topic.id,
+                    topic_id=current_topic_id,
                     source_element_id=current["master"].id,
                     target_element_id=current["can"].id,
                     relation_id=relation_definitions[KnowledgeElementRelationType.AUTOMATES].id,
@@ -320,21 +327,21 @@ def build_knowledge_relations(
             relations.extend(
                 [
                     KnowledgeElementRelation(
-                        topic_id=topic.id,
+                        topic_id=current_topic_id,
                         source_element_id=current["know_core"].id,
                         target_element_id=prerequisite["know_core"].id,
                         relation_id=relation_definitions[KnowledgeElementRelationType.REQUIRES].id,
                         description="Новое понятие опирается на базу предыдущей темы.",
                     ),
                     KnowledgeElementRelation(
-                        topic_id=topic.id,
+                        topic_id=current_topic_id,
                         source_element_id=current["know_detail"].id,
                         target_element_id=prerequisite["know_detail"].id,
                         relation_id=relation_definitions[KnowledgeElementRelationType.BUILDS_ON].id,
                         description="Уточнение строится на ранее изученном уточнении.",
                     ),
                     KnowledgeElementRelation(
-                        topic_id=topic.id,
+                        topic_id=current_topic_id,
                         source_element_id=current["know_core"].id,
                         target_element_id=prerequisite["know_detail"].id,
                         relation_id=relation_definitions[KnowledgeElementRelationType.USED_WITH].id,

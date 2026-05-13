@@ -27,6 +27,8 @@ from .knowledge_elements import (
     KnowledgeElementRead,
     KnowledgeElementUpdate,
 )
+from .operation_contracts import OperationContractRead
+from .skill_assessment_tasks import SkillAssessmentTaskCreate, SkillAssessmentTaskRead
 from .learning_trajectories import (
     LearningTrajectoryCreate,
     LearningTrajectoryRead,
@@ -110,6 +112,9 @@ __all__ = [
     "KnowledgeElementCreate",
     "KnowledgeElementRead",
     "KnowledgeElementUpdate",
+    "OperationContractRead",
+    "SkillAssessmentTaskCreate",
+    "SkillAssessmentTaskRead",
     "LearningTrajectoryCreate",
     "LearningTrajectoryRead",
     "LearningTrajectorySummaryRead",

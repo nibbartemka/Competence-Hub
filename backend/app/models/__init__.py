@@ -27,6 +27,7 @@ from .learning_tasks import (
     StudentTaskInstance,
     StudentTaskProgress,
 )
+from .skill_assessment import SkillAssessmentTask
 from .bindings import (
     ExpertDiscipline,
     GroupDiscipline,
@@ -63,6 +64,7 @@ __all__ = [
     "StudentTaskAttempt",
     "StudentTaskInstance",
     "StudentTaskProgress",
+    "SkillAssessmentTask",
     "GroupDiscipline",
     "StudentDiscipline",
     "StudentDisciplineRating",

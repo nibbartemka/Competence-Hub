@@ -211,9 +211,13 @@ interface KnowledgeGraphViewProps {
 }
 
 function parseEditorTab(value: string | null) {
-    if (value === "topics" || value === "elements" || value === "relations") {
-        return value;
-    }
+  if (
+    value === "topics" ||
+    value === "elements" ||
+    value === "relations"
+  ) {
+    return value;
+  }
     return null;
 }
 

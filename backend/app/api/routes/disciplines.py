@@ -310,8 +310,18 @@ async def get_discipline_knowledge_graph(
 
     topic_dependencies: list[TopicDependency] = []
     topic_knowledge_elements: list[TopicKnowledgeElement] = []
-    knowledge_elements: list[KnowledgeElement] = []
+    elements_result = await session.execute(
+        select(KnowledgeElement)
+        .options(lazyload("*"))
+        .where(KnowledgeElement.discipline_id == discipline_id)
+        .order_by(
+            KnowledgeElement.competence_type,
+            KnowledgeElement.name,
+        )
+    )
+    knowledge_elements = list(elements_result.scalars().all())
     knowledge_element_relations: list[KnowledgeElementRelation] = []
+    element_ids = [element.id for element in knowledge_elements]
 
     if topic_ids:
         dependencies_result = await session.execute(
@@ -335,37 +345,19 @@ async def get_discipline_knowledge_graph(
         )
         topic_knowledge_elements = list(topic_elements_result.scalars().all())
 
-        element_ids = [item.element_id for item in topic_knowledge_elements]
-        if element_ids:
-            elements_result = await session.execute(
-                select(KnowledgeElement)
-                .options(lazyload("*"))
-                .where(
-                    and_(
-                        KnowledgeElement.id.in_(element_ids),
-                        KnowledgeElement.discipline_id == discipline_id,
-                    )
-                )
-                .order_by(
-                    KnowledgeElement.competence_type,
-                    KnowledgeElement.name,
+    if element_ids:
+        relations_result = await session.execute(
+            select(KnowledgeElementRelation)
+            .options(selectinload(KnowledgeElementRelation.relation))
+            .where(
+                and_(
+                    KnowledgeElementRelation.source_element_id.in_(element_ids),
+                    KnowledgeElementRelation.target_element_id.in_(element_ids),
                 )
             )
-            knowledge_elements = list(elements_result.scalars().all())
-
-            relations_result = await session.execute(
-                select(KnowledgeElementRelation)
-                .options(selectinload(KnowledgeElementRelation.relation))
-                .where(
-                    and_(
-                        KnowledgeElementRelation.topic_id.in_(topic_ids),
-                        KnowledgeElementRelation.source_element_id.in_(element_ids),
-                        KnowledgeElementRelation.target_element_id.in_(element_ids),
-                    )
-                )
-                .order_by(KnowledgeElementRelation.id)
-            )
-            knowledge_element_relations = list(relations_result.scalars().all())
+            .order_by(KnowledgeElementRelation.id)
+        )
+        knowledge_element_relations = list(relations_result.scalars().all())
     # print (DisciplineKnowledgeGraphRead(
     #     discipline=DisciplineRead.model_validate(discipline),
     #     topics=[TopicRead.model_validate(item) for item in topics],

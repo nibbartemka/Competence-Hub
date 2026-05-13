@@ -112,6 +112,7 @@ export type KnowledgeElement = {
   description: string | null;
   competence_type: CompetenceType;
   discipline_id: string | null;
+  operation_ref: string | null;
 };
 
 export type TopicKnowledgeElement = {
@@ -146,6 +147,33 @@ export type DisciplineKnowledgeGraph = {
   knowledge_elements: KnowledgeElement[];
   topic_knowledge_elements: TopicKnowledgeElement[];
   knowledge_element_relations: KnowledgeElementRelation[];
+};
+
+export type OperationContract = {
+  id: string;
+  title: string;
+  description: string;
+  input_schema: Record<string, unknown>;
+  output_schema: Record<string, unknown>;
+  example_input: Record<string, unknown>;
+  executor: string;
+  validator: string;
+};
+
+export type SkillAssessmentTask = {
+  id: string;
+  skill_element_id: string;
+  skill_element_name: string;
+  title: string;
+  prompt: string;
+  operation_ref: string;
+  contract_title: string;
+  input_payload: Record<string, unknown>;
+  expected_output: unknown;
+  realizes_knowledge_element_ids: string[];
+  realizes_knowledge_element_names: string[];
+  created_at: string;
+  updated_at: string;
 };
 
 /** JSON-файл экспорта / тело запроса preview (совместимо с графом дисциплины). */

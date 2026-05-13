@@ -74,6 +74,15 @@ DB_PATH = Path(
 DATABASE_URL = f"sqlite:///{DB_PATH.as_posix()}"
 RNG = random.Random(1978)
 
+CAN_OPERATION_REF_BY_KEY: dict[str, str] = {
+    "read_graph_notation": "graph.operation.build_adjacency_matrix",
+    "identify_adjacency": "graph.operation.build_incidence_matrix",
+    "identify_arc_ends": "graph.operation.build_incidence_matrix",
+    "count_semidegrees": "graph.operation.build_degree_sequence",
+    "check_bipartition": "graph.operation.build_adjacency_matrix",
+    "classify_graph_type": "graph.operation.build_adjacency_matrix",
+}
+
 
 RELATION_DIRECTION_BY_TYPE: dict[KnowledgeElementRelationType, RelationDirectionType] = {
     KnowledgeElementRelationType.REQUIRES: RelationDirectionType.ONE_DIRECTION,
@@ -399,6 +408,11 @@ def seed_knowledge_graph(
                 description=element_spec.description,
                 competence_type=element_spec.competence_type,
                 discipline_id=discipline.id,
+                operation_ref=(
+                    CAN_OPERATION_REF_BY_KEY.get(element_spec.key)
+                    if element_spec.competence_type == CompetenceType.CAN
+                    else None
+                ),
             )
             session.add(element)
             session.flush()

@@ -16,6 +16,7 @@ import type {
   KnowledgeGraphImportResult,
   KnowledgeElementRelation,
   KnowledgeElementRelationType,
+  OperationContract,
   Relation,
   RelationDirectionType,
   LearningTrajectory,
@@ -30,6 +31,7 @@ import type {
   StudentTrajectoryMastery,
   StudentTopicControl,
   Subgroup,
+  SkillAssessmentTask,
   Teacher,
   Topic,
   TopicDependency,
@@ -415,6 +417,7 @@ export function createKnowledgeElement(payload: {
   description: string;
   competence_type: CompetenceType;
   discipline_id: string;
+  operation_ref?: string | null;
 }) {
   return request<KnowledgeElement>("/knowledge-elements/", {
     method: "POST",
@@ -428,6 +431,7 @@ export function updateKnowledgeElement(
     name: string;
     description: string;
     competence_type: CompetenceType;
+    operation_ref?: string | null;
   },
 ) {
   return request<KnowledgeElement>(`/knowledge-elements/${elementId}`, {
@@ -451,12 +455,6 @@ export function createTopicKnowledgeElement(payload: {
   return request<TopicKnowledgeElement>("/topic-knowledge-elements/", {
     method: "POST",
     body: payload,
-  });
-}
-
-export function deleteTopicKnowledgeElement(topicElementId: string) {
-  return request<void>(`/topic-knowledge-elements/${topicElementId}`, {
-    method: "DELETE",
   });
 }
 
@@ -531,6 +529,36 @@ export function updateKnowledgeElementRelation(
   return request<KnowledgeElementRelation>(`/knowledge-element-relations/${relationId}`, {
     method: "PUT",
     body: payload,
+  });
+}
+
+export function fetchOperationContracts(signal?: AbortSignal) {
+  return request<OperationContract[]>("/operation-contracts/", { signal });
+}
+
+export function fetchSkillAssessmentTasks(
+  disciplineId?: string,
+  signal?: AbortSignal,
+) {
+  const query = disciplineId ? `?discipline_id=${encodeURIComponent(disciplineId)}` : "";
+  return request<SkillAssessmentTask[]>(`/skill-assessment-tasks/${query}`, { signal });
+}
+
+export function createSkillAssessmentTask(payload: {
+  skill_element_id: string;
+  title: string;
+  prompt: string;
+  input_payload: Record<string, unknown>;
+}) {
+  return request<SkillAssessmentTask>("/skill-assessment-tasks/", {
+    method: "POST",
+    body: payload,
+  });
+}
+
+export function deleteSkillAssessmentTask(taskId: string) {
+  return request<void>(`/skill-assessment-tasks/${taskId}`, {
+    method: "DELETE",
   });
 }
 

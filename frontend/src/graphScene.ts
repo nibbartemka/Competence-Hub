@@ -60,7 +60,7 @@ export function isSupportedElementRelation(
     ].includes(relationType);
   }
 
-  if (sourceType === "know" && targetType === "can") {
+  if (sourceType === "can" && targetType === "know") {
     return relationType === "implements";
   }
 

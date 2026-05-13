@@ -141,6 +141,7 @@ class KnowledgeElement(Base):
         Enum(CompetenceType, name="competence_type_enum"),
         nullable=False,
     )
+    operation_ref: Mapped[str | None] = mapped_column(String(255), nullable=True)
 
     discipline_id: Mapped[UUID | None] = mapped_column(
         ForeignKey("disciplines.id", ondelete="CASCADE"),
@@ -172,6 +173,13 @@ class KnowledgeElement(Base):
         "KnowledgeElementRelation",
         foreign_keys="KnowledgeElementRelation.target_element_id",
         back_populates="target_element",
+        cascade="all, delete-orphan",
+        lazy="selectin",
+    )
+
+    skill_assessment_tasks: Mapped[list["SkillAssessmentTask"]] = relationship(
+        "SkillAssessmentTask",
+        back_populates="skill_element",
         cascade="all, delete-orphan",
         lazy="selectin",
     )

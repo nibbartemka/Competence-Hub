@@ -426,6 +426,7 @@ async def execute_knowledge_graph_import(
             description=element.description,
             competence_type=element.competence_type,
             discipline_id=target_discipline_id,
+            operation_ref=getattr(element, "operation_ref", None),
         )
         session.add(new_el)
         await session.flush()

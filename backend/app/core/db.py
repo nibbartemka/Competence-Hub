@@ -306,7 +306,7 @@ def _rebuild_knowledge_elements_table(connection) -> None:
             SELECT
                 lower(hex(randomblob(16))),
                 knowledge_element_relations.description,
-                source_links.topic_id,
+                knowledge_element_relations.topic_id,
                 source_map.new_id,
                 target_map.new_id,
                 relations.id
@@ -317,11 +317,8 @@ def _rebuild_knowledge_elements_table(connection) -> None:
             JOIN knowledge_element_discipline_map AS target_map
                 ON target_map.old_id =
                 knowledge_element_relations.target_element_id
-            JOIN topic_knowledge_elements AS source_links
-                ON source_links.element_id = source_map.new_id
-            JOIN topic_knowledge_elements AS target_links
-                ON target_links.element_id = target_map.new_id
-                AND target_links.topic_id = source_links.topic_id
+            JOIN topics
+                ON topics.id = knowledge_element_relations.topic_id
             JOIN relations
                 ON upper(relations.relation_type) = upper(knowledge_element_relations.relation_type)
             WHERE source_map.new_id != target_map.new_id
@@ -332,6 +329,7 @@ def _rebuild_knowledge_elements_table(connection) -> None:
                         AND target_map.discipline_id IS NULL
                     )
                 )
+                AND topics.discipline_id = source_map.discipline_id
             """
         )
     )
@@ -479,8 +477,8 @@ def _seed_default_admin_record(connection) -> None:
         connection.execute(
             text(
                 """
-                INSERT INTO admins (id, name, login, password, is_active)
-                VALUES (lower(hex(randomblob(16))), 'Администратор', 'admin', 'admin', 1)
+                INSERT INTO admins (id, name, login, password)
+                VALUES (lower(hex(randomblob(16))), 'Администратор', 'admin', 'admin')
                 """
             )
         )
@@ -492,7 +490,9 @@ def _normalize_relations_and_links(connection) -> None:
 
     has_relation_links = _sqlite_has_table(
         connection, "knowledge_element_relations"
-    ) and _sqlite_has_column(connection, "knowledge_element_relations", "relation_id")
+    ) and _sqlite_has_column(connection, "knowledge_element_relations", "relation_id") and _sqlite_has_column(
+        connection, "knowledge_element_relations", "topic_id"
+    )
 
     connection.execute(text("DROP TABLE IF EXISTS relation_normalization_map"))
     connection.execute(
@@ -600,18 +600,13 @@ def _normalize_relations_and_links(connection) -> None:
                 SELECT
                     ker.id,
                     ker.description,
-                    source_links.topic_id,
+                    ker.topic_id,
                     ker.source_element_id,
                     ker.target_element_id,
                     map.canonical_id
                 FROM knowledge_element_relations AS ker
                 JOIN relation_normalization_map AS map
                     ON map.old_id = ker.relation_id
-                JOIN topic_knowledge_elements AS source_links
-                    ON source_links.element_id = ker.source_element_id
-                JOIN topic_knowledge_elements AS target_links
-                    ON target_links.element_id = ker.target_element_id
-                    AND target_links.topic_id = source_links.topic_id
                 """
             )
         )
@@ -632,6 +627,8 @@ def _normalize_relations_and_links(connection) -> None:
 
 
 def _rebuild_knowledge_element_relations_table(connection) -> None:
+    has_topic_id = _sqlite_has_column(connection, "knowledge_element_relations", "topic_id")
+    has_relation_id = _sqlite_has_column(connection, "knowledge_element_relations", "relation_id")
     connection.execute(
         text(
             """
@@ -659,101 +656,112 @@ def _rebuild_knowledge_element_relations_table(connection) -> None:
             """
         )
     )
-    connection.execute(
-        text(
-            """
-            INSERT OR IGNORE INTO knowledge_element_relations_new (
-                id,
-                description,
-                topic_id,
-                source_element_id,
-                target_element_id,
-                relation_id
+    if has_topic_id and has_relation_id:
+        connection.execute(
+            text(
+                """
+                INSERT OR IGNORE INTO knowledge_element_relations_new (
+                    id,
+                    description,
+                    topic_id,
+                    source_element_id,
+                    target_element_id,
+                    relation_id
+                )
+                SELECT
+                    knowledge_element_relations.id,
+                    knowledge_element_relations.description,
+                    knowledge_element_relations.topic_id,
+                    knowledge_element_relations.source_element_id,
+                    knowledge_element_relations.target_element_id,
+                    knowledge_element_relations.relation_id
+                FROM knowledge_element_relations
+                """
             )
-            SELECT
-                knowledge_element_relations.id,
-                knowledge_element_relations.description,
-                source_links.topic_id,
-                knowledge_element_relations.source_element_id,
-                knowledge_element_relations.target_element_id,
-                relations.id
-            FROM knowledge_element_relations
-            JOIN topic_knowledge_elements AS source_links
-                ON source_links.element_id = knowledge_element_relations.source_element_id
-            JOIN topic_knowledge_elements AS target_links
-                ON target_links.element_id = knowledge_element_relations.target_element_id
-                AND target_links.topic_id = source_links.topic_id
-            JOIN relations
-                ON upper(relations.relation_type) = upper(knowledge_element_relations.relation_type)
-            """
         )
-    )
-    connection.execute(text("DROP TABLE knowledge_element_relations"))
-    connection.execute(
-        text(
-            "ALTER TABLE knowledge_element_relations_new "
-            "RENAME TO knowledge_element_relations"
-        )
-    )
-
-
-def _rebuild_knowledge_element_relations_with_topic_table(connection) -> None:
-    connection.execute(text("DROP TABLE IF EXISTS knowledge_element_relations_new"))
-    connection.execute(
-        text(
-            """
-            CREATE TABLE knowledge_element_relations_new (
-                id CHAR(32) NOT NULL,
-                description TEXT,
-                topic_id CHAR(32) NOT NULL,
-                source_element_id CHAR(32) NOT NULL,
-                target_element_id CHAR(32) NOT NULL,
-                relation_id CHAR(32) NOT NULL,
-                PRIMARY KEY (id),
-                CONSTRAINT uq_knowledge_element_relation
-                    UNIQUE (topic_id, source_element_id, target_element_id, relation_id),
-                CONSTRAINT ck_knowledge_element_relation_not_self
-                    CHECK (source_element_id != target_element_id),
-                FOREIGN KEY(topic_id)
-                    REFERENCES topics (id) ON DELETE CASCADE,
-                FOREIGN KEY(source_element_id)
-                    REFERENCES knowledge_elements (id) ON DELETE CASCADE,
-                FOREIGN KEY(target_element_id)
-                    REFERENCES knowledge_elements (id) ON DELETE CASCADE,
-                FOREIGN KEY(relation_id)
-                    REFERENCES relations (id) ON DELETE CASCADE
+    elif has_topic_id:
+        connection.execute(
+            text(
+                """
+                INSERT OR IGNORE INTO knowledge_element_relations_new (
+                    id,
+                    description,
+                    topic_id,
+                    source_element_id,
+                    target_element_id,
+                    relation_id
+                )
+                SELECT
+                    knowledge_element_relations.id,
+                    knowledge_element_relations.description,
+                    knowledge_element_relations.topic_id,
+                    knowledge_element_relations.source_element_id,
+                    knowledge_element_relations.target_element_id,
+                    relations.id
+                FROM knowledge_element_relations
+                JOIN relations
+                    ON upper(relations.relation_type) = upper(knowledge_element_relations.relation_type)
+                """
             )
-            """
         )
-    )
-    connection.execute(
-        text(
-            """
-            INSERT OR IGNORE INTO knowledge_element_relations_new (
-                id,
-                description,
-                topic_id,
-                source_element_id,
-                target_element_id,
-                relation_id
+    elif has_relation_id:
+        connection.execute(
+            text(
+                """
+                INSERT OR IGNORE INTO knowledge_element_relations_new (
+                    id,
+                    description,
+                    topic_id,
+                    source_element_id,
+                    target_element_id,
+                    relation_id
+                )
+                SELECT
+                    lower(hex(randomblob(16))),
+                    ker.description,
+                    source_link.topic_id,
+                    ker.source_element_id,
+                    ker.target_element_id,
+                    ker.relation_id
+                FROM knowledge_element_relations AS ker
+                JOIN topic_knowledge_elements AS source_link
+                    ON source_link.element_id = ker.source_element_id
+                JOIN topic_knowledge_elements AS target_link
+                    ON target_link.element_id = ker.target_element_id
+                    AND target_link.topic_id = source_link.topic_id
+                """
             )
-            SELECT
-                lower(hex(randomblob(16))),
-                ker.description,
-                source_links.topic_id,
-                ker.source_element_id,
-                ker.target_element_id,
-                ker.relation_id
-            FROM knowledge_element_relations AS ker
-            JOIN topic_knowledge_elements AS source_links
-                ON source_links.element_id = ker.source_element_id
-            JOIN topic_knowledge_elements AS target_links
-                ON target_links.element_id = ker.target_element_id
-                AND target_links.topic_id = source_links.topic_id
-            WHERE ker.source_element_id != ker.target_element_id
-            """
         )
-    )
+    else:
+        connection.execute(
+            text(
+                """
+                INSERT OR IGNORE INTO knowledge_element_relations_new (
+                    id,
+                    description,
+                    topic_id,
+                    source_element_id,
+                    target_element_id,
+                    relation_id
+                )
+                SELECT
+                    lower(hex(randomblob(16))),
+                    ker.description,
+                    source_link.topic_id,
+                    ker.source_element_id,
+                    ker.target_element_id,
+                    relations.id
+                FROM knowledge_element_relations AS ker
+                JOIN topic_knowledge_elements AS source_link
+                    ON source_link.element_id = ker.source_element_id
+                JOIN topic_knowledge_elements AS target_link
+                    ON target_link.element_id = ker.target_element_id
+                    AND target_link.topic_id = source_link.topic_id
+                JOIN relations
+                    ON upper(relations.relation_type) = upper(ker.relation_type)
+                """
+            )
+        )
     connection.execute(text("DROP TABLE knowledge_element_relations"))
     connection.execute(
         text(
@@ -797,14 +805,20 @@ def _sync_sqlite_schema(connection) -> None:
         connection, "knowledge_elements", "discipline_id"
     ):
         _rebuild_knowledge_elements_table(connection)
-    elif _sqlite_has_table(connection, "knowledge_element_relations") and not _sqlite_has_column(
-        connection, "knowledge_element_relations", "relation_id"
+    elif _sqlite_has_table(connection, "knowledge_element_relations") and (
+        not _sqlite_has_column(connection, "knowledge_element_relations", "relation_id")
+        or not _sqlite_has_column(connection, "knowledge_element_relations", "topic_id")
     ):
         _rebuild_knowledge_element_relations_table(connection)
-    if _sqlite_has_table(connection, "knowledge_element_relations") and not _sqlite_has_column(
-        connection, "knowledge_element_relations", "topic_id"
+    if _sqlite_has_table(connection, "knowledge_elements") and not _sqlite_has_column(
+        connection, "knowledge_elements", "operation_ref"
     ):
-        _rebuild_knowledge_element_relations_with_topic_table(connection)
+        connection.execute(
+            text(
+                "ALTER TABLE knowledge_elements "
+                "ADD COLUMN operation_ref VARCHAR(255)"
+            )
+        )
     if _sqlite_has_table(connection, "disciplines") and not _sqlite_has_column(
         connection, "disciplines", "knowledge_graph_version"
     ):
