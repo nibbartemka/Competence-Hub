@@ -12,6 +12,13 @@ class StudentTopicControlElementRead(BaseModel):
     mastery_value: int
 
 
+class StudentTopicControlNextTopicRead(BaseModel):
+    topic_id: UUID
+    topic_name: str
+    position: int
+    is_unlocked: bool
+
+
 class StudentTopicControlRead(BaseModel):
     student_id: UUID
     trajectory_id: UUID
@@ -23,6 +30,11 @@ class StudentTopicControlRead(BaseModel):
     has_tasks: bool = False
     continue_practice_available: bool = False
     is_extra_practice: bool = False
+    practice_stage: str = "know"
+    knowledge_threshold_passed: bool = False
+    skill_practice_available: bool = False
+    show_next_topic_prompt: bool = False
+    next_topic: StudentTopicControlNextTopicRead | None = None
     elements: list[StudentTopicControlElementRead] = Field(default_factory=list)
     current_task: StudentAssignedTaskRead | None = None
 

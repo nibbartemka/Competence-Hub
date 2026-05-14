@@ -57,6 +57,7 @@ from .learning_control import (
     StudentTrajectoryMasteryRead,
     StudentTrajectoryMasteryTopicRead,
     StudentTopicControlElementRead,
+    StudentTopicControlNextTopicRead,
     StudentTopicControlRead,
 )
 from .topic_dependencies import TopicDependencyCreate, TopicDependencyRead
@@ -138,6 +139,7 @@ __all__ = [
     "StudentTrajectoryMasteryRead",
     "StudentTrajectoryMasteryTopicRead",
     "StudentTopicControlElementRead",
+    "StudentTopicControlNextTopicRead",
     "StudentTopicControlRead",
     "TopicKnowledgeElementCreate",
     "TopicKnowledgeElementRead",

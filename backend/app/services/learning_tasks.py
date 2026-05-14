@@ -7,6 +7,7 @@ from uuid import UUID
 
 from fastapi import HTTPException, status
 
+from app.algorithm_library import get_operation_contract
 from app.models import (
     KnowledgeElement,
     KnowledgeElementRelation,
@@ -79,6 +80,7 @@ MANUAL_ALLOWED_TASK_TYPES = {
     LearningTrajectoryTaskType.SINGLE_CHOICE,
     LearningTrajectoryTaskType.MULTIPLE_CHOICE,
     LearningTrajectoryTaskType.MATCHING,
+    LearningTrajectoryTaskType.TEXT,
 }
 
 DEFAULT_ELEMENT_TARGET_MASTERY = 70
@@ -221,6 +223,30 @@ def _validate_ordering_content(content: dict[str, Any]) -> dict[str, Any]:
 
 
 def _validate_text_content(content: dict[str, Any]) -> dict[str, Any]:
+    operation_ref = str(content.get("operation_ref", "")).strip()
+    if operation_ref:
+        input_payload = content.get("input_payload")
+        if not isinstance(input_payload, dict):
+            raise bad_request("Для задания уровня «Уметь» входные данные должны быть JSON-объектом.")
+        contract = get_operation_contract(operation_ref)
+        if contract is None:
+            raise bad_request(f"Операция '{operation_ref}' не найдена в локальной библиотеке алгоритмов.")
+        try:
+            expected_output = contract.executor(input_payload)
+        except ValueError as error:
+            raise bad_request(str(error)) from error
+
+        placeholder = str(content.get("placeholder", "")).strip()
+        return {
+            "operation_ref": operation_ref,
+            "contract_title": contract.title,
+            "input_payload": input_payload,
+            "expected_output": expected_output,
+            "input_schema": contract.input_schema,
+            "output_schema": contract.output_schema,
+            "placeholder": placeholder or "Введите ответ в формате JSON",
+        }
+
     raw_answers = content.get("accepted_answers")
     if not isinstance(raw_answers, list) or not raw_answers:
         raise bad_request("Для текстового задания нужен минимум один эталонный ответ.")
@@ -361,6 +387,34 @@ def build_content_from_template(
 ) -> dict[str, Any]:
     checked_elements = [primary_element, *related_elements]
     element_by_id = {str(element.id): element for element in checked_elements}
+
+    if task_type == LearningTrajectoryTaskType.TEXT and primary_element.competence_type == CompetenceType.CAN:
+        operation_ref = (primary_element.operation_ref or "").strip()
+        if not operation_ref:
+            raise bad_request("У выбранного элемента «Уметь» не задана операция алгоритмической библиотеки.")
+
+        contract = get_operation_contract(operation_ref)
+        if contract is None:
+            raise bad_request(f"Операция '{operation_ref}' не найдена в локальной библиотеке алгоритмов.")
+
+        input_payload = content.get("input_payload")
+        if not isinstance(input_payload, dict):
+            raise bad_request("Для задания уровня «Уметь» нужно заполнить входные данные операции.")
+
+        try:
+            expected_output = contract.executor(input_payload)
+        except ValueError as error:
+            raise bad_request(str(error)) from error
+
+        return {
+            "operation_ref": operation_ref,
+            "contract_title": contract.title,
+            "input_payload": input_payload,
+            "expected_output": expected_output,
+            "input_schema": contract.input_schema,
+            "output_schema": contract.output_schema,
+            "placeholder": str(content.get("placeholder", "")).strip() or "Введите ответ в формате JSON",
+        }
 
     if template_kind == LearningTrajectoryTaskTemplateKind.DEFINITION_CHOICE:
         if not related_elements:
@@ -519,6 +573,8 @@ def normalize_task_content(
     if task_type == LearningTrajectoryTaskType.ORDERING:
         return _validate_ordering_content(content)
     if task_type == LearningTrajectoryTaskType.TEXT:
+        return _validate_text_content(content)
+    if task_type == LearningTrajectoryTaskType.TEXT:
         raise bad_request("Текстовые задания отключены. Используй выбор, сопоставление или порядок.")
 
     raise bad_request("Неподдерживаемый тип задания.")
@@ -560,14 +616,27 @@ def validate_task_payload(
         raise bad_request(
             "Ключевой элемент должен быть выбран в этой теме траектории."
         )
-    if primary_element.competence_type != CompetenceType.KNOW:
+    if primary_element.competence_type not in {CompetenceType.KNOW, CompetenceType.CAN, CompetenceType.MASTER}:
         raise bad_request("Ручные задания пока доступны только для компетенции «Знать».")
+
+    if primary_element.competence_type == CompetenceType.MASTER:
+        raise bad_request("Задания для компетенции «Владеть» пока не поддерживаются.")
 
     allowed_related_elements: dict[UUID, KnowledgeElement] = {}
     for trajectory_element in trajectory_topic.elements:
         element = trajectory_element.element
         if element.competence_type == CompetenceType.KNOW:
             allowed_related_elements[element.id] = element
+
+    if primary_element.competence_type == CompetenceType.CAN:
+        if payload.template_kind != LearningTrajectoryTaskTemplateKind.MANUAL:
+            raise bad_request("Для элементов «Уметь» пока доступен только ручной шаблон задания.")
+        if payload.task_type != LearningTrajectoryTaskType.TEXT:
+            raise bad_request("Для элементов «Уметь» пока доступен только текстовый ответ.")
+        if not payload.related_element_ids:
+            raise bad_request("Для задания уровня «Уметь» нужно указать связанные элементы «Знать» этой темы.")
+        if payload.checked_relation_ids:
+            raise bad_request("Проверяемые связи для заданий уровня «Уметь» сейчас не используются.")
 
     if payload.primary_element_id in payload.related_element_ids:
         raise bad_request("Ключевой элемент не нужно дублировать среди связанных элементов.")
@@ -651,6 +720,10 @@ def build_student_task_content_from_snapshot(
     if task.task_type == LearningTrajectoryTaskType.TEXT:
         return {
             "placeholder": content.get("placeholder", ""),
+            "input_payload": content.get("input_payload", {}),
+            "contract_title": content.get("contract_title", ""),
+            "input_schema": content.get("input_schema", {}),
+            "output_schema": content.get("output_schema", {}),
         }
 
     return {}
@@ -1197,6 +1270,32 @@ def _score_text(content: dict[str, Any], answer_payload: dict[str, Any]) -> tupl
             "accepted_answers": content.get("accepted_answers", []),
         }
 
+    operation_ref = str(content.get("operation_ref", "")).strip()
+    if operation_ref:
+        contract = get_operation_contract(operation_ref)
+        if contract is None:
+            raise bad_request(f"Операция '{operation_ref}' не найдена в локальной библиотеке алгоритмов.")
+
+        try:
+            parsed_answer = json.loads(submitted_text)
+        except json.JSONDecodeError:
+            parsed_answer = submitted_text
+
+        expected_output = content.get("expected_output")
+        try:
+            is_correct = bool(contract.validator(parsed_answer, expected_output))
+        except Exception:
+            is_correct = False
+
+        return (
+            100 if is_correct else 0,
+            {
+                "is_correct": is_correct,
+                "message": "Ответ верный." if is_correct else "Ответ не совпал с эталоном операции.",
+                "expected_output": expected_output,
+            },
+        )
+
     normalized_submitted = _normalize_text(submitted_text)
     accepted_answers = {
         _normalize_text(answer)
@@ -1234,6 +1333,9 @@ def evaluate_task_answer(
     if task.task_type == LearningTrajectoryTaskType.ORDERING:
         score, feedback = _score_ordering(content, answer_payload)
         return score, answer_payload, feedback
+    if task.task_type == LearningTrajectoryTaskType.TEXT:
+        score, feedback = _score_text(content, answer_payload)
+        return score, {"text": str(answer_payload.get("text", "")).strip()}, feedback
     if task.task_type == LearningTrajectoryTaskType.TEXT:
         raise bad_request("Текстовые задания отключены.")
 

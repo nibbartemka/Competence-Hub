@@ -22,12 +22,16 @@ from app.models import (
     StudentTaskAttempt,
     StudentTaskInstance,
     StudentTaskProgress,
+    Topic,
+    TopicKnowledgeElement,
 )
 from app.models.enums import (
     CompetenceType,
+    KnowledgeElementRelationType,
     LearningTrajectoryStatus,
     LearningTrajectoryTaskType,
     StudentTaskProgressStatus,
+    TopicKnowledgeElementRole,
 )
 from app.schemas import (
     LearningTrajectoryTaskCreate,
@@ -60,7 +64,9 @@ def _trajectory_read_options():
     return (
         selectinload(LearningTrajectory.discipline),
         selectinload(LearningTrajectory.topics)
-        .selectinload(LearningTrajectoryTopic.topic),
+        .selectinload(LearningTrajectoryTopic.topic)
+        .selectinload(Topic.element_links)
+        .selectinload(TopicKnowledgeElement.element),
         selectinload(LearningTrajectory.topics)
         .selectinload(LearningTrajectoryTopic.elements)
         .selectinload(LearningTrajectoryElement.element),
@@ -111,18 +117,32 @@ def _task_read_options(
     if include_unlock_data:
         options.append(
             selectinload(LearningTrajectoryTask.trajectory_topic).options(
+                selectinload(LearningTrajectoryTopic.topic).options(
+                    lazyload("*"),
+                    selectinload(Topic.element_links).options(
+                        lazyload("*"),
+                        selectinload(TopicKnowledgeElement.element).options(lazyload("*")),
+                    ),
+                ),
                 selectinload(LearningTrajectoryTopic.elements).options(
                     lazyload("*"),
                     selectinload(LearningTrajectoryElement.element).options(
                         lazyload("*")
                     ),
-                )
+                ),
             )
         )
         options.append(
             selectinload(LearningTrajectoryTask.trajectory).options(
                 selectinload(LearningTrajectory.topics).options(
                     lazyload("*"),
+                    selectinload(LearningTrajectoryTopic.topic).options(
+                        lazyload("*"),
+                        selectinload(Topic.element_links).options(
+                            lazyload("*"),
+                            selectinload(TopicKnowledgeElement.element).options(lazyload("*")),
+                        ),
+                    ),
                     selectinload(LearningTrajectoryTopic.elements).options(
                         lazyload("*"),
                         selectinload(LearningTrajectoryElement.element).options(
@@ -227,7 +247,6 @@ async def _load_student_tasks(
         .where(
             LearningTrajectory.status == LearningTrajectoryStatus.ACTIVE,
             LearningTrajectory.group_id == student.group_id,
-            LearningTrajectoryTask.task_type != LearningTrajectoryTaskType.TEXT,
         )
     )
 
@@ -270,11 +289,54 @@ def _trajectory_topic_mastery(
     )
 
 
+def _trajectory_element_thresholds(
+    trajectory: LearningTrajectory,
+) -> dict[UUID, int]:
+    thresholds: dict[UUID, int] = {}
+    for trajectory_topic in trajectory.topics:
+        for trajectory_element in trajectory_topic.elements:
+            current = thresholds.get(trajectory_element.element_id)
+            if current is None or trajectory_element.threshold > current:
+                thresholds[trajectory_element.element_id] = trajectory_element.threshold
+    return thresholds
+
+
+def _trajectory_topic_knowledge_complete(
+    trajectory_topic: LearningTrajectoryTopic,
+    mastery_by_element_id: dict[UUID, int],
+) -> bool:
+    know_elements = [
+        trajectory_element
+        for trajectory_element in trajectory_topic.elements
+        if trajectory_element.element.competence_type == CompetenceType.KNOW
+    ]
+    if not know_elements:
+        return True
+    return all(
+        mastery_by_element_id.get(trajectory_element.element_id, 0) >= trajectory_element.threshold
+        for trajectory_element in know_elements
+    )
+
+
 def _trajectory_topic_is_unlocked(
     trajectory: LearningTrajectory,
     trajectory_topic: LearningTrajectoryTopic,
     mastery_by_element_id: dict[UUID, int],
 ) -> bool:
+    required_links = [
+        link
+        for link in trajectory_topic.topic.element_links
+        if link.role == TopicKnowledgeElementRole.REQUIRED
+        and link.element.competence_type == CompetenceType.KNOW
+    ]
+    if required_links:
+        thresholds = _trajectory_element_thresholds(trajectory)
+        return all(
+            thresholds.get(link.element_id) is not None
+            and mastery_by_element_id.get(link.element_id, 0) >= thresholds[link.element_id]
+            for link in required_links
+        )
+
     for previous_topic in trajectory.topics:
         if previous_topic.position >= trajectory_topic.position:
             continue
@@ -490,7 +552,6 @@ async def list_learning_trajectory_tasks(
         .options(*_task_read_options())
         .where(
             LearningTrajectoryTask.trajectory_id == trajectory_id,
-            LearningTrajectoryTask.task_type != LearningTrajectoryTaskType.TEXT,
         )
         .order_by(LearningTrajectoryTask.created_at.desc())
     )
@@ -837,17 +898,35 @@ async def submit_student_task_score(
     if progress.status == StudentTaskProgressStatus.COMPLETED:
         progress.completed_at = answered_at
 
-    affected_element_ids = [task.primary_element_id] + [
-        related.element_id for related in task.related_elements
-    ]
-    for element_id in affected_element_ids:
+    if task.primary_element.competence_type == CompetenceType.CAN:
         await _upsert_student_mastery(
             student=student,
             discipline_id=task.trajectory.discipline_id,
-            element_id=element_id,
+            element_id=task.primary_element_id,
             score=score,
             session=session,
         )
+        if score < 60:
+            for related in task.related_elements:
+                await _upsert_student_mastery(
+                    student=student,
+                    discipline_id=task.trajectory.discipline_id,
+                    element_id=related.element_id,
+                    score=0,
+                    session=session,
+                )
+    else:
+        affected_element_ids = [task.primary_element_id] + [
+            related.element_id for related in task.related_elements
+        ]
+        for element_id in affected_element_ids:
+            await _upsert_student_mastery(
+                student=student,
+                discipline_id=task.trajectory.discipline_id,
+                element_id=element_id,
+                score=score,
+                session=session,
+            )
 
     await commit_or_409(session)
 

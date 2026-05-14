@@ -320,7 +320,8 @@ export type LearningTrajectoryTaskType =
   | "single_choice"
   | "multiple_choice"
   | "matching"
-  | "ordering";
+  | "ordering"
+  | "text";
 
 export type LearningTrajectoryTaskTemplateKind =
   | "definition_choice"
@@ -331,6 +332,7 @@ export type LearningTrajectoryTaskTemplateKind =
   | "contains_multiple"
   | "matching_definition"
   | "contrast_choice"
+  | "text_definition"
   | "manual";
 
 export type LearningTrajectoryTaskOption = {
@@ -358,6 +360,14 @@ export type LearningTrajectoryTaskContent = {
   correct_element_id?: string;
   correct_related_element_ids?: string[];
   distractor_element_ids?: string[];
+  accepted_answers?: string[];
+  placeholder?: string;
+  input_payload?: Record<string, unknown>;
+  expected_output?: unknown;
+  operation_ref?: string;
+  contract_title?: string;
+  input_schema?: Record<string, unknown>;
+  output_schema?: Record<string, unknown>;
 };
 
 export type LearningTrajectoryTaskElement = {
@@ -426,6 +436,10 @@ export type StudentTaskContent = {
   right_items?: StudentTaskMatchingItem[];
   items?: StudentTaskMatchingItem[];
   placeholder?: string;
+  input_payload?: Record<string, unknown>;
+  contract_title?: string;
+  input_schema?: Record<string, unknown>;
+  output_schema?: Record<string, unknown>;
 };
 
 export type StudentAssignedTask = {
@@ -457,6 +471,13 @@ export type StudentTopicControlElement = {
   mastery_value: number;
 };
 
+export type StudentTopicControlNextTopic = {
+  topic_id: string;
+  topic_name: string;
+  position: number;
+  is_unlocked: boolean;
+};
+
 export type StudentTopicControl = {
   student_id: string;
   trajectory_id: string;
@@ -465,9 +486,14 @@ export type StudentTopicControl = {
   topic_threshold: number;
   topic_mastery: number;
   is_unlocked: boolean;
-   has_tasks: boolean;
-   continue_practice_available: boolean;
-   is_extra_practice: boolean;
+  has_tasks: boolean;
+  continue_practice_available: boolean;
+  is_extra_practice: boolean;
+  practice_stage: "know" | "can";
+  knowledge_threshold_passed: boolean;
+  skill_practice_available: boolean;
+  show_next_topic_prompt: boolean;
+  next_topic: StudentTopicControlNextTopic | null;
   elements: StudentTopicControlElement[];
   current_task: StudentAssignedTask | null;
 };

@@ -738,11 +738,15 @@ export function fetchStudentTopicControl(
   trajectoryId: string,
   topicId: string,
   continuePractice = false,
+  skillPractice = false,
   signal?: AbortSignal,
 ) {
-  const query = continuePractice ? "?continue_practice=true" : "";
+  const query = new URLSearchParams();
+  if (continuePractice) query.set("continue_practice", "true");
+  if (skillPractice) query.set("skill_practice", "true");
+  const suffix = query.toString() ? `?${query.toString()}` : "";
   return request<StudentTopicControl>(
-    `/students/${studentId}/trajectories/${trajectoryId}/control/${topicId}${query}`,
+    `/students/${studentId}/trajectories/${trajectoryId}/control/${topicId}${suffix}`,
     { signal },
   );
 }
@@ -752,11 +756,15 @@ export function fetchStudentTopicControlByPosition(
   trajectoryId: string,
   topicPosition: number,
   continuePractice = false,
+  skillPractice = false,
   signal?: AbortSignal,
 ) {
-  const query = continuePractice ? "?continue_practice=true" : "";
+  const query = new URLSearchParams();
+  if (continuePractice) query.set("continue_practice", "true");
+  if (skillPractice) query.set("skill_practice", "true");
+  const suffix = query.toString() ? `?${query.toString()}` : "";
   return request<StudentTopicControl>(
-    `/students/${studentId}/trajectories/${trajectoryId}/control/steps/${topicPosition}${query}`,
+    `/students/${studentId}/trajectories/${trajectoryId}/control/steps/${topicPosition}${suffix}`,
     { signal },
   );
 }

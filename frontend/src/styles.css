@@ -2778,6 +2778,12 @@ body:has(.session-profile-header) .home-shell {
   box-shadow: 0 24px 70px rgba(57, 81, 109, 0.14);
 }
 
+.student-control-header__meta {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
 .student-control-layout {
   width: min(1180px, calc(100% - 48px));
   margin: 0 auto 48px;
@@ -2789,6 +2795,27 @@ body:has(.session-profile-header) .home-shell {
 
 .student-control-task {
   min-height: 420px;
+}
+
+.student-control-notice {
+  display: grid;
+  gap: 14px;
+  margin-bottom: 18px;
+  border-radius: 22px;
+  padding: 18px 20px;
+  background: rgba(36, 80, 184, 0.08);
+  border: 1px solid rgba(121, 157, 226, 0.36);
+}
+
+.student-control-notice h3 {
+  margin: 0;
+  color: #1f3550;
+}
+
+.student-control-notice__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
 }
 
 .student-control-task__status {
@@ -2868,6 +2895,11 @@ body:has(.session-profile-header) .home-shell {
   .student-control-header {
     align-items: flex-start;
     flex-direction: column;
+  }
+
+  .student-control-header__meta {
+    width: 100%;
+    justify-content: space-between;
   }
 
   .student-control-layout {

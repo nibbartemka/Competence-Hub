@@ -15,8 +15,9 @@ const LAST_STUDENT_STORAGE_KEY = "competence-hub:last-student-id";
 const TASK_TYPE_LABELS: Record<StudentAssignedTask["task_type"], string> = {
   single_choice: "Один выбор",
   multiple_choice: "Несколько вариантов",
-  matching: "Установление соответствия",
-  ordering: "Правильная последовательность",
+  matching: "Сопоставление",
+  ordering: "Порядок",
+  text: "Текстовый ответ",
 };
 
 function extractErrorMessage(error: unknown) {
@@ -36,7 +37,7 @@ function rememberStudentId(studentId: string) {
   try {
     localStorage.setItem(LAST_STUDENT_STORAGE_KEY, studentId);
   } catch {
-    // localStorage может быть недоступен в приватном режиме, это не должно ломать контроль.
+    // localStorage может быть недоступен, это не должно ломать экран.
   }
 }
 
@@ -47,7 +48,14 @@ function emptyAnswer(task: StudentAssignedTask) {
   if (task.task_type === "matching") {
     return { pairings: [] as Array<{ left_id: string; right_id: string }> };
   }
-  return { ordered_item_ids: [] as string[] };
+  if (task.task_type === "ordering") {
+    return { ordered_item_ids: [] as string[] };
+  }
+  return { text: "" };
+}
+
+function buildTopicControlPath(studentId: string, trajectoryId: string, topicId: string) {
+  return `/students/${studentId}/trajectories/${trajectoryId}/control/${topicId}`;
 }
 
 export default function StudentTopicControlPage() {
@@ -72,6 +80,7 @@ export default function StudentTopicControlPage() {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   const [continuePractice, setContinuePractice] = useState(false);
+  const [skillPractice, setSkillPractice] = useState(false);
 
   useEffect(() => {
     const activeSession = readSession();
@@ -80,7 +89,11 @@ export default function StudentTopicControlPage() {
     }
   }, [navigate, studentId]);
 
-  async function loadControl(signal?: AbortSignal, nextContinuePractice = continuePractice) {
+  async function loadControl(
+    signal?: AbortSignal,
+    nextContinuePractice = continuePractice,
+    nextSkillPractice = skillPractice,
+  ) {
     if (!studentId || !trajectoryId) {
       throw new Error("Не удалось определить студента или траекторию.");
     }
@@ -97,6 +110,7 @@ export default function StudentTopicControlPage() {
         trajectoryId,
         topicId,
         nextContinuePractice,
+        nextSkillPractice,
         signal,
       );
     } else {
@@ -109,17 +123,20 @@ export default function StudentTopicControlPage() {
         trajectoryId,
         position,
         nextContinuePractice,
+        nextSkillPractice,
         signal,
       );
     }
 
     setControl(nextControl);
     setContinuePractice(nextControl.is_extra_practice);
+    setSkillPractice(nextControl.practice_stage === "can");
     setAnswer(nextControl.current_task ? emptyAnswer(nextControl.current_task) : {});
   }
 
   useEffect(() => {
     setContinuePractice(false);
+    setSkillPractice(false);
   }, [studentId, trajectoryId, topicId, topicPosition]);
 
   useEffect(() => {
@@ -130,7 +147,7 @@ export default function StudentTopicControlPage() {
         setLoading(true);
         setError("");
         setControl(null);
-        await loadControl(controller.signal, false);
+        await loadControl(controller.signal, false, false);
       } catch (loadError) {
         if (!isAbortError(loadError)) {
           setError(extractErrorMessage(loadError));
@@ -183,6 +200,10 @@ export default function StudentTopicControlPage() {
     setAnswer({ ordered_item_ids: currentOrder });
   }
 
+  function updateTextAnswer(value: string) {
+    setAnswer({ text: value });
+  }
+
   async function submitAnswer(task: StudentAssignedTask) {
     if (!studentId) {
       setError("Не удалось определить студента.");
@@ -192,29 +213,8 @@ export default function StudentTopicControlPage() {
     try {
       setSaving(true);
       setError("");
-      const updatedTask = await submitStudentTaskScore(
-        task.id,
-        studentId,
-        answer,
-        task.task_instance_id,
-      );
-
-      setControl((current) =>
-        current
-          ? {
-              ...current,
-              current_task: updatedTask,
-              elements: current.elements.map((element) =>
-                element.element_id === updatedTask.primary_element.element_id
-                  ? { ...element, mastery_value: updatedTask.primary_element.mastery_value }
-                  : element,
-              ),
-            }
-          : current,
-      );
-
-      setAnswer(emptyAnswer(updatedTask));
-      await loadControl(undefined, continuePractice);
+      await submitStudentTaskScore(task.id, studentId, answer, task.task_instance_id);
+      await loadControl(undefined, continuePractice, skillPractice);
     } catch (submitError) {
       setError(extractErrorMessage(submitError));
     } finally {
@@ -222,7 +222,47 @@ export default function StudentTopicControlPage() {
     }
   }
 
+  async function reloadCurrentState(
+    nextContinuePractice = continuePractice,
+    nextSkillPractice = skillPractice,
+  ) {
+    try {
+      setLoading(true);
+      setError("");
+      await loadControl(undefined, nextContinuePractice, nextSkillPractice);
+    } catch (refreshError) {
+      setError(extractErrorMessage(refreshError));
+    } finally {
+      setLoading(false);
+    }
+  }
+
   function renderAnswer(task: StudentAssignedTask) {
+    if (task.task_type === "text") {
+      return (
+        <div className="student-task-answer">
+          {task.content.contract_title ? (
+            <p className="card__text">Операция: {task.content.contract_title}</p>
+          ) : null}
+          {task.content.input_payload ? (
+            <label className="field">
+              <span>Входные данные</span>
+              <textarea rows={8} value={JSON.stringify(task.content.input_payload, null, 2)} readOnly />
+            </label>
+          ) : null}
+          <label className="field">
+            <span>Ответ студента</span>
+            <textarea
+              rows={6}
+              value={String(answer.text ?? "")}
+              onChange={(event) => updateTextAnswer(event.target.value)}
+              placeholder={task.content.placeholder ?? "Введите ответ"}
+            />
+          </label>
+        </div>
+      );
+    }
+
     if (task.task_type === "single_choice" || task.task_type === "multiple_choice") {
       const selectedIds = Array.isArray(answer.selected_option_ids)
         ? (answer.selected_option_ids as string[])
@@ -297,7 +337,66 @@ export default function StudentTopicControlPage() {
     );
   }
 
+  function renderProgressNotice() {
+    if (!control || !control.is_unlocked) return null;
+
+    const canStartSkills = control.practice_stage === "know" && control.skill_practice_available;
+    const nextTopicUnlocked = Boolean(control.next_topic?.is_unlocked);
+    if (!canStartSkills && !control.show_next_topic_prompt && control.practice_stage !== "can") {
+      return null;
+    }
+
+    const title =
+      control.practice_stage === "can"
+        ? "Открыт этап Уметь"
+        : control.show_next_topic_prompt
+          ? "Следующая тема уже открыта"
+          : "Порог по Знать пройден";
+
+    const message =
+      control.practice_stage === "can"
+        ? "Ты остался в текущей теме и сейчас получаешь задания уровня Уметь. Ошибка в таком задании может снизить освоение связанных элементов Знать."
+        : nextTopicUnlocked && control.next_topic
+          ? `По формируемым элементам Знать порог пройден. Тема «${control.next_topic.topic_name}» уже доступна, но можно остаться здесь и перейти к заданиям уровня Уметь.`
+          : "По элементам Знать порог уже пройден. Можно остаться в текущей теме и перейти к заданиям уровня Уметь.";
+
+    return (
+      <div className="student-control-notice">
+        <div>
+          <p className="card__eyebrow">Переход между уровнями</p>
+          <h3>{title}</h3>
+          <p className="card__text">{message}</p>
+        </div>
+        <div className="student-control-notice__actions">
+          {control.practice_stage === "know" && control.skill_practice_available ? (
+            <button
+              className="primary-button"
+              type="button"
+              disabled={loading || saving}
+              onClick={() => void reloadCurrentState(false, true)}
+            >
+              Остаться и перейти к Уметь
+            </button>
+          ) : null}
+          {control.next_topic?.is_unlocked ? (
+            <button
+              className="ghost-button"
+              type="button"
+              disabled={loading || saving}
+              onClick={() =>
+                navigate(buildTopicControlPath(studentId, trajectoryId, control.next_topic!.topic_id))
+              }
+            >
+              Перейти к теме {control.next_topic.position}
+            </button>
+          ) : null}
+        </div>
+      </div>
+    );
+  }
+
   const currentTask = control?.current_task ?? null;
+  const stageLabel = control?.practice_stage === "can" ? "Уметь" : "Знать";
 
   return (
     <div className="immersive-page">
@@ -306,17 +405,21 @@ export default function StudentTopicControlPage() {
           <p className="hero__eyebrow">Контроль знаний</p>
           <h1>{loading && !control ? "Загрузка темы" : control?.topic_name ?? "Тема"}</h1>
           <p className="hero__subtitle">
-            Порог темы: {control?.topic_threshold ?? 0}. Текущий балл темы:{" "}
-            {control?.topic_mastery ?? 0}.
+            Порог темы: {control?.topic_threshold ?? 0}. Текущий балл темы: {control?.topic_mastery ?? 0}.
           </p>
         </div>
-        <button className="ghost-button" type="button" onClick={() => navigate(-1)}>
-          Назад
-        </button>
+        <div className="student-control-header__meta">
+          <span className="hero__chip">Этап: {stageLabel}</span>
+          <button className="ghost-button" type="button" onClick={() => navigate(-1)}>
+            Назад
+          </button>
+        </div>
       </header>
 
       <main className="student-control-layout">
         <section className="card card--soft student-control-task">
+          {renderProgressNotice()}
+
           {loading && !control ? (
             <div className="status-view status-view--embedded student-control-task__status">
               <div className="status-view__pulse" />
@@ -344,9 +447,9 @@ export default function StudentTopicControlPage() {
                 <span>Освоение: {currentTask.primary_element.mastery_value}</span>
                 <span>Сложность: {currentTask.difficulty}</span>
               </div>
-              {control?.is_extra_practice ? (
+              {control.is_extra_practice ? (
                 <p className="card__text">
-                  Включён режим дополнительной практики. Здесь можно повышать результат выше минимального порога темы.
+                  Включен режим дополнительной практики. Здесь можно улучшать результат выше минимального порога темы.
                 </p>
               ) : null}
               {currentTask.progress.last_feedback ? (
@@ -368,17 +471,7 @@ export default function StudentTopicControlPage() {
                   className="ghost-button"
                   type="button"
                   disabled={saving}
-                  onClick={async () => {
-                    try {
-                      setLoading(true);
-                      setError("");
-                      await loadControl(undefined, continuePractice);
-                    } catch (refreshError) {
-                      setError(extractErrorMessage(refreshError));
-                    } finally {
-                      setLoading(false);
-                    }
-                  }}
+                  onClick={() => void reloadCurrentState()}
                 >
                   Обновить тему
                 </button>
@@ -388,35 +481,36 @@ export default function StudentTopicControlPage() {
             <div className="status-view status-view--embedded status-view--empty student-control-task__status">
               <h3>Нет доступного задания</h3>
               <p>
-                {control?.is_extra_practice
-                  ? "Для этой темы больше не осталось подходящих заданий даже в режиме дополнительной практики."
-                  : control?.has_tasks
-                  ? "В обычном режиме минимальный порог уже достигнут. Если хочешь улучшить результат, можно включить дополнительную практику."
-                  : "Для этой темы пока нет заданий."}
+                {control?.practice_stage === "can"
+                  ? "Для текущего уровня Уметь в этой теме сейчас нет доступных заданий."
+                  : control?.is_extra_practice
+                    ? "Для этой темы больше не осталось подходящих заданий даже в режиме дополнительной практики."
+                    : control?.has_tasks
+                      ? "В обычном режиме минимальный порог уже достигнут. Можно перейти к следующей теме или остаться для дополнительной практики."
+                      : "Для этой темы пока нет заданий."}
               </p>
-              {control?.continue_practice_available ? (
-                <div className="student-task-card__actions">
+              <div className="student-task-card__actions">
+                {control?.continue_practice_available ? (
                   <button
                     className="primary-button"
                     type="button"
                     disabled={loading}
-                    onClick={async () => {
-                      try {
-                        setLoading(true);
-                        setError("");
-                        setControl(null);
-                        await loadControl(undefined, true);
-                      } catch (refreshError) {
-                        setError(extractErrorMessage(refreshError));
-                      } finally {
-                        setLoading(false);
-                      }
-                    }}
+                    onClick={() => void reloadCurrentState(true, skillPractice)}
                   >
                     Продолжить практику
                   </button>
-                </div>
-              ) : null}
+                ) : null}
+                {control?.practice_stage === "know" && control?.skill_practice_available ? (
+                  <button
+                    className="ghost-button"
+                    type="button"
+                    disabled={loading}
+                    onClick={() => void reloadCurrentState(false, true)}
+                  >
+                    Перейти к Уметь
+                  </button>
+                ) : null}
+              </div>
             </div>
           )}
         </section>
