@@ -675,6 +675,35 @@ def build_teacher_task_content(task: LearningTrajectoryTask) -> dict[str, Any]:
     return parse_task_content_json(task.content_json)
 
 
+def _normalized_matching_pairs(content: dict[str, Any]) -> list[dict[str, str]]:
+    raw_pairs = content.get("pairs", [])
+    if not isinstance(raw_pairs, list):
+        return []
+
+    normalized_pairs: list[dict[str, str]] = []
+    for index, raw_pair in enumerate(raw_pairs):
+        if not isinstance(raw_pair, dict):
+            continue
+        pair_id = str(
+            raw_pair.get("id")
+            or raw_pair.get("left_id")
+            or raw_pair.get("right_id")
+            or f"pair-{index + 1}"
+        ).strip()
+        left = str(raw_pair.get("left", "")).strip()
+        right = str(raw_pair.get("right", "")).strip()
+        if not pair_id or not left or not right:
+            continue
+        normalized_pairs.append(
+            {
+                "id": pair_id,
+                "left": left,
+                "right": right,
+            }
+        )
+    return normalized_pairs
+
+
 def build_student_task_content_from_snapshot(
     task: LearningTrajectoryTask,
     content: dict[str, Any],
@@ -695,7 +724,7 @@ def build_student_task_content_from_snapshot(
         }
 
     if task.task_type == LearningTrajectoryTaskType.MATCHING:
-        pairs = content.get("pairs", [])
+        pairs = _normalized_matching_pairs(content)
         right_items = [
             {"id": pair["id"], "text": pair["right"]}
             for pair in pairs
@@ -1187,7 +1216,7 @@ def _score_matching(
         if left_id and right_id:
             submitted_mapping[left_id] = right_id
 
-    pairs = content.get("pairs", [])
+    pairs = _normalized_matching_pairs(content)
     if not pairs:
         raise bad_request("В задании не заданы пары для сопоставления.")
 
@@ -1213,7 +1242,6 @@ def _score_matching(
             "correct_pairs": correct_pairs,
         },
     )
-
 
 def _score_ordering(
     content: dict[str, Any],

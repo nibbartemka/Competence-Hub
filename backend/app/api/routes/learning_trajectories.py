@@ -241,9 +241,6 @@ async def _validate_topics_and_elements(
     if len(positions) != len(set(positions)):
         raise _bad_request("Topic positions in a trajectory must be unique.")
 
-    if not any(item.threshold == 0 for item in payload.topics):
-        raise _bad_request("At least one topic must have threshold 0.")
-
     topics_result = await session.execute(
         select(Topic).where(
             and_(
@@ -287,12 +284,6 @@ async def _validate_topics_and_elements(
 
         formed_before_topic.update(formed_by_topic.get(topic_payload.topic_id, {}).keys())
 
-    available_competence_types: set[CompetenceType] = set()
-    for topic_payload in payload.topics:
-        for element in formed_by_topic.get(topic_payload.topic_id, {}).values():
-            available_competence_types.add(element.competence_type)
-
-    selected_competence_thresholds: dict[CompetenceType, list[int]] = defaultdict(list)
     selected_elements_count = 0
 
     for topic_payload in payload.topics:
@@ -308,34 +299,10 @@ async def _validate_topics_and_elements(
                 raise _bad_request(
                     f"Topic '{topic.name}' can include only formed knowledge elements."
                 )
-            selected_competence_thresholds[element.competence_type].append(
-                element_payload.threshold
-            )
             selected_elements_count += 1
 
     if selected_elements_count == 0:
         raise _bad_request("Select at least one formed knowledge element.")
-
-    missing_competence_types = _missing_required_competence_types(
-        available_competence_types,
-        selected_competence_thresholds,
-    )
-    for competence_type in missing_competence_types:
-        raise _bad_request(
-            f"For competence type '{competence_type.value}', select at least one "
-            "required element with threshold 0."
-        )
-
-
-def _missing_required_competence_types(
-    available_competence_types: set[CompetenceType],
-    selected_competence_thresholds: dict[CompetenceType, list[int]],
-) -> set[CompetenceType]:
-    return {
-        competence_type
-        for competence_type in available_competence_types
-        if 0 not in selected_competence_thresholds.get(competence_type, [])
-    }
 
 
 async def validate_learning_trajectory(
@@ -522,7 +489,7 @@ async def create_learning_trajectory(
             trajectory=trajectory,
             topic_id=topic_payload.topic_id,
             position=topic_payload.position,
-            threshold=topic_payload.threshold,
+            threshold=0,
         )
         session.add(trajectory_topic)
 
@@ -573,7 +540,7 @@ async def update_learning_trajectory_topic_order(
             LearningTrajectoryTopicCreate(
                 topic_id=topic_id,
                 position=index + 1,
-                threshold=topics_by_id[topic_id].threshold,
+                threshold=0,
                 elements=[
                     LearningTrajectoryElementCreate(
                         element_id=element.element_id,
@@ -623,7 +590,7 @@ async def update_learning_trajectory_status(
                 LearningTrajectoryTopicCreate(
                     topic_id=trajectory_topic.topic_id,
                     position=trajectory_topic.position,
-                    threshold=trajectory_topic.threshold,
+                    threshold=0,
                     elements=[
                         LearningTrajectoryElementCreate(
                             element_id=element.element_id,

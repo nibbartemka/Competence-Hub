@@ -28,6 +28,7 @@ import {
   GraphNodeRuntimeStateProvider,
   type GraphNodeRuntimeState,
 } from "./components/GraphNode";
+import { useNotifications } from "./notifications";
 import { getSessionHomePath } from "./session";
 import { disciplinePathValue } from "./disciplineRouting";
 import {
@@ -84,12 +85,6 @@ const GRAPH_OPTIONS: RGOptions = {
   hideNodeContentByZoom: false,
   lineUseTextPath: false,
   defaultLineTextOffset_y: -10,
-};
-
-type ToastMessage = {
-  id: string;
-  kind: "error" | "success";
-  text: string;
 };
 
 const TASK_TYPE_LABELS = {
@@ -366,57 +361,70 @@ function studentTopicMastery(
   trajectoryTopic: LearningTrajectoryTopic,
   masteryByElementId: Map<string, number>,
 ) {
-  if (!trajectoryTopic.elements.length) {
+  const topicElements = trajectoryTopic.elements ?? [];
+  if (!topicElements.length) {
     return 100;
   }
 
-  const total = trajectoryTopic.elements.reduce(
+  const total = topicElements.reduce(
     (sum, element) => sum + (masteryByElementId.get(element.element_id) ?? 0),
     0,
   );
-  return Math.round(total / trajectoryTopic.elements.length);
+  return Math.round(total / topicElements.length);
 }
 
 function studentTopicLockReason(
+  graph: DisciplineKnowledgeGraph | null,
   trajectory: LearningTrajectory,
   trajectoryTopic: LearningTrajectoryTopic,
-  topicOrder: string[],
-  topicById: Map<string, Topic>,
   masteryByElementId: Map<string, number>,
 ) {
-  const orderedTopics = topicOrder
-    .map((topicId) => trajectory.topics.find((topic) => topic.topic_id === topicId))
-    .filter((topic): topic is LearningTrajectoryTopic => Boolean(topic));
+  if (!graph) {
+    return "";
+  }
 
-  for (const previousTopic of orderedTopics) {
-    if (previousTopic.position >= trajectoryTopic.position) {
-      break;
-    }
-
-    const mastery = studentTopicMastery(previousTopic, masteryByElementId);
-    if (mastery < previousTopic.threshold) {
-      const previousName = topicById.get(previousTopic.topic_id)?.name ?? "предыдущей теме";
-      return `Сначала нужно набрать ${previousTopic.threshold} баллов по теме «${previousName}».`;
+  const elementNameById = new Map(graph.knowledge_elements.map((element) => [element.id, element.name]));
+  const thresholdsByElementId = new Map<string, number>();
+  for (const topic of trajectory.topics) {
+    for (const element of topic.elements ?? []) {
+      const current = thresholdsByElementId.get(element.element_id) ?? -1;
+      if (element.threshold > current) {
+        thresholdsByElementId.set(element.element_id, element.threshold);
+      }
     }
   }
 
-  return "";
+  const requiredLinks = graph.topic_knowledge_elements.filter(
+    (link) => link.topic_id === trajectoryTopic.topic_id && link.role === "required",
+  );
+  if (!requiredLinks.length) {
+    return "";
+  }
+
+  const missingElementNames = requiredLinks
+    .filter((link) => {
+      const threshold = thresholdsByElementId.get(link.element_id);
+      if (threshold == null) {
+        return true;
+      }
+      return (masteryByElementId.get(link.element_id) ?? 0) < threshold;
+    })
+    .map((link) => elementNameById.get(link.element_id) ?? "неизвестный элемент");
+
+  if (!missingElementNames.length) {
+    return "";
+  }
+
+  return `Тема откроется, когда будут освоены требуемые элементы: ${missingElementNames.join(", ")}.`;
 }
 
 function studentTopicUnlocked(
+  graph: DisciplineKnowledgeGraph | null,
   trajectory: LearningTrajectory,
   trajectoryTopic: LearningTrajectoryTopic,
-  topicOrder: string[],
-  topicById: Map<string, Topic>,
   masteryByElementId: Map<string, number>,
 ) {
-  return !studentTopicLockReason(
-    trajectory,
-    trajectoryTopic,
-    topicOrder,
-    topicById,
-    masteryByElementId,
-  );
+  return !studentTopicLockReason(graph, trajectory, trajectoryTopic, masteryByElementId);
 }
 
 function buildTrajectoryScene(
@@ -438,9 +446,10 @@ function buildTrajectoryScene(
     const topic = topicById.get(topicId);
     const trajectoryTopic = trajectoryTopicByTopicId.get(topicId);
     if (!topic || !trajectoryTopic) return;
+    const topicElements = trajectoryTopic.elements ?? [];
 
     const nodeId = `topic:${topic.id}`;
-    const selectedElementsCount = trajectoryTopic.elements.length;
+    const selectedElementsCount = topicElements.length;
     const requiredCount = graph.topic_knowledge_elements.filter(
       (link) => link.topic_id === topic.id && link.role === "required",
     ).length;
@@ -458,7 +467,6 @@ function buildTrajectoryScene(
       subtitle: `Шаг ${index + 1} в траектории`,
       description: topic.description ?? "Описание темы пока не добавлено.",
       metrics: [
-        `Порог ${trajectoryTopic.threshold}`,
         `${selectedElementsCount} элементов`,
         `Req ${requiredCount}`,
         `New ${formedCount}`,
@@ -486,7 +494,6 @@ function buildTrajectoryScene(
       subtitle: `Шаг ${index + 1} в траектории`,
       description: topic.description ?? "Описание темы пока не добавлено.",
       chips: [
-        { label: `Порог темы: ${trajectoryTopic.threshold}`, tone: "topic" },
         { label: `Элементов: ${selectedElementsCount}`, tone: "formed" },
       ],
       stats: [
@@ -565,16 +572,16 @@ function buildStudentTrajectoryTopicsScene(
     const topic = topicById.get(topicId);
     const trajectoryTopic = trajectoryTopicByTopicId.get(topicId);
     if (!topic || !trajectoryTopic) return;
+    const topicElements = trajectoryTopic.elements ?? [];
 
     const nodeId = `topic:${topic.id}`;
     const row = Math.floor(index / columns);
     const col = index % columns;
     const topicMastery = studentTopicMastery(trajectoryTopic, masteryByElementId);
     const lockReason = studentTopicLockReason(
+      graph,
       trajectory,
       trajectoryTopic,
-      topicOrder,
-      topicById,
       masteryByElementId,
     );
     const isUnlocked = !lockReason;
@@ -590,11 +597,7 @@ function buildStudentTrajectoryTopicsScene(
       title: topic.name,
       subtitle: `Шаг ${index + 1}`,
       description: topic.description ?? "Описание темы пока не добавлено.",
-      metrics: [
-        `${trajectoryTopic.elements.length} элементов`,
-        `Порог ${trajectoryTopic.threshold}`,
-        `Балл ${topicMastery}`,
-      ],
+      metrics: [`${topicElements.length} элементов`, `Балл ${topicMastery}`],
       progressValue: topicMastery,
       progressLabel: "Прогресс темы",
       hint: isUnlocked ? "Открыть тему" : "Тема закрыта",
@@ -621,11 +624,10 @@ function buildStudentTrajectoryTopicsScene(
       subtitle: `Шаг ${index + 1} траектории`,
       description: topic.description ?? "Описание темы пока не добавлено.",
       chips: [
-        { label: `Порог темы: ${trajectoryTopic.threshold}`, tone: "topic" },
         { label: `Балл темы: ${topicMastery}`, tone: isUnlocked ? "formed" : "required" },
       ],
       stats: [
-        { label: "Элементов для изучения", value: String(trajectoryTopic.elements.length) },
+        { label: "Элементов для изучения", value: String(topicElements.length) },
         { label: "Текущий балл", value: String(topicMastery) },
       ],
       footnote: isUnlocked
@@ -690,13 +692,14 @@ function buildStudentTrajectoryElementsScene(
   }
 
   const focusNodeId = `topic-focus:${topic.id}`;
-  const selectedElements = trajectoryTopic.elements
+  const trajectoryElements = trajectoryTopic.elements ?? [];
+  const selectedElements = trajectoryElements
     .map((item) => ({
       trajectoryElement: item,
       element: elementById.get(item.element_id),
     }))
     .filter(
-      (item): item is { trajectoryElement: typeof trajectoryTopic.elements[number]; element: KnowledgeElement } =>
+      (item): item is { trajectoryElement: typeof trajectoryElements[number]; element: KnowledgeElement } =>
         Boolean(item.element),
     );
   const selectedElementIds = new Set(selectedElements.map((item) => item.element.id));
@@ -719,7 +722,6 @@ function buildStudentTrajectoryElementsScene(
         description: topic.description ?? "Описание темы пока не добавлено.",
         metrics: [
           `${selectedElements.length} элементов`,
-          `Порог ${trajectoryTopic.threshold}`,
         ],
         hint: "К темам",
         isSelected: true,
@@ -734,7 +736,6 @@ function buildStudentTrajectoryElementsScene(
     title: topic.name,
     subtitle: "Формируемые элементы",
     description: topic.description ?? "Описание темы пока не добавлено.",
-    chips: [{ label: `Порог темы: ${trajectoryTopic.threshold}`, tone: "topic" }],
     stats: [{ label: "Элементов для изучения", value: String(selectedElements.length) }],
     footnote: "Нажми на центральную карточку, чтобы вернуться к списку тем.",
   };
@@ -881,7 +882,6 @@ export default function TrajectoryDetailPage() {
   const [draggedTopicId, setDraggedTopicId] = useState("");
   const [dragOverTopicId, setDragOverTopicId] = useState("");
   const [studentPreviewOpen, setStudentPreviewOpen] = useState(false);
-  const [notifications, setNotifications] = useState<ToastMessage[]>([]);
   const [tasks, setTasks] = useState<LearningTrajectoryTask[]>([]);
   const [taskTopicId, setTaskTopicId] = useState("");
   const [taskPrimaryElementId, setTaskPrimaryElementId] = useState("");
@@ -933,17 +933,7 @@ export default function TrajectoryDetailPage() {
   const showStudentView = isStudentMode || studentPreviewOpen;
   const resolvedDisciplineId = graph?.discipline.id ?? "";
   const resolvedDisciplinePath = disciplinePathValue(graph?.discipline, disciplineId ?? "");
-
-  function pushNotification(kind: ToastMessage["kind"], text: string) {
-    setNotifications((current) => [
-      ...current,
-      { id: `${Date.now()}-${Math.random().toString(36).slice(2)}`, kind, text },
-    ]);
-  }
-
-  function dismissNotification(id: string) {
-    setNotifications((current) => current.filter((notification) => notification.id !== id));
-  }
+  const { pushNotification } = useNotifications();
 
   useEffect(() => {
     if (searchParams.get("preview") === "student") {
@@ -1469,8 +1459,8 @@ export default function TrajectoryDetailPage() {
         task.prompt,
         task.topic_name,
         task.primary_element.name,
-        ...task.related_elements.map((element) => element.name),
-        ...task.checked_relations.map(
+        ...(task.related_elements ?? []).map((element) => element.name),
+        ...(task.checked_relations ?? []).map(
           (relation) =>
             `${relation.source_element_name} ${CHECKED_TASK_RELATION_LABELS[relation.relation_type] ?? relation.relation_type} ${relation.target_element_name}`,
         ),
@@ -1908,8 +1898,8 @@ export default function TrajectoryDetailPage() {
     setTasksModalSection("create");
     setTaskTopicId(task.topic_id);
     setTaskPrimaryElementId(task.primary_element.element_id);
-    setTaskRelatedElementIds(task.related_elements.map((element) => element.element_id));
-    setTaskCheckedRelationIds(task.checked_relations.map((relation) => relation.relation_id));
+    setTaskRelatedElementIds((task.related_elements ?? []).map((element) => element.element_id));
+    setTaskCheckedRelationIds((task.checked_relations ?? []).map((relation) => relation.relation_id));
     setTaskSingleCorrectElementId(task.content.correct_element_id ?? task.primary_element.element_id);
     setTaskMultipleCorrectRelatedElementIds(task.content.correct_related_element_ids ?? []);
     setTaskDistractorElementIds(task.content.distractor_element_ids ?? []);
@@ -2428,7 +2418,7 @@ export default function TrajectoryDetailPage() {
                       <strong>
                         {index + 1}. {topicName(topicById, topicId)}
                       </strong>
-                      <span>{trajectoryTopic?.elements.length ?? 0} элементов</span>
+                      <span>{trajectoryTopic?.elements?.length ?? 0} элементов</span>
                     </div>
                     <button
                       aria-label={`Перетащить тему ${topicName(topicById, topicId)}`}
@@ -2916,12 +2906,12 @@ export default function TrajectoryDetailPage() {
                       )}
                     </span>
                     <span>{task.primary_element.name}</span>
-                    {task.checked_relations.map((relation) => (
+                    {(task.checked_relations ?? []).map((relation) => (
                       <span key={relation.relation_id}>
                         {relation.source_element_name} {CHECKED_TASK_RELATION_LABELS[relation.relation_type] ?? relation.relation_type} {relation.target_element_name}
                       </span>
                     ))}
-                    {task.related_elements.map((element) => (
+                    {(task.related_elements ?? []).map((element) => (
                       <span key={element.element_id}>{element.name}</span>
                     ))}
                   </div>
@@ -2943,25 +2933,6 @@ export default function TrajectoryDetailPage() {
 
   return (
     <div className="page-shell trajectory-page trajectory-detail-page immersive-page immersive-page--trajectory">
-      {notifications.length ? (
-        <div className="toast-stack" aria-live="polite" aria-label="Уведомления">
-          {notifications.map((notification) => (
-            <article
-              className={`toast-message toast-message--${notification.kind}`}
-              key={notification.id}
-            >
-              <p>{notification.text}</p>
-              <button
-                className="toast-message__close"
-                aria-label="Закрыть уведомление"
-                onClick={() => dismissNotification(notification.id)}
-                type="button"
-              />
-            </article>
-          ))}
-        </div>
-      ) : null}
-
       <header className="hero trajectory-hero immersive-page__hero">
         <div>
           <p className="hero__eyebrow">Learning path</p>
@@ -3253,7 +3224,7 @@ export default function TrajectoryDetailPage() {
                       </div>
                       <div className="trajectory-preview-elements">
                         {(trajectoryTopic?.elements ?? []).length ? (
-                          trajectoryTopic!.elements.map((element) => (
+                          (trajectoryTopic?.elements ?? []).map((element) => (
                             <span key={element.id}>
                               {elementName(elementById, element.element_id)} · порог{" "}
                               {element.threshold}
@@ -3325,7 +3296,7 @@ export default function TrajectoryDetailPage() {
                         <strong>
                           {index + 1}. {topicName(topicById, topicId)}
                         </strong>
-                        <span>{trajectoryTopic?.elements.length ?? 0} элементов</span>
+                        <span>{trajectoryTopic?.elements?.length ?? 0} элементов</span>
                       </div>
                       <button
                         aria-label={`Перетащить тему ${topicName(topicById, topicId)}`}
@@ -3653,7 +3624,7 @@ export default function TrajectoryDetailPage() {
                   <p>{task.prompt}</p>
                   <div className="trajectory-task-card__chips">
                     <span>{task.primary_element.name}</span>
-                    {task.related_elements.map((element) => (
+                    {(task.related_elements ?? []).map((element) => (
                       <span key={element.element_id}>{element.name}</span>
                     ))}
                   </div>

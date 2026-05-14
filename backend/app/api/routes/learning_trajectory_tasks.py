@@ -336,12 +336,6 @@ def _trajectory_topic_is_unlocked(
             and mastery_by_element_id.get(link.element_id, 0) >= thresholds[link.element_id]
             for link in required_links
         )
-
-    for previous_topic in trajectory.topics:
-        if previous_topic.position >= trajectory_topic.position:
-            continue
-        if _trajectory_topic_mastery(previous_topic, mastery_by_element_id) < previous_topic.threshold:
-            return False
     return True
 
 

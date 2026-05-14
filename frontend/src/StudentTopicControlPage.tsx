@@ -405,7 +405,7 @@ export default function StudentTopicControlPage() {
           <p className="hero__eyebrow">Контроль знаний</p>
           <h1>{loading && !control ? "Загрузка темы" : control?.topic_name ?? "Тема"}</h1>
           <p className="hero__subtitle">
-            Порог темы: {control?.topic_threshold ?? 0}. Текущий балл темы: {control?.topic_mastery ?? 0}.
+            Текущий балл темы: {control?.topic_mastery ?? 0}.
           </p>
         </div>
         <div className="student-control-header__meta">

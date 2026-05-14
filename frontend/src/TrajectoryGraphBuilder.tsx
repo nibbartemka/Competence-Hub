@@ -20,6 +20,7 @@ import {
   GraphNodeRuntimeStateProvider,
   type GraphNodeRuntimeState,
 } from "./components/GraphNode";
+import { useNotifications } from "./notifications";
 import { disciplinePathValue, matchesDisciplineIdentifier } from "./disciplineRouting";
 import {
   buildFocusedScene,
@@ -95,15 +96,6 @@ const ELEMENT_RELATION_LABELS: Record<KnowledgeElementRelationType, string> = {
   automates: "переходит во владение",
 };
 
-type Feedback = {
-  kind: "error" | "success";
-  text: string;
-};
-
-type ToastMessage = Feedback & {
-  id: string;
-};
-
 type TrajectoryDraftSnapshot = {
   version: 1;
   trajectoryName: string;
@@ -112,7 +104,6 @@ type TrajectoryDraftSnapshot = {
   targetMode: "group" | "subgroup";
   selectedSubgroupId: string;
   selectedTopicIds: string[];
-  topicThresholds: Record<string, number>;
   selectedElementsByTopic: Record<string, string[]>;
   elementThresholds: Record<string, number>;
   updatedAt: string;
@@ -147,6 +138,46 @@ function clampThreshold(value: number) {
 
 function buildElementKey(topicId: string, elementId: string) {
   return `${topicId}:${elementId}`;
+}
+
+function sanitizeDraftSelection(
+  topicIds: string[],
+  selectedElementsByTopic: Record<string, string[]>,
+  elementThresholds: Record<string, number>,
+  validElementIdsByTopic: Map<string, Set<string>>,
+) {
+  const nextTopicIds = topicIds.filter((topicId) => validElementIdsByTopic.has(topicId));
+  const allowedTopicIds = new Set(nextTopicIds);
+
+  const nextSelectedElementsByTopic: Record<string, string[]> = {};
+  for (const topicId of nextTopicIds) {
+    const allowedElementIds = validElementIdsByTopic.get(topicId) ?? new Set<string>();
+    const filteredElementIds = (selectedElementsByTopic[topicId] ?? []).filter((elementId) =>
+      allowedElementIds.has(elementId),
+    );
+    if (filteredElementIds.length) {
+      nextSelectedElementsByTopic[topicId] = filteredElementIds;
+    }
+  }
+
+  const nextElementThresholds: Record<string, number> = {};
+  for (const [key, value] of Object.entries(elementThresholds)) {
+    const [topicId, elementId] = key.split(":");
+    if (!topicId || !elementId || !allowedTopicIds.has(topicId)) {
+      continue;
+    }
+    const allowedElementIds = validElementIdsByTopic.get(topicId);
+    if (!allowedElementIds?.has(elementId)) {
+      continue;
+    }
+    nextElementThresholds[key] = value;
+  }
+
+  return {
+    selectedTopicIds: nextTopicIds,
+    selectedElementsByTopic: nextSelectedElementsByTopic,
+    elementThresholds: nextElementThresholds,
+  };
 }
 
 function parseElementNodeId(nodeId: string) {
@@ -249,7 +280,6 @@ export default function TrajectoryGraphBuilder() {
   const [targetMode, setTargetMode] = useState<"group" | "subgroup">("group");
   const [selectedSubgroupId, setSelectedSubgroupId] = useState("");
   const [selectedTopicIds, setSelectedTopicIds] = useState<string[]>([]);
-  const [topicThresholds, setTopicThresholds] = useState<Record<string, number>>({});
   const [selectedElementsByTopic, setSelectedElementsByTopic] = useState<
     Record<string, string[]>
   >({});
@@ -268,25 +298,11 @@ export default function TrajectoryGraphBuilder() {
   });
   const [draggedTopicId, setDraggedTopicId] = useState("");
   const [dragOverTopicId, setDragOverTopicId] = useState("");
-  const [notifications, setNotifications] = useState<ToastMessage[]>([]);
   const [selectedTopicsModalOpen, setSelectedTopicsModalOpen] = useState(false);
+  const { pushNotification: pushAppNotification } = useNotifications();
 
-  function pushNotification(message: Feedback) {
-    const id = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
-    setNotifications((current) => {
-      const alreadyShown = current.some(
-        (notification) =>
-          notification.kind === message.kind && notification.text === message.text,
-      );
-      if (alreadyShown) {
-        return current;
-      }
-      return [...current, { ...message, id }];
-    });
-  }
-
-  function dismissNotification(id: string) {
-    setNotifications((current) => current.filter((notification) => notification.id !== id));
+  function pushNotification(message: { kind: "error" | "success"; text: string }) {
+    pushAppNotification(message.kind, message.text);
   }
 
   const activeDiscipline = useMemo(
@@ -384,6 +400,14 @@ export default function TrajectoryGraphBuilder() {
     return result;
   }, [elementById, graph]);
 
+  const validElementIdsByTopic = useMemo(() => {
+    const result = new Map<string, Set<string>>();
+    for (const [topicId, elements] of formedElementsByTopic.entries()) {
+      result.set(topicId, new Set(elements.map((element) => element.id)));
+    }
+    return result;
+  }, [formedElementsByTopic]);
+
   const selectedTopicSet = useMemo(
     () => new Set(selectedTopicIds),
     [selectedTopicIds],
@@ -406,9 +430,6 @@ export default function TrajectoryGraphBuilder() {
     }
     if (!selectedTopicIds.length) {
       errors.push("Кликни по графу и выбери хотя бы одну тему.");
-    }
-    if (selectedTopicIds.length && !selectedTopicIds.some((id) => topicThresholds[id] === 0)) {
-      errors.push("Хотя бы одна тема должна иметь порог 0.");
     }
 
     if (graph) {
@@ -505,7 +526,6 @@ export default function TrajectoryGraphBuilder() {
     selectedTopicSet,
     targetMode,
     topicById,
-    topicThresholds,
     trajectoryName,
   ]);
 
@@ -546,9 +566,7 @@ export default function TrajectoryGraphBuilder() {
             : isBlocked
               ? `Сначала нужно: ${missingElements.map((item) => item.name).join(", ")}`
               : data.subtitle,
-          metrics: isSelected
-            ? [...data.metrics, `Порог ${topicThresholds[topicId] ?? 100}`]
-            : data.metrics,
+          metrics: data.metrics,
           hint: isSelected ? "Убрать" : "Выбрать",
           secondaryHint: "Элементы",
         };
@@ -693,7 +711,6 @@ export default function TrajectoryGraphBuilder() {
             selectedNodeIds.add(nodeId);
             sequenceNumberByNodeId.set(nodeId, selectedIndex + 1);
             subtitleByNodeId.set(nodeId, `Шаг ${selectedIndex + 1} в траектории`);
-            metricsByNodeId.set(nodeId, [`Порог ${topicThresholds[topic.id] ?? 100}`]);
           }
           if (isBlocked) {
             disabledNodeIds.add(nodeId);
@@ -918,7 +935,6 @@ export default function TrajectoryGraphBuilder() {
       setTargetMode(draft.targetMode === "subgroup" ? "subgroup" : "group");
       setSelectedSubgroupId(draft.selectedSubgroupId ?? "");
       setSelectedTopicIds(draft.selectedTopicIds ?? []);
-      setTopicThresholds(draft.topicThresholds ?? {});
       setSelectedElementsByTopic(draft.selectedElementsByTopic ?? {});
       setElementThresholds(draft.elementThresholds ?? {});
       pushNotification({ kind: "success", text: "Черновик траектории восстановлен." });
@@ -930,6 +946,43 @@ export default function TrajectoryGraphBuilder() {
       setDraftRestored(true);
     }
   }, [disciplineId, draftRestored]);
+
+  useEffect(() => {
+    if (!draftRestored || !graph) return;
+
+    const sanitized = sanitizeDraftSelection(
+      selectedTopicIds,
+      selectedElementsByTopic,
+      elementThresholds,
+      validElementIdsByTopic,
+    );
+    const topicsChanged =
+      sanitized.selectedTopicIds.length !== selectedTopicIds.length ||
+      sanitized.selectedTopicIds.some((topicId, index) => topicId !== selectedTopicIds[index]);
+    const elementsChanged =
+      JSON.stringify(sanitized.selectedElementsByTopic) !== JSON.stringify(selectedElementsByTopic);
+    const thresholdsChanged =
+      JSON.stringify(sanitized.elementThresholds) !== JSON.stringify(elementThresholds);
+
+    if (!topicsChanged && !elementsChanged && !thresholdsChanged) {
+      return;
+    }
+
+    setSelectedTopicIds(sanitized.selectedTopicIds);
+    setSelectedElementsByTopic(sanitized.selectedElementsByTopic);
+    setElementThresholds(sanitized.elementThresholds);
+    pushNotification({
+      kind: "success",
+      text: "Черновик траектории обновлен под текущий граф знаний. Устаревшие темы и элементы убраны.",
+    });
+  }, [
+    draftRestored,
+    elementThresholds,
+    graph,
+    selectedElementsByTopic,
+    selectedTopicIds,
+    validElementIdsByTopic,
+  ]);
 
   useEffect(() => {
     if (view.level !== "elements" && relationshipFocusEnabled) {
@@ -948,7 +1001,6 @@ export default function TrajectoryGraphBuilder() {
       targetMode,
       selectedSubgroupId,
       selectedTopicIds,
-      topicThresholds,
       selectedElementsByTopic,
       elementThresholds,
       updatedAt: new Date().toISOString(),
@@ -976,7 +1028,6 @@ export default function TrajectoryGraphBuilder() {
     selectedTeacherId,
     selectedTopicIds,
     targetMode,
-    topicThresholds,
     trajectoryName,
   ]);
 
@@ -1188,10 +1239,6 @@ export default function TrajectoryGraphBuilder() {
     }
 
     setSelectedTopicIds((current) => [...current, topicId]);
-    setTopicThresholds((current) => ({
-      ...current,
-      [topicId]: current[topicId] ?? (selectedTopicIds.length === 0 ? 0 : 100),
-    }));
   }
 
   function moveTopic(topicId: string, direction: -1 | 1) {
@@ -1295,12 +1342,6 @@ export default function TrajectoryGraphBuilder() {
     });
   }
 
-  function updateTopicThreshold(topicId: string, value: number) {
-    setTopicThresholds((current) => ({
-      ...current,
-      [topicId]: clampThreshold(value),
-    }));
-  }
 
   function updateElementThreshold(topicId: string, elementId: string, value: number) {
     setElementThresholds((current) => ({
@@ -1339,7 +1380,7 @@ export default function TrajectoryGraphBuilder() {
         topics: selectedTopicIds.map((topicId, index) => ({
           topic_id: topicId,
           position: index + 1,
-          threshold: topicThresholds[topicId] ?? 100,
+          threshold: 0,
           elements: (selectedElementsByTopic[topicId] ?? []).map((elementId) => ({
             element_id: elementId,
             threshold: elementThresholds[buildElementKey(topicId, elementId)] ?? 0,
@@ -1352,7 +1393,6 @@ export default function TrajectoryGraphBuilder() {
       }
       setTrajectoryName("");
       setSelectedTopicIds([]);
-      setTopicThresholds({});
       setSelectedElementsByTopic({});
       setElementThresholds({});
       await refreshTrajectories();
@@ -1430,16 +1470,6 @@ export default function TrajectoryGraphBuilder() {
                     </button>
                   </div>
 
-                  <label className="trajectory-threshold-field">
-                    Порог темы
-                    <input
-                      max={100}
-                      min={0}
-                      onChange={(event) => updateTopicThreshold(topicId, Number(event.target.value))}
-                      type="number"
-                      value={topicThresholds[topicId] ?? 100}
-                    />
-                  </label>
 
                   {selectedElementIds.length ? (
                     <div className="trajectory-selected-elements">
@@ -1513,26 +1543,6 @@ export default function TrajectoryGraphBuilder() {
           </button>
         </div>
       </header>
-
-      {notifications.length ? (
-        <div className="toast-stack" aria-live="polite" aria-label="Уведомления">
-          {notifications.map((notification) => (
-            <article
-              className={`toast-message toast-message--${notification.kind}`}
-              key={notification.id}
-            >
-              <p>{notification.text}</p>
-              <button
-                className="toast-message__close"
-                aria-label="Закрыть уведомление"
-                onClick={() => dismissNotification(notification.id)}
-                type="button"
-              />
-            </article>
-          ))}
-        </div>
-      ) : null}
-
       <div className="trajectory-workspace">
         <aside className="trajectory-sidebar">
           <section className="card card--soft">
