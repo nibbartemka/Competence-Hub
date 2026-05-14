@@ -584,6 +584,13 @@ export function GraphEditor({
   }, [elementCompetence, elementOperationRef]);
 
   useEffect(() => {
+    if (elementCompetence !== "can" || !sortedTopics.length || elementCreateTopicId) {
+      return;
+    }
+    setElementCreateTopicId(sortedTopics[0].id);
+  }, [elementCompetence, elementCreateTopicId, sortedTopics]);
+
+  useEffect(() => {
     if (elementCompetence !== "can") {
       if (elementRealizedKnowledgeIds.length) {
         setElementRealizedKnowledgeIds([]);
