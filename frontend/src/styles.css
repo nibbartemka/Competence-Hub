@@ -341,6 +341,14 @@ body:has(.session-profile-header) .home-shell {
   margin-top: 12px;
 }
 
+.graph-orphans-card {
+  width: 100%;
+}
+
+.graph-orphans-card .orphan-list {
+  margin-top: 0;
+}
+
 .orphan-list__chip {
   display: inline-flex;
   align-items: center;
@@ -2433,6 +2441,19 @@ body:has(.session-profile-header) .home-shell {
   gap: 10px;
 }
 
+.trajectory-task-competence-tabs {
+  width: fit-content;
+}
+
+.trajectory-task-placeholder {
+  display: grid;
+  gap: 8px;
+  padding: 14px;
+  border-radius: 18px;
+  border: 1px solid rgba(31, 55, 84, 0.1);
+  background: rgba(255, 255, 255, 0.8);
+}
+
 .trajectory-task-template,
 .student-task-answer {
   display: grid;
@@ -2508,6 +2529,44 @@ body:has(.session-profile-header) .home-shell {
   align-items: center;
   gap: 10px;
   padding: 10px 12px;
+}
+
+.operation-input-editor {
+  display: grid;
+  gap: 12px;
+}
+
+.operation-input-editor__section {
+  display: grid;
+  gap: 10px;
+}
+
+.operation-input-editor__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.operation-input-editor__rows {
+  display: grid;
+  gap: 10px;
+}
+
+.operation-input-editor__row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: center;
+}
+
+.operation-input-editor__row--edge {
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto;
+}
+
+.operation-input-editor__row input,
+.operation-input-editor__row select {
+  width: 100%;
 }
 
 .trajectory-task-preview {
@@ -2964,6 +3023,8 @@ body:has(.session-profile-header) .home-shell {
   .trajectory-controls,
   .trajectory-layout,
   .trajectory-task-editor__grid,
+  .operation-input-editor__row,
+  .operation-input-editor__row--edge,
   .admin-discipline-toolbar,
   .admin-discipline-create,
   .admin-discipline-split,
@@ -6125,6 +6186,82 @@ body:has(.session-profile-header) .home-shell {
   gap: 14px;
 }
 
+.inspector-card--validation {
+  display: grid;
+  gap: 14px;
+}
+
+.knowledge-validation__run {
+  width: 100%;
+}
+
+.knowledge-validation-list {
+  display: grid;
+  gap: 10px;
+}
+
+.knowledge-validation-item {
+  display: grid;
+  gap: 10px;
+  padding: 14px;
+  border: 1px solid rgba(125, 148, 186, 0.16);
+  border-radius: 18px;
+  background: rgba(246, 250, 255, 0.78);
+}
+
+.knowledge-validation-item--passed {
+  border-color: rgba(19, 117, 91, 0.2);
+  background: rgba(19, 117, 91, 0.07);
+}
+
+.knowledge-validation-item--failed {
+  border-color: rgba(162, 59, 50, 0.2);
+  background: rgba(162, 59, 50, 0.07);
+}
+
+.knowledge-validation-item__head {
+  display: grid;
+  grid-template-columns: 24px minmax(0, 1fr);
+  gap: 10px;
+  align-items: start;
+}
+
+.knowledge-validation-item__head span {
+  display: grid;
+  width: 24px;
+  height: 24px;
+  place-items: center;
+  border-radius: 50%;
+  font-weight: 900;
+}
+
+.knowledge-validation-item--passed .knowledge-validation-item__head span {
+  background: rgba(19, 117, 91, 0.14);
+  color: #12694f;
+}
+
+.knowledge-validation-item--failed .knowledge-validation-item__head span {
+  background: rgba(162, 59, 50, 0.14);
+  color: #96342a;
+}
+
+.knowledge-validation-item__head strong {
+  color: #223a5c;
+  line-height: 1.35;
+}
+
+.knowledge-validation-item__details {
+  justify-self: start;
+}
+
+.knowledge-validation-item ul {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  padding-left: 20px;
+  color: #6f86a6;
+}
+
 .session-profile-sheet__actions {
   display: flex;
   flex-wrap: wrap;
@@ -6437,9 +6574,30 @@ body:has(.session-profile-header) .home-shell {
 }
 
 .knowledge-graph-import-modal__section h3 {
-  margin: 0 0 8px;
+  margin: 0;
   font-size: 1rem;
   color: #223a5c;
+}
+
+.knowledge-graph-import-modal__section-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 8px;
+}
+
+.knowledge-graph-import-modal__bulk-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 6px;
+}
+
+.knowledge-graph-import-modal__bulk-actions .ghost-button {
+  min-height: 32px;
+  padding: 6px 10px;
+  font-size: 0.82rem;
 }
 
 .knowledge-graph-import-modal__list {

@@ -6,6 +6,7 @@ export type TopicDependencyRelationType = "requires" | "possible_flow";
 export type KnowledgeElementRelationType =
   | "requires"
   | "builds_on"
+  | "relies_on"
   | "contains"
   | "part_of"
   | "property_of"

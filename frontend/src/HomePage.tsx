@@ -154,6 +154,7 @@ function relationLabel(value: string) {
     implements: "Реализует",
     part_of: "Является частью",
     property_of: "Свойство объекта",
+    relies_on: "Опирается на",
     refines: "Уточняет",
     requires: "Требует",
     similar: "Родственно",

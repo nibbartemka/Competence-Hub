@@ -39,6 +39,13 @@ import type {
     ViewMode,
 } from "./types";
 
+type KnowledgeGraphValidationRequirement = {
+    id: "formed-only-topic" | "topic-competence-coverage";
+    label: string;
+    passed: boolean;
+    details: string[];
+};
+
 const API_BASE =
     import.meta.env.VITE_API_BASE?.replace(/\/$/, "") ?? "http://127.0.0.1:8000/api";
 
@@ -179,6 +186,73 @@ function filterElementSceneByCompetence(
     };
 }
 
+function competenceLabel(value: CompetenceType) {
+    if (value === "know") return "Знать";
+    if (value === "can") return "Уметь";
+    return "Владеть";
+}
+
+function validateKnowledgeGraph(
+    graphData: DisciplineKnowledgeGraph,
+): KnowledgeGraphValidationRequirement[] {
+    const elementById = new Map(
+        graphData.knowledge_elements.map((element) => [element.id, element]),
+    );
+    const linksByTopicId = new Map<string, TopicKnowledgeElement[]>();
+
+    for (const topic of graphData.topics) {
+        linksByTopicId.set(topic.id, []);
+    }
+    for (const link of graphData.topic_knowledge_elements) {
+        linksByTopicId.set(link.topic_id, [...(linksByTopicId.get(link.topic_id) ?? []), link]);
+    }
+
+    const formedOnlyTopics = graphData.topics.filter((topic) => {
+        const links = linksByTopicId.get(topic.id) ?? [];
+        return links.length > 0 && links.every((link) => link.role === "formed");
+    });
+
+    const coverageIssues = graphData.topics.flatMap((topic) => {
+        const formedCompetences = new Set(
+            (linksByTopicId.get(topic.id) ?? [])
+                .filter((link) => link.role === "formed")
+                .map((link) => elementById.get(link.element_id)?.competence_type)
+                .filter(Boolean) as CompetenceType[],
+        );
+        const missing = (["know", "can", "master"] as CompetenceType[]).filter(
+            (competence) => !formedCompetences.has(competence),
+        );
+        return missing.length
+            ? [
+                  `${topic.name}: нет формируемых элементов ${missing
+                      .map((competence) => `«${competenceLabel(competence)}»`)
+                      .join(", ")}.`,
+              ]
+            : [];
+    });
+
+    return [
+        {
+            id: "formed-only-topic",
+            label: "Есть хотя бы одна тема только с формируемыми элементами",
+            passed: formedOnlyTopics.length > 0,
+            details: formedOnlyTopics.length
+                ? []
+                : [
+                      "Не найдено ни одной темы, где все привязанные элементы имеют роль «Формируется».",
+                  ],
+        },
+        {
+            id: "topic-competence-coverage",
+            label: "Каждая тема содержит формируемые элементы «Знать», «Уметь» и «Владеть»",
+            passed: graphData.topics.length > 0 && coverageIssues.length === 0,
+            details: graphData.topics.length
+                ? coverageIssues
+                : ["В дисциплине пока нет тем для проверки этого требования."],
+        },
+    ];
+}
+
 async function fetchKnowledgeGraphDirect(
     disciplineId: string,
 ): Promise<{ debug: string; graph: DisciplineKnowledgeGraph }> {
@@ -242,6 +316,9 @@ export function KnowledgeGraphView({ disciplineId }: KnowledgeGraphViewProps) {
     const [importOpen, setImportOpen] = useState(false);
     const [competenceFilters, setCompetenceFilters] = useState(DEFAULT_COMPETENCE_FILTERS);
     const [relationshipFocusEnabled, setRelationshipFocusEnabled] = useState(false);
+    const [validationRequirements, setValidationRequirements] =
+        useState<KnowledgeGraphValidationRequirement[] | null>(null);
+    const [expandedValidationIds, setExpandedValidationIds] = useState<Set<string>>(new Set());
     const requestedEditorTab = parseEditorTab(searchParams.get("editor"));
     const isExpertSession = readSession()?.role === "expert";
 
@@ -491,6 +568,11 @@ export function KnowledgeGraphView({ disciplineId }: KnowledgeGraphViewProps) {
         setEditorOpen(Boolean(requestedEditorTab));
     }, [requestedEditorTab]);
 
+    useEffect(() => {
+        setValidationRequirements(null);
+        setExpandedValidationIds(new Set());
+    }, [graphData]);
+
     function openEditor(tab: "topics" | "elements" | "relations" = "topics") {
         const nextParams = new URLSearchParams(searchParams);
         nextParams.set("editor", tab);
@@ -534,6 +616,26 @@ export function KnowledgeGraphView({ disciplineId }: KnowledgeGraphViewProps) {
             ...current,
             [competenceType]: !current[competenceType],
         }));
+    }
+
+    function handleValidateKnowledgeGraph() {
+        if (!graphData) {
+            return;
+        }
+        setValidationRequirements(validateKnowledgeGraph(graphData));
+        setExpandedValidationIds(new Set());
+    }
+
+    function toggleValidationDetails(requirementId: string) {
+        setExpandedValidationIds((current) => {
+            const next = new Set(current);
+            if (next.has(requirementId)) {
+                next.delete(requirementId);
+            } else {
+                next.add(requirementId);
+            }
+            return next;
+        });
     }
 
     async function handleDownloadGraphImage() {
@@ -694,25 +796,66 @@ export function KnowledgeGraphView({ disciplineId }: KnowledgeGraphViewProps) {
                         </p>
                     </motion.section>
 
-                    <motion.section className="card card--soft inspector-card inspector-card--orphans" {...cardHoverMotion}>
+                    <motion.section className="card card--soft inspector-card inspector-card--validation" {...cardHoverMotion}>
                         <div className="card__header">
-                            <span className="card__eyebrow">Непривязанные элементы</span>
+                            <span className="card__eyebrow">Валидация</span>
                         </div>
 
-                        {unlinkedLoading ? (
-                            <p className="card__text">Проверяю элементы...</p>
-                        ) : unlinkedError ? (
-                            <p className="card__text">{unlinkedError}</p>
-                        ) : unlinkedElements.length ? (
-                            <div className="orphan-list">
-                                {unlinkedElements.map((element) => (
-                                    <span className="orphan-list__chip" key={element.id}>
-                                        {element.name}
-                                    </span>
-                                ))}
+                        <button
+                            className="secondary-button knowledge-validation__run"
+                            disabled={!graphData || loading}
+                            onClick={handleValidateKnowledgeGraph}
+                            type="button"
+                        >
+                            Проверить граф
+                        </button>
+
+                        {validationRequirements ? (
+                            <div className="knowledge-validation-list">
+                                {validationRequirements.map((requirement) => {
+                                    const expanded = expandedValidationIds.has(requirement.id);
+                                    return (
+                                        <article
+                                            className={`knowledge-validation-item ${
+                                                requirement.passed
+                                                    ? "knowledge-validation-item--passed"
+                                                    : "knowledge-validation-item--failed"
+                                            }`}
+                                            key={requirement.id}
+                                        >
+                                            <div className="knowledge-validation-item__head">
+                                                <span aria-hidden="true">
+                                                    {requirement.passed ? "✓" : "×"}
+                                                </span>
+                                                <strong>{requirement.label}</strong>
+                                            </div>
+
+                                            {!requirement.passed ? (
+                                                <>
+                                                    <button
+                                                        className="ghost-button knowledge-validation-item__details"
+                                                        onClick={() => toggleValidationDetails(requirement.id)}
+                                                        type="button"
+                                                    >
+                                                        {expanded ? "Скрыть" : "Подробнее"}
+                                                    </button>
+                                                    {expanded ? (
+                                                        <ul>
+                                                            {requirement.details.map((detail) => (
+                                                                <li key={detail}>{detail}</li>
+                                                            ))}
+                                                        </ul>
+                                                    ) : null}
+                                                </>
+                                            ) : null}
+                                        </article>
+                                    );
+                                })}
                             </div>
                         ) : (
-                            <p className="card__text">Все элементы уже привязаны к темам.</p>
+                            <p className="card__text">
+                                Проверка запускается вручную и покажет, какие требования выполнены.
+                            </p>
                         )}
                     </motion.section>
 
@@ -903,6 +1046,31 @@ export function KnowledgeGraphView({ disciplineId }: KnowledgeGraphViewProps) {
                                 </>
                             )}
                         </div>
+                    </motion.section>
+
+                    <motion.section
+                        className="card card--soft graph-orphans-card"
+                        {...cardHoverMotion}
+                    >
+                        <div className="card__header">
+                            <span className="card__eyebrow">Непривязанные элементы</span>
+                        </div>
+
+                        {unlinkedLoading ? (
+                            <p className="card__text">Проверяю элементы...</p>
+                        ) : unlinkedError ? (
+                            <p className="card__text">{unlinkedError}</p>
+                        ) : unlinkedElements.length ? (
+                            <div className="orphan-list">
+                                {unlinkedElements.map((element) => (
+                                    <span className="orphan-list__chip" key={element.id}>
+                                        {element.name}
+                                    </span>
+                                ))}
+                            </div>
+                        ) : (
+                            <p className="card__text">Все элементы уже привязаны к темам.</p>
+                        )}
                     </motion.section>
                 </motion.div>
             </div>

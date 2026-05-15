@@ -85,6 +85,7 @@ const ELEMENT_PREREQUISITE_RELATIONS = new Set<KnowledgeElementRelationType>([
 const ELEMENT_RELATION_LABELS: Record<KnowledgeElementRelationType, string> = {
   requires: "требует",
   builds_on: "строится на",
+  relies_on: "опирается на",
   contains: "содержит",
   part_of: "является частью",
   property_of: "свойство объекта",

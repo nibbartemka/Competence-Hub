@@ -100,6 +100,11 @@ const CAN_TO_MASTER_RELATION_OPTIONS: Array<{
   value: KnowledgeElementRelationType;
 }> = [{ label: "Переходит во владение", value: "automates" }];
 
+const MASTER_TO_KNOW_RELATION_OPTIONS: Array<{
+  label: string;
+  value: KnowledgeElementRelationType;
+}> = [{ label: "Опирается на", value: "relies_on" }];
+
 function competenceLabel(value: CompetenceType) {
   return COMPETENCE_OPTIONS.find((option) => option.value === value)?.label ?? value;
 }
@@ -110,6 +115,7 @@ function relationTypeLabel(value: KnowledgeElementRelationType) {
       ...KNOW_TO_KNOW_RELATION_OPTIONS,
       ...CAN_TO_KNOW_RELATION_OPTIONS,
       ...CAN_TO_MASTER_RELATION_OPTIONS,
+      ...MASTER_TO_KNOW_RELATION_OPTIONS,
     ].find((option) => option.value === value)?.label ?? value
   );
 }
@@ -184,6 +190,8 @@ function getRelationOptions(
     allowedTypes = CAN_TO_KNOW_RELATION_OPTIONS.map((option) => option.value);
   } else if (sourceType === "can" && targetType === "master") {
     allowedTypes = CAN_TO_MASTER_RELATION_OPTIONS.map((option) => option.value);
+  } else if (sourceType === "master" && targetType === "know") {
+    allowedTypes = MASTER_TO_KNOW_RELATION_OPTIONS.map((option) => option.value);
   }
 
   const allowedSet = new Set(allowedTypes);

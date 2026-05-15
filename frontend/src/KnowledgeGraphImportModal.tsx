@@ -18,7 +18,8 @@ import type {
 
 const KNOWLEDGE_RELATION_LABEL_RU: Record<KnowledgeElementRelationType, string> = {
   requires: "Требует",
-  builds_on: "Опирается на",
+  builds_on: "Строится на",
+  relies_on: "Опирается на",
   contains: "Содержит",
   part_of: "Является частью",
   property_of: "Свойство",
@@ -126,6 +127,10 @@ function toggleInSet(set: Set<string>, id: string) {
     next.add(id);
   }
   return next;
+}
+
+function idsToSet(ids: string[]) {
+  return new Set(ids);
 }
 
 export function KnowledgeGraphImportModal({ disciplineId, open, onClose, onImported }: Props) {
@@ -463,7 +468,23 @@ export function KnowledgeGraphImportModal({ disciplineId, open, onClose, onImpor
           {preview ? (
             <>
               <section className="knowledge-graph-import-modal__section">
-                <h3>Темы ({importableTopicRows.length} новых)</h3>
+                <div className="knowledge-graph-import-modal__section-head">
+                  <h3>Темы ({importableTopicRows.length} новых)</h3>
+                  <div className="knowledge-graph-import-modal__bulk-actions">
+                    <button
+                      className="ghost-button"
+                      onClick={() =>
+                        setSelectedTopics(idsToSet(importableTopicRows.map((row) => row.export_id)))
+                      }
+                      type="button"
+                    >
+                      Выбрать все
+                    </button>
+                    <button className="ghost-button" onClick={() => setSelectedTopics(new Set())} type="button">
+                      Очистить
+                    </button>
+                  </div>
+                </div>
                 <ul className="knowledge-graph-import-modal__list">
                   {preview.topics.map((t) => (
                     <li key={t.export_id}>
@@ -487,7 +508,23 @@ export function KnowledgeGraphImportModal({ disciplineId, open, onClose, onImpor
               </section>
 
               <section className="knowledge-graph-import-modal__section">
-                <h3>Элементы знаний ({importableElementRows.length} новых)</h3>
+                <div className="knowledge-graph-import-modal__section-head">
+                  <h3>Элементы знаний ({importableElementRows.length} новых)</h3>
+                  <div className="knowledge-graph-import-modal__bulk-actions">
+                    <button
+                      className="ghost-button"
+                      onClick={() =>
+                        setSelectedElements(idsToSet(importableElementRows.map((row) => row.export_id)))
+                      }
+                      type="button"
+                    >
+                      Выбрать все
+                    </button>
+                    <button className="ghost-button" onClick={() => setSelectedElements(new Set())} type="button">
+                      Очистить
+                    </button>
+                  </div>
+                </div>
                 <ul className="knowledge-graph-import-modal__list">
                   {preview.knowledge_elements.map((e) => (
                     <li key={e.export_id}>
@@ -515,7 +552,23 @@ export function KnowledgeGraphImportModal({ disciplineId, open, onClose, onImpor
               </section>
 
               <section className="knowledge-graph-import-modal__section">
-                <h3>Зависимости тем</h3>
+                <div className="knowledge-graph-import-modal__section-head">
+                  <h3>Зависимости тем</h3>
+                  <div className="knowledge-graph-import-modal__bulk-actions">
+                    <button
+                      className="ghost-button"
+                      onClick={() =>
+                        setSelectedDeps(idsToSet(depRows.filter(({ ok }) => ok).map(({ d }) => d.export_id)))
+                      }
+                      type="button"
+                    >
+                      Выбрать все
+                    </button>
+                    <button className="ghost-button" onClick={() => setSelectedDeps(new Set())} type="button">
+                      Очистить
+                    </button>
+                  </div>
+                </div>
                 <ul className="knowledge-graph-import-modal__list">
                   {depRows.map(({ d, ok }) => (
                     <li key={d.export_id}>
@@ -545,7 +598,23 @@ export function KnowledgeGraphImportModal({ disciplineId, open, onClose, onImpor
               </section>
 
               <section className="knowledge-graph-import-modal__section">
-                <h3>Привязки тема — элемент</h3>
+                <div className="knowledge-graph-import-modal__section-head">
+                  <h3>Привязки тема — элемент</h3>
+                  <div className="knowledge-graph-import-modal__bulk-actions">
+                    <button
+                      className="ghost-button"
+                      onClick={() =>
+                        setSelectedTke(idsToSet(tkeRows.filter(({ ok }) => ok).map(({ x }) => x.export_id)))
+                      }
+                      type="button"
+                    >
+                      Выбрать все
+                    </button>
+                    <button className="ghost-button" onClick={() => setSelectedTke(new Set())} type="button">
+                      Очистить
+                    </button>
+                  </div>
+                </div>
                 <ul className="knowledge-graph-import-modal__list">
                   {tkeRows.map(({ x, ok }) => (
                     <li key={x.export_id}>
@@ -575,7 +644,23 @@ export function KnowledgeGraphImportModal({ disciplineId, open, onClose, onImpor
               </section>
 
               <section className="knowledge-graph-import-modal__section">
-                <h3>Связи между элементами</h3>
+                <div className="knowledge-graph-import-modal__section-head">
+                  <h3>Связи между элементами</h3>
+                  <div className="knowledge-graph-import-modal__bulk-actions">
+                    <button
+                      className="ghost-button"
+                      onClick={() =>
+                        setSelectedKer(idsToSet(kerRows.filter(({ ok }) => ok).map(({ x }) => x.export_id)))
+                      }
+                      type="button"
+                    >
+                      Выбрать все
+                    </button>
+                    <button className="ghost-button" onClick={() => setSelectedKer(new Set())} type="button">
+                      Очистить
+                    </button>
+                  </div>
+                </div>
                 <ul className="knowledge-graph-import-modal__list">
                   {kerRows.map(({ x, ok }) => (
                     <li key={x.export_id}>

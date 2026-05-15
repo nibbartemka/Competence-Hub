@@ -25,6 +25,7 @@ export function relationLabel(type: string) {
   const labels: Record<string, string> = {
     requires: "Требует",
     builds_on: "Строится на",
+    relies_on: "Опирается на",
     contains: "Содержит",
     part_of: "Часть",
     property_of: "Свойство",
@@ -66,6 +67,10 @@ export function isSupportedElementRelation(
 
   if (sourceType === "can" && targetType === "master") {
     return relationType === "automates";
+  }
+
+  if (sourceType === "master" && targetType === "know") {
+    return relationType === "relies_on";
   }
 
   return false;

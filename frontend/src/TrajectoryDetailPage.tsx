@@ -28,6 +28,9 @@ import {
   GraphNodeRuntimeStateProvider,
   type GraphNodeRuntimeState,
 } from "./components/GraphNode";
+import OperationInputEditor, {
+  validateOperationInput,
+} from "./components/OperationInputEditor";
 import { useNotifications } from "./notifications";
 import { getSessionHomePath } from "./session";
 import { disciplinePathValue } from "./disciplineRouting";
@@ -145,6 +148,7 @@ MANUAL_TASK_TYPE_OPTIONS.push("text");
 const CHECKED_TASK_RELATION_LABELS: Partial<Record<KnowledgeElementRelationType, string>> = {
   requires: "требует",
   builds_on: "строится на",
+  relies_on: "опирается на",
   contains: "содержит",
   part_of: "является частью",
   property_of: "свойство объекта",
@@ -153,7 +157,19 @@ const CHECKED_TASK_RELATION_LABELS: Partial<Record<KnowledgeElementRelationType,
   similar: "родственно",
   contrasts_with: "противопоставляется",
   used_with: "используется вместе",
+  implements: "реализует",
 };
+
+type TaskCompetenceTab = KnowledgeElement["competence_type"];
+
+const TASK_COMPETENCE_TABS: Array<{
+  value: TaskCompetenceTab;
+  label: string;
+}> = [
+  { value: "know", label: "Знать" },
+  { value: "can", label: "Уметь" },
+  { value: "master", label: "Владеть" },
+];
 
 function createLocalId() {
   return Math.random().toString(36).slice(2, 10);
@@ -888,6 +904,7 @@ export default function TrajectoryDetailPage() {
   const [taskPrimaryElementId, setTaskPrimaryElementId] = useState("");
   const [taskRelatedElementIds, setTaskRelatedElementIds] = useState<string[]>([]);
   const [taskCheckedRelationIds, setTaskCheckedRelationIds] = useState<string[]>([]);
+  const [taskCompetenceTab, setTaskCompetenceTab] = useState<TaskCompetenceTab>("know");
   const [taskTemplateKind, setTaskTemplateKind] = useState<LearningTrajectoryTaskTemplateKind>("definition_choice");
   const [taskSingleCorrectElementId, setTaskSingleCorrectElementId] = useState("");
   const [taskMultipleCorrectRelatedElementIds, setTaskMultipleCorrectRelatedElementIds] = useState<string[]>([]);
@@ -907,7 +924,7 @@ export default function TrajectoryDetailPage() {
   ]);
   const [taskAcceptedAnswers, setTaskAcceptedAnswers] = useState<string[]>([""]);
   const [taskTextPlaceholder, setTaskTextPlaceholder] = useState("");
-  const [taskSkillInputJson, setTaskSkillInputJson] = useState("{}");
+  const [taskSkillInputPayload, setTaskSkillInputPayload] = useState<Record<string, unknown>>({});
   const [operationContracts, setOperationContracts] = useState<OperationContract[]>([]);
   const [editingTaskId, setEditingTaskId] = useState("");
   const [topicOrderModalOpen, setTopicOrderModalOpen] = useState(false);
@@ -1326,14 +1343,25 @@ export default function TrajectoryDetailPage() {
     scopeType: graphLayoutScopeType,
   });
 
-  const availablePrimaryElements = useMemo(
+  const topicTrajectoryElements = useMemo(
     () => trajectoryElementsByTopicId.get(taskTopicId) ?? [],
     [taskTopicId, trajectoryElementsByTopicId],
+  );
+  const availablePrimaryElements = useMemo(
+    () =>
+      topicTrajectoryElements
+        .filter((element) => element.competence_type === taskCompetenceTab)
+        .sort((left, right) => left.name.localeCompare(right.name, "ru")),
+    [taskCompetenceTab, topicTrajectoryElements],
   );
   const availableTaskElements = useMemo(
     () =>
       availablePrimaryElements
-        .filter((element) => element.id !== taskPrimaryElementId)
+        .filter(
+          (element) =>
+            element.id !== taskPrimaryElementId &&
+            element.competence_type === "know",
+        )
         .sort((left, right) => left.name.localeCompare(right.name, "ru")),
     [availablePrimaryElements, taskPrimaryElementId],
   );
@@ -1348,30 +1376,52 @@ export default function TrajectoryDetailPage() {
       ) ?? null,
     [operationContracts, selectedPrimaryElement],
   );
-  const availableSkillKnowledgeElements = useMemo(() => {
+  const topicTrajectoryElementIds = useMemo(
+    () => new Set(topicTrajectoryElements.map((element) => element.id)),
+    [topicTrajectoryElements],
+  );
+  const mandatorySkillRelations = useMemo(() => {
     if (!graph || !taskTopicId || !taskPrimaryElementId) return [];
-    const formedElementIds = new Set(
-      graph.topic_knowledge_elements
-        .filter((link) => link.topic_id === taskTopicId && link.role === "formed")
-        .map((link) => link.element_id),
-    );
-
-    return graph.knowledge_element_relations
-      .filter(
-        (relation) =>
-          relation.topic_id === taskTopicId &&
-          relation.source_element_id === taskPrimaryElementId &&
-          relation.relation_type === "implements",
-      )
-      .map((relation) => elementById.get(relation.target_element_id))
-      .filter(
-        (element): element is KnowledgeElement =>
-          element != null &&
-          element.competence_type === "know" &&
-          formedElementIds.has(element.id),
-      )
-      .sort((left, right) => left.name.localeCompare(right.name, "ru"));
-  }, [elementById, graph, taskPrimaryElementId, taskTopicId]);
+    return graph.knowledge_element_relations.filter((relation) => {
+      const targetElement = elementById.get(relation.target_element_id);
+      return (
+        relation.topic_id === taskTopicId &&
+        relation.source_element_id === taskPrimaryElementId &&
+        relation.relation_type === "implements" &&
+        targetElement?.competence_type === "know" &&
+        topicTrajectoryElementIds.has(relation.target_element_id)
+      );
+    });
+  }, [elementById, graph, taskPrimaryElementId, taskTopicId, topicTrajectoryElementIds]);
+  const availableSkillKnowledgeElements = useMemo(
+    () =>
+      mandatorySkillRelations
+        .map((relation) => elementById.get(relation.target_element_id))
+        .filter((element): element is KnowledgeElement => Boolean(element))
+        .sort((left, right) => left.name.localeCompare(right.name, "ru")),
+    [elementById, mandatorySkillRelations],
+  );
+  const optionalSkillRelations = useMemo(() => {
+    if (!graph || !taskTopicId || !taskPrimaryElementId) return [];
+    return graph.knowledge_element_relations.filter((relation) => {
+      if (
+        relation.topic_id !== taskTopicId ||
+        relation.relation_type !== "implements" ||
+        relation.source_element_id !== taskPrimaryElementId &&
+          relation.target_element_id !== taskPrimaryElementId
+      ) {
+        return false;
+      }
+      const otherElementId =
+        relation.source_element_id === taskPrimaryElementId
+          ? relation.target_element_id
+          : relation.source_element_id;
+      return (
+        topicTrajectoryElementIds.has(otherElementId) &&
+        elementById.get(otherElementId)?.competence_type === "can"
+      );
+    });
+  }, [elementById, graph, taskPrimaryElementId, taskTopicId, topicTrajectoryElementIds]);
   const relevantTaskElements = useMemo(
     () =>
       availableTaskElements.filter((element) =>
@@ -1407,6 +1457,7 @@ export default function TrajectoryDetailPage() {
     return graph.knowledge_element_relations.filter(
       (relation) =>
         CHECKED_TASK_RELATION_LABELS[relation.relation_type] &&
+        relation.relation_type !== "implements" &&
         selectedTaskElementIds.has(relation.source_element_id) &&
         selectedTaskElementIds.has(relation.target_element_id),
     );
@@ -1542,11 +1593,12 @@ export default function TrajectoryDetailPage() {
     setTaskMatchingPairs([createEmptyPair(), createEmptyPair()]);
     setTaskAcceptedAnswers([""]);
     setTaskTextPlaceholder("");
-    setTaskSkillInputJson("{}");
+    setTaskSkillInputPayload({});
   }
 
   function resetTaskForm() {
     setEditingTaskId("");
+    setTaskCompetenceTab("know");
     setTaskTemplateKind("definition_choice");
     setTaskTitle("");
     setTaskPrompt("");
@@ -1565,28 +1617,17 @@ export default function TrajectoryDetailPage() {
     setTaskTopicId(firstTopicId);
 
     const firstPrimaryElementId =
-      (trajectoryElementsByTopicId.get(firstTopicId) ?? [])[0]?.id ?? "";
+      (trajectoryElementsByTopicId.get(firstTopicId) ?? []).find(
+        (element) => element.competence_type === "know",
+      )?.id ?? "";
     setTaskPrimaryElementId(firstPrimaryElementId);
     setTaskSingleCorrectElementId(firstPrimaryElementId);
   }
 
-  function parseTaskSkillInputPayload() {
-    try {
-      const parsed = JSON.parse(taskSkillInputJson || "{}");
-      if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
-        return { payload: null, error: "Входные данные операции должны быть JSON-объектом." };
-      }
-      return { payload: parsed as Record<string, unknown>, error: "" };
-    } catch {
-      return { payload: null, error: "Не удалось разобрать входные данные операции. Проверь JSON." };
-    }
-  }
-
   function buildTaskContentPayload(): LearningTrajectoryTaskContent {
     if (taskType === "text") {
-      const parsed = parseTaskSkillInputPayload();
       return {
-        input_payload: parsed.payload ?? {},
+        input_payload: taskSkillInputPayload,
         placeholder: taskTextPlaceholder.trim(),
       };
     }
@@ -1634,7 +1675,7 @@ export default function TrajectoryDetailPage() {
       if (!availableSkillKnowledgeElements.length) {
         return "У выбранного элемента «Уметь» нет связанных формируемых элементов «Знать» в этой теме.";
       }
-      return parseTaskSkillInputPayload().error;
+      return validateOperationInput(selectedPrimaryOperation?.input_schema ?? null, taskSkillInputPayload);
     }
 
     if (
@@ -1704,7 +1745,7 @@ export default function TrajectoryDetailPage() {
   }, [editingTaskId, taskTopicId, trajectory, trajectoryElementsByTopicId]);
 
   useEffect(() => {
-    const nextPrimaryElements = trajectoryElementsByTopicId.get(taskTopicId) ?? [];
+    const nextPrimaryElements = availablePrimaryElements;
     if (!nextPrimaryElements.length) {
       setTaskPrimaryElementId("");
       return;
@@ -1712,7 +1753,7 @@ export default function TrajectoryDetailPage() {
     if (!nextPrimaryElements.some((element) => element.id === taskPrimaryElementId)) {
       setTaskPrimaryElementId(nextPrimaryElements[0].id);
     }
-  }, [taskPrimaryElementId, taskTopicId, trajectoryElementsByTopicId]);
+  }, [availablePrimaryElements, taskPrimaryElementId]);
 
   useEffect(() => {
     const allowedIds = new Set(
@@ -1754,23 +1795,49 @@ export default function TrajectoryDetailPage() {
     if (selectedPrimaryElement?.competence_type !== "can") {
       return;
     }
-    const nextIds = availableSkillKnowledgeElements.map((element) => element.id);
+    const mandatoryRelationIds = mandatorySkillRelations.map((relation) => relation.id);
+    const optionalRelationIds = new Set(optionalSkillRelations.map((relation) => relation.id));
+    const selectedOptionalRelations = taskCheckedRelationIds.filter((relationId) =>
+      optionalRelationIds.has(relationId),
+    );
+    const nextRelationIds = [...mandatoryRelationIds, ...selectedOptionalRelations];
+    const nextIds = [
+      ...mandatorySkillRelations.map((relation) => relation.target_element_id),
+      ...optionalSkillRelations
+        .filter((relation) => selectedOptionalRelations.includes(relation.id))
+        .map((relation) =>
+          relation.source_element_id === taskPrimaryElementId
+            ? relation.target_element_id
+            : relation.source_element_id,
+        ),
+    ];
     setTaskRelatedElementIds((current) =>
       current.length === nextIds.length && current.every((item, index) => item === nextIds[index])
         ? current
         : nextIds,
     );
-    setTaskCheckedRelationIds([]);
-  }, [availableSkillKnowledgeElements, selectedPrimaryElement]);
+    setTaskCheckedRelationIds((current) =>
+      current.length === nextRelationIds.length &&
+      current.every((item, index) => item === nextRelationIds[index])
+        ? current
+        : nextRelationIds,
+    );
+  }, [
+    mandatorySkillRelations,
+    optionalSkillRelations,
+    selectedPrimaryElement,
+    taskCheckedRelationIds,
+    taskPrimaryElementId,
+  ]);
 
   useEffect(() => {
     if (selectedPrimaryElement?.competence_type !== "can" || !selectedPrimaryOperation) {
       return;
     }
-    setTaskSkillInputJson((current) =>
-      current.trim() && current.trim() !== "{}"
+    setTaskSkillInputPayload((current) =>
+      Object.keys(current).length
         ? current
-        : JSON.stringify(selectedPrimaryOperation.example_input ?? {}, null, 2),
+        : selectedPrimaryOperation.example_input ?? {},
     );
     setTaskTextPlaceholder((current) =>
       current.trim() ? current : "Введите ответ в формате JSON"
@@ -1899,6 +1966,9 @@ export default function TrajectoryDetailPage() {
     setTasksModalSection("create");
     setTaskTopicId(task.topic_id);
     setTaskPrimaryElementId(task.primary_element.element_id);
+    setTaskCompetenceTab(
+      elementById.get(task.primary_element.element_id)?.competence_type ?? "know",
+    );
     setTaskRelatedElementIds((task.related_elements ?? []).map((element) => element.element_id));
     setTaskCheckedRelationIds((task.checked_relations ?? []).map((relation) => relation.relation_id));
     setTaskSingleCorrectElementId(task.content.correct_element_id ?? task.primary_element.element_id);
@@ -1919,7 +1989,7 @@ export default function TrajectoryDetailPage() {
     );
     setTaskAcceptedAnswers(task.content.accepted_answers?.length ? task.content.accepted_answers : [""]);
     setTaskTextPlaceholder(task.content.placeholder ?? "");
-    setTaskSkillInputJson(JSON.stringify(task.content.input_payload ?? {}, null, 2));
+    setTaskSkillInputPayload(task.content.input_payload ?? {});
   }
 
   function toggleTaskRelatedElement(elementId: string) {
@@ -1936,6 +2006,37 @@ export default function TrajectoryDetailPage() {
         ? current.filter((item) => item !== relationId)
         : [...current, relationId],
     );
+  }
+
+  function toggleSkillOptionalRelation(relationId: string) {
+    const mandatoryRelationIds = new Set(mandatorySkillRelations.map((relation) => relation.id));
+    if (mandatoryRelationIds.has(relationId)) return;
+    toggleTaskCheckedRelation(relationId);
+  }
+
+  function handleTaskCompetenceTabChange(nextTab: TaskCompetenceTab) {
+    setTaskCompetenceTab(nextTab);
+    setTaskPreviewOpen(false);
+    setTaskRelatedElementIds([]);
+    setTaskCheckedRelationIds([]);
+    setTaskSingleCorrectElementId("");
+    setTaskMultipleCorrectRelatedElementIds([]);
+    setTaskDistractorElementIds([]);
+
+    if (nextTab === "can") {
+      setTaskTemplateKind("manual");
+      resetTaskTemplate("text");
+      return;
+    }
+
+    if (nextTab === "know") {
+      setTaskTemplateKind("definition_choice");
+      resetTaskTemplate("single_choice");
+      return;
+    }
+
+    setTaskTemplateKind("manual");
+    resetTaskTemplate("text");
   }
 
   function handleTaskTemplateKindChange(nextTemplateKind: LearningTrajectoryTaskTemplateKind) {
@@ -2009,6 +2110,10 @@ export default function TrajectoryDetailPage() {
 
   async function handleSaveTask() {
     if (!trajectoryId) return;
+    if (taskCompetenceTab === "master") {
+      pushNotification("error", "Создание заданий уровня «Владеть» пока не реализовано.");
+      return;
+    }
     if (!taskTopicId || !taskPrimaryElementId || !taskTitle.trim() || !taskPrompt.trim()) {
       pushNotification("error", "Для задания нужны тема, ключевой элемент, заголовок и текст задания.");
       return;
@@ -2521,6 +2626,29 @@ export default function TrajectoryDetailPage() {
 
             {allTrajectoryPrimaryElements.length ? (
               <div className="trajectory-task-editor">
+                <div className="editor-tabs trajectory-task-competence-tabs">
+                  {TASK_COMPETENCE_TABS.map((tab) => (
+                    <button
+                      className={`editor-tab ${taskCompetenceTab === tab.value ? "editor-tab--active" : ""}`}
+                      key={tab.value}
+                      onClick={() => handleTaskCompetenceTabChange(tab.value)}
+                      type="button"
+                    >
+                      {tab.label}
+                    </button>
+                  ))}
+                </div>
+
+                {taskCompetenceTab === "master" ? (
+                  <div className="trajectory-task-placeholder">
+                    <strong>Задания уровня «Владеть»</strong>
+                    <p className="card__text">
+                      Этот тип заданий пока не реализован. Здесь появится отдельный конструктор после
+                      описания формата проверки владения.
+                    </p>
+                  </div>
+                ) : null}
+
                 <div className="trajectory-task-editor__grid">
                   <label className="field">
                     <span>Тема траектории</span>
@@ -2548,47 +2676,51 @@ export default function TrajectoryDetailPage() {
                       ))}
                     </select>
                   </label>
-                  <label className="field">
-                    <span>Шаблон задания</span>
-                    <select
-                      value={taskTemplateKind}
-                      onChange={(event) =>
-                        handleTaskTemplateKindChange(event.target.value as LearningTrajectoryTaskTemplateKind)
-                      }
-                      disabled={saving}
-                    >
-                      {[...new Set([...VISIBLE_TASK_TEMPLATE_KINDS, taskTemplateKind])].map((value) => (
-                        <option key={value} value={value}>
-                          {TASK_TEMPLATE_LABELS[value]}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-                </div>
-
-                <div className="trajectory-task-editor__grid">
-                  <label className="field">
-                    <span>Тип задания</span>
-                    {taskTemplateKind === "manual" ? (
+                  {taskCompetenceTab === "know" ? (
+                    <label className="field">
+                      <span>Шаблон задания</span>
                       <select
-                        value={taskType}
-                        onChange={(event) => resetTaskTemplate(event.target.value as LearningTrajectoryTaskType)}
+                        value={taskTemplateKind}
+                        onChange={(event) =>
+                          handleTaskTemplateKindChange(event.target.value as LearningTrajectoryTaskTemplateKind)
+                        }
                         disabled={saving}
                       >
-                        {MANUAL_TASK_TYPE_OPTIONS.map((value) => (
+                        {[...new Set([...VISIBLE_TASK_TEMPLATE_KINDS, taskTemplateKind])].map((value) => (
                           <option key={value} value={value}>
-                            {TASK_TYPE_LABELS[value]}
+                            {TASK_TEMPLATE_LABELS[value]}
                           </option>
                         ))}
                       </select>
-                    ) : (
-                      <input
-                        value={TASK_TYPE_LABELS[TASK_TEMPLATE_TYPE[taskTemplateKind]]}
-                        disabled
-                        readOnly
-                      />
-                    )}
-                  </label>
+                    </label>
+                  ) : null}
+                </div>
+
+                <div className="trajectory-task-editor__grid">
+                  {taskCompetenceTab === "know" ? (
+                    <label className="field">
+                      <span>Тип задания</span>
+                      {taskTemplateKind === "manual" ? (
+                        <select
+                          value={taskType}
+                          onChange={(event) => resetTaskTemplate(event.target.value as LearningTrajectoryTaskType)}
+                          disabled={saving}
+                        >
+                          {MANUAL_TASK_TYPE_OPTIONS.map((value) => (
+                            <option key={value} value={value}>
+                              {TASK_TYPE_LABELS[value]}
+                            </option>
+                          ))}
+                        </select>
+                      ) : (
+                        <input
+                          value={TASK_TYPE_LABELS[TASK_TEMPLATE_TYPE[taskTemplateKind]]}
+                          disabled
+                          readOnly
+                        />
+                      )}
+                    </label>
+                  ) : null}
                   <label className="field">
                     <span>Заголовок задания</span>
                     <input
@@ -2620,27 +2752,32 @@ export default function TrajectoryDetailPage() {
                     disabled={saving}
                   />
                 </label>
-                {selectedPrimaryElement?.competence_type === "can" ? (
+                {taskCompetenceTab === "can" ? (
                   <div className="trajectory-task-related">
                     <strong>Настройка задания уровня «Уметь»</strong>
                     <p className="card__text">
                       Преподаватель задает входные данные операции. Студент увидит их и отправит итоговый ответ.
                     </p>
-                    {selectedPrimaryOperation ? (
+                    {!availablePrimaryElements.length ? (
+                      <p className="form-error">
+                        В выбранной теме траектории пока нет элементов «Уметь».
+                      </p>
+                    ) : selectedPrimaryOperation ? (
                       <p className="card__text">Операция: {selectedPrimaryOperation.title}</p>
                     ) : (
                       <p className="form-error">У выбранного элемента «Уметь» не найдена операция алгоритмической библиотеки.</p>
                     )}
-                    <label className="field">
-                      <span>Входные данные операции</span>
-                      <textarea
-                        rows={10}
-                        value={taskSkillInputJson}
-                        onChange={(event) => setTaskSkillInputJson(event.target.value)}
-                        placeholder='{"vertices":["A","B"],"edges":[{"source":"A","target":"B"}],"directed":false}'
-                        disabled={saving}
-                      />
-                    </label>
+                    <div className="trajectory-task-related">
+                      <strong>Входные значения</strong>
+                      {selectedPrimaryOperation ? (
+                        <OperationInputEditor
+                          disabled={saving}
+                          onChange={setTaskSkillInputPayload}
+                          schema={selectedPrimaryOperation.input_schema}
+                          value={taskSkillInputPayload}
+                        />
+                      ) : null}
+                    </div>
                     <label className="field">
                       <span>Подсказка в поле ответа</span>
                       <input
@@ -2659,7 +2796,7 @@ export default function TrajectoryDetailPage() {
                     </div>
                   </div>
                 ) : null}
-                {selectedPrimaryElement?.competence_type !== "can" ? (
+                {taskCompetenceTab === "know" ? (
                   <div className="trajectory-task-related">
                   <strong>Релевантные связанные элементы</strong>
                   <p className="card__text">
@@ -2717,7 +2854,7 @@ export default function TrajectoryDetailPage() {
                   </div>
                 ) : null}
 
-                {taskTemplateKind === "manual" && taskType === "single_choice" ? (
+                {taskCompetenceTab === "know" && taskTemplateKind === "manual" && taskType === "single_choice" ? (
                   <div className="trajectory-task-related">
                     <strong>Правильный вариант</strong>
                     <label className="field">
@@ -2737,7 +2874,7 @@ export default function TrajectoryDetailPage() {
                   </div>
                 ) : null}
 
-                {taskTemplateKind === "manual" && taskType === "multiple_choice" ? (
+                {taskCompetenceTab === "know" && taskTemplateKind === "manual" && taskType === "multiple_choice" ? (
                   <div className="trajectory-task-related">
                     <strong>Правильные варианты</strong>
                     <p className="card__text">
@@ -2763,7 +2900,7 @@ export default function TrajectoryDetailPage() {
                   </div>
                 ) : null}
 
-                {(taskTemplateKind === "property_multiple" || taskTemplateKind === "contains_multiple") ? (
+                {taskCompetenceTab === "know" && (taskTemplateKind === "property_multiple" || taskTemplateKind === "contains_multiple") ? (
                   <div className="trajectory-task-related">
                     <strong>Автоматическое определение правильных вариантов</strong>
                     <p className="card__text">
@@ -2784,41 +2921,83 @@ export default function TrajectoryDetailPage() {
                   </div>
                 ) : null}
 
-                <div className="trajectory-task-related">
-                  <strong>Проверяемые связи</strong>
-                  <p className="card__text">
-                    Выбери отношения между выбранными элементами, которые реально проверяет это задание.
-                  </p>
-                  {availableCheckedRelations.length ? (
+                {taskCompetenceTab === "know" ? (
+                  <div className="trajectory-task-related">
+                    <strong>Проверяемые связи</strong>
+                    <p className="card__text">
+                      Выбери отношения между выбранными элементами, которые реально проверяет это задание.
+                    </p>
+                    {availableCheckedRelations.length ? (
+                      <div className="trajectory-task-related__list">
+                        {availableCheckedRelations.map((relation) => (
+                          <label className="trajectory-task-related__item" key={relation.id}>
+                            <input
+                              type="checkbox"
+                              checked={taskCheckedRelationIds.includes(relation.id)}
+                              onChange={() => toggleTaskCheckedRelation(relation.id)}
+                              disabled={saving}
+                            />
+                            <span>{checkedRelationLabel(relation, elementById)}</span>
+                          </label>
+                        ))}
+                      </div>
+                    ) : (
+                      <p className="card__text">
+                        Для выбранных элементов пока нет связей, которые можно зафиксировать в задании.
+                      </p>
+                    )}
+                  </div>
+                ) : null}
+
+                {taskCompetenceTab === "can" ? (
+                  <div className="trajectory-task-related">
+                    <strong>Проверяемые связи</strong>
+                    <p className="card__text">
+                      Связи «реализует» с элементами «Знать» подставляются автоматически и остаются обязательными.
+                      Дополнительно можно отметить связи с другими элементами «Уметь» этой темы.
+                    </p>
                     <div className="trajectory-task-related__list">
-                      {availableCheckedRelations.map((relation) => (
+                      {mandatorySkillRelations.map((relation) => (
                         <label className="trajectory-task-related__item" key={relation.id}>
-                          <input
-                            type="checkbox"
-                            checked={taskCheckedRelationIds.includes(relation.id)}
-                            onChange={() => toggleTaskCheckedRelation(relation.id)}
-                            disabled={saving}
-                          />
+                          <input checked disabled type="checkbox" />
                           <span>{checkedRelationLabel(relation, elementById)}</span>
                         </label>
                       ))}
                     </div>
-                  ) : (
-                    <p className="card__text">
-                      Для выбранных элементов пока нет связей, которые можно зафиксировать в задании.
-                    </p>
-                  )}
-                </div>
+                    {optionalSkillRelations.length ? (
+                      <>
+                        <strong>Дополнительные связи с «Уметь»</strong>
+                        <div className="trajectory-task-related__list">
+                          {optionalSkillRelations.map((relation) => (
+                            <label className="trajectory-task-related__item" key={relation.id}>
+                              <input
+                                checked={taskCheckedRelationIds.includes(relation.id)}
+                                disabled={saving}
+                                onChange={() => toggleSkillOptionalRelation(relation.id)}
+                                type="checkbox"
+                              />
+                              <span>{checkedRelationLabel(relation, elementById)}</span>
+                            </label>
+                          ))}
+                        </div>
+                      </>
+                    ) : (
+                      <p className="card__text">
+                        У выбранного элемента пока нет дополнительных связей с другими элементами «Уметь» этой темы.
+                      </p>
+                    )}
+                  </div>
+                ) : null}
                 <div className="trajectory-task-editor__actions">
                   <button
                     className="ghost-button"
                     type="button"
-                    disabled={!taskTopicId || !taskPrimaryElementId || !taskTitle.trim() || !taskPrompt.trim()}
+                    disabled={taskCompetenceTab === "master" || !taskTopicId || !taskPrimaryElementId || !taskTitle.trim() || !taskPrompt.trim()}
                     onClick={() => setTaskPreviewOpen((current) => !current)}
                   >
                     {taskPreviewOpen ? "Скрыть предпросмотр" : "Предпросмотр"}
                   </button>
-                  <button className="primary-button" type="button" disabled={saving || !taskTopicId || !taskPrimaryElementId || !taskTitle.trim() || !taskPrompt.trim()} onClick={() => void handleSaveTask()}>
+                  <button className="primary-button" type="button" disabled={saving || taskCompetenceTab === "master" || !taskTopicId || !taskPrimaryElementId || !taskTitle.trim() || !taskPrompt.trim()} onClick={() => void handleSaveTask()}>
                     {editingTaskId ? "Сохранить задание" : "Добавить задание"}
                   </button>
                   {editingTaskId ? (
@@ -3339,11 +3518,34 @@ export default function TrajectoryDetailPage() {
           </div>
 
           <p className="card__text">
-            Сейчас задания создаются вручную только для элементов компетенции «Знать»: тема траектории, ключевой элемент, связанные элементы, текст и сложность.
+            Основная форма создания заданий теперь открывается через кнопку «Задания» и поддерживает отдельные сценарии для «Знать», «Уметь» и «Владеть».
           </p>
 
           {allTrajectoryPrimaryElements.length ? (
             <div className="trajectory-task-editor">
+              <div className="editor-tabs trajectory-task-competence-tabs">
+                {TASK_COMPETENCE_TABS.map((tab) => (
+                  <button
+                    className={`editor-tab ${taskCompetenceTab === tab.value ? "editor-tab--active" : ""}`}
+                    key={`inline-${tab.value}`}
+                    onClick={() => handleTaskCompetenceTabChange(tab.value)}
+                    type="button"
+                  >
+                    {tab.label}
+                  </button>
+                ))}
+              </div>
+
+              {taskCompetenceTab === "master" ? (
+                <div className="trajectory-task-placeholder">
+                  <strong>Задания уровня «Владеть»</strong>
+                  <p className="card__text">
+                    Этот тип заданий пока не реализован. Здесь появится отдельный конструктор после
+                    описания формата проверки владения.
+                  </p>
+                </div>
+              ) : null}
+
               <div className="trajectory-task-editor__grid">
                 <label className="field">
                   <span>Тема траектории</span>
@@ -3391,6 +3593,16 @@ export default function TrajectoryDetailPage() {
               </div>
 
               <label className="field">
+                <span>Заголовок задания</span>
+                <input
+                  value={taskTitle}
+                  onChange={(event) => setTaskTitle(event.target.value)}
+                  placeholder="Например: Определение базового понятия"
+                  disabled={saving}
+                />
+              </label>
+
+              <label className="field">
                 <span>Текст задания</span>
                 <textarea
                   rows={4}
@@ -3401,6 +3613,7 @@ export default function TrajectoryDetailPage() {
                 />
               </label>
 
+              {taskCompetenceTab === "know" ? (
               <div className="trajectory-task-template">
                 <label className="field">
                   <span>Тип задания</span>
@@ -3504,28 +3717,34 @@ export default function TrajectoryDetailPage() {
                 ) : null}
 
               </div>
+              ) : null}
 
-              {selectedPrimaryElement?.competence_type === "can" ? (
+              {taskCompetenceTab === "can" ? (
                 <div className="trajectory-task-related">
                   <strong>Настройка задания уровня «Уметь»</strong>
                   <p className="card__text">
                     Преподаватель задает входные данные операции. Студент увидит их и отправит итоговый ответ.
                   </p>
-                  {selectedPrimaryOperation ? (
+                  {!availablePrimaryElements.length ? (
+                    <p className="form-error">
+                      В выбранной теме траектории пока нет элементов «Уметь».
+                    </p>
+                  ) : selectedPrimaryOperation ? (
                     <p className="card__text">Операция: {selectedPrimaryOperation.title}</p>
                   ) : (
                     <p className="form-error">У выбранного элемента «Уметь» не найдена операция алгоритмической библиотеки.</p>
                   )}
-                  <label className="field">
-                    <span>Входные данные операции</span>
-                    <textarea
-                      rows={10}
-                      value={taskSkillInputJson}
-                      onChange={(event) => setTaskSkillInputJson(event.target.value)}
-                      placeholder='{"vertices":["A","B"],"edges":[{"source":"A","target":"B"}],"directed":false}'
-                      disabled={saving}
-                    />
-                  </label>
+                  <div className="trajectory-task-related">
+                    <strong>Входные значения</strong>
+                    {selectedPrimaryOperation ? (
+                      <OperationInputEditor
+                        disabled={saving}
+                        onChange={setTaskSkillInputPayload}
+                        schema={selectedPrimaryOperation.input_schema}
+                        value={taskSkillInputPayload}
+                      />
+                    ) : null}
+                  </div>
                   <label className="field">
                     <span>Подсказка в поле ответа</span>
                     <input
@@ -3544,7 +3763,7 @@ export default function TrajectoryDetailPage() {
                   </div>
                 </div>
               ) : null}
-              {selectedPrimaryElement?.competence_type !== "can" ? (
+              {taskCompetenceTab === "know" ? (
               <div className="trajectory-task-related">
                 <strong>Связанные элементы</strong>
                 <div className="trajectory-task-related__list">
@@ -3565,11 +3784,51 @@ export default function TrajectoryDetailPage() {
               </div>
               ) : null}
 
+              {taskCompetenceTab === "can" ? (
+                <div className="trajectory-task-related">
+                  <strong>Проверяемые связи</strong>
+                  <p className="card__text">
+                    Связи «реализует» с элементами «Знать» подставляются автоматически и остаются обязательными.
+                    Дополнительно можно отметить связи с другими элементами «Уметь» этой темы.
+                  </p>
+                  <div className="trajectory-task-related__list">
+                    {mandatorySkillRelations.map((relation) => (
+                      <label className="trajectory-task-related__item" key={`inline-mandatory-${relation.id}`}>
+                        <input checked disabled type="checkbox" />
+                        <span>{checkedRelationLabel(relation, elementById)}</span>
+                      </label>
+                    ))}
+                  </div>
+                  {optionalSkillRelations.length ? (
+                    <>
+                      <strong>Дополнительные связи с «Уметь»</strong>
+                      <div className="trajectory-task-related__list">
+                        {optionalSkillRelations.map((relation) => (
+                          <label className="trajectory-task-related__item" key={`inline-optional-${relation.id}`}>
+                            <input
+                              checked={taskCheckedRelationIds.includes(relation.id)}
+                              disabled={saving}
+                              onChange={() => toggleSkillOptionalRelation(relation.id)}
+                              type="checkbox"
+                            />
+                            <span>{checkedRelationLabel(relation, elementById)}</span>
+                          </label>
+                        ))}
+                      </div>
+                    </>
+                  ) : (
+                    <p className="card__text">
+                      У выбранного элемента пока нет дополнительных связей с другими элементами «Уметь» этой темы.
+                    </p>
+                  )}
+                </div>
+              ) : null}
+
               <div className="trajectory-task-editor__actions">
                 <button
                   className="primary-button"
                   type="button"
-                  disabled={saving || !taskTopicId || !taskPrimaryElementId || !taskPrompt.trim()}
+                  disabled={saving || taskCompetenceTab === "master" || !taskTopicId || !taskPrimaryElementId || !taskTitle.trim() || !taskPrompt.trim()}
                   onClick={() => void handleSaveTask()}
                 >
                   {editingTaskId ? "Сохранить задание" : "Добавить задание"}
@@ -3743,4 +4002,3 @@ export default function TrajectoryDetailPage() {
     </div>
   );
 }
-
