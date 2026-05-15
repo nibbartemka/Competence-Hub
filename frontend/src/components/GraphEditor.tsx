@@ -102,12 +102,26 @@ const KNOW_TO_KNOW_RELATION_OPTIONS: Array<{
   { label: "Используется вместе", value: "used_with" },
 ];
 
-const PEER_ZUV_RELATION_OPTIONS: Array<{
+const CAN_TO_CAN_RELATION_OPTIONS: Array<{
   label: string;
   value: KnowledgeElementRelationType;
 }> = [
   { label: "РўСЂРµР±СѓРµС‚", value: "requires" },
   { label: "РЎС‚СЂРѕРёС‚СЃСЏ РЅР°", value: "builds_on" },
+  { label: "РЎРѕРґРµСЂР¶РёС‚", value: "contains" },
+  { label: "РЇРІР»СЏРµС‚СЃСЏ С‡Р°СЃС‚СЊСЋ", value: "part_of" },
+  { label: "РЈС‚РѕС‡РЅСЏРµС‚", value: "refines" },
+  { label: "РћР±РѕР±С‰Р°РµС‚", value: "generalizes" },
+  { label: "Р РѕРґСЃС‚РІРµРЅРЅРѕ", value: "similar" },
+  { label: "РџСЂРѕС‚РёРІРѕРїРѕСЃС‚Р°РІР»СЏРµС‚СЃСЏ", value: "contrasts_with" },
+  { label: "РСЃРїРѕР»СЊР·СѓРµС‚СЃСЏ РІРјРµСЃС‚Рµ", value: "used_with" },
+];
+
+const MASTER_TO_MASTER_RELATION_OPTIONS: Array<{
+  label: string;
+  value: KnowledgeElementRelationType;
+}> = [
+  { label: "РўСЂРµР±СѓРµС‚", value: "requires" },
   { label: "РЎРѕРґРµСЂР¶РёС‚", value: "contains" },
   { label: "РЇРІР»СЏРµС‚СЃСЏ С‡Р°СЃС‚СЊСЋ", value: "part_of" },
   { label: "РЈС‚РѕС‡РЅСЏРµС‚", value: "refines" },
@@ -140,7 +154,8 @@ function relationTypeLabel(value: KnowledgeElementRelationType) {
   return (
     [
       ...KNOW_TO_KNOW_RELATION_OPTIONS,
-      ...PEER_ZUV_RELATION_OPTIONS,
+      ...CAN_TO_CAN_RELATION_OPTIONS,
+      ...MASTER_TO_MASTER_RELATION_OPTIONS,
       ...CAN_TO_KNOW_RELATION_OPTIONS,
       ...MASTER_TO_CAN_RELATION_OPTIONS,
       ...MASTER_TO_KNOW_RELATION_OPTIONS,
@@ -337,11 +352,11 @@ function getRelationOptions(
   if (sourceType === "know" && targetType === "know") {
     allowedTypes = KNOW_TO_KNOW_RELATION_OPTIONS.map((option) => option.value);
   } else if (sourceType === "can" && targetType === "can") {
-    allowedTypes = PEER_ZUV_RELATION_OPTIONS.map((option) => option.value);
+    allowedTypes = CAN_TO_CAN_RELATION_OPTIONS.map((option) => option.value);
   } else if (sourceType === "can" && targetType === "know") {
     allowedTypes = CAN_TO_KNOW_RELATION_OPTIONS.map((option) => option.value);
   } else if (sourceType === "master" && targetType === "master") {
-    allowedTypes = PEER_ZUV_RELATION_OPTIONS.map((option) => option.value);
+    allowedTypes = MASTER_TO_MASTER_RELATION_OPTIONS.map((option) => option.value);
   } else if (sourceType === "master" && targetType === "can") {
     allowedTypes = MASTER_TO_CAN_RELATION_OPTIONS.map((option) => option.value);
   } else if (sourceType === "master" && targetType === "know") {

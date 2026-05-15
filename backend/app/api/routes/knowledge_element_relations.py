@@ -21,9 +21,20 @@ router = APIRouter(
     tags=["Knowledge Element Relations"],
 )
 
-PEER_ZUV_RELATION_TYPES = {
+CAN_TO_CAN_RELATION_TYPES = {
     KnowledgeElementRelationType.REQUIRES,
     KnowledgeElementRelationType.BUILDS_ON,
+    KnowledgeElementRelationType.CONTAINS,
+    KnowledgeElementRelationType.PART_OF,
+    KnowledgeElementRelationType.REFINES,
+    KnowledgeElementRelationType.GENERALIZES,
+    KnowledgeElementRelationType.SIMILAR,
+    KnowledgeElementRelationType.CONTRASTS_WITH,
+    KnowledgeElementRelationType.USED_WITH,
+}
+
+MASTER_TO_MASTER_RELATION_TYPES = {
+    KnowledgeElementRelationType.REQUIRES,
     KnowledgeElementRelationType.CONTAINS,
     KnowledgeElementRelationType.PART_OF,
     KnowledgeElementRelationType.REFINES,
@@ -69,13 +80,13 @@ def _is_allowed_relation(
         }
 
     if source_type == CompetenceType.CAN and target_type == CompetenceType.CAN:
-        return relation_type in PEER_ZUV_RELATION_TYPES
+        return relation_type in CAN_TO_CAN_RELATION_TYPES
 
     if source_type == CompetenceType.CAN and target_type == CompetenceType.KNOW:
         return relation_type == KnowledgeElementRelationType.IMPLEMENTS
 
     if source_type == CompetenceType.MASTER and target_type == CompetenceType.MASTER:
-        return relation_type in PEER_ZUV_RELATION_TYPES
+        return relation_type in MASTER_TO_MASTER_RELATION_TYPES
 
     if source_type == CompetenceType.MASTER and target_type == CompetenceType.CAN:
         return relation_type == KnowledgeElementRelationType.AUTOMATES
@@ -308,8 +319,8 @@ async def update_knowledge_element_relation(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=(
                 "Unsupported relation for the selected element pair. "
-                "Allowed combinations: know->know, can->know/can (implements), "
-                "master->can (automates), master->know (relies_on)."
+                "Allowed combinations: know->know, can->can, can->know (implements), "
+                "master->master, master->can (automates), master->know (relies_on)."
             ),
         )
 
