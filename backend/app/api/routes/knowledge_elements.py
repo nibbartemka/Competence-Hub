@@ -318,8 +318,8 @@ async def create_structured_master_knowledge_element(
     session.add(
         KnowledgeElementRelation(
             topic_id=payload.topic_id,
-            source_element_id=skill_element.id,
-            target_element_id=master_element.id,
+            source_element_id=master_element.id,
+            target_element_id=skill_element.id,
             relation_id=automates_relation.id,
             description=None,
         )

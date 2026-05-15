@@ -21,6 +21,18 @@ router = APIRouter(
     tags=["Knowledge Element Relations"],
 )
 
+PEER_ZUV_RELATION_TYPES = {
+    KnowledgeElementRelationType.REQUIRES,
+    KnowledgeElementRelationType.BUILDS_ON,
+    KnowledgeElementRelationType.CONTAINS,
+    KnowledgeElementRelationType.PART_OF,
+    KnowledgeElementRelationType.REFINES,
+    KnowledgeElementRelationType.GENERALIZES,
+    KnowledgeElementRelationType.SIMILAR,
+    KnowledgeElementRelationType.CONTRASTS_WITH,
+    KnowledgeElementRelationType.USED_WITH,
+}
+
 
 async def _get_relation_for_read(
     session: DbSession,
@@ -56,10 +68,16 @@ def _is_allowed_relation(
             KnowledgeElementRelationType.USED_WITH,
         }
 
-    if source_type == CompetenceType.CAN and target_type in {CompetenceType.KNOW, CompetenceType.CAN}:
+    if source_type == CompetenceType.CAN and target_type == CompetenceType.CAN:
+        return relation_type in PEER_ZUV_RELATION_TYPES
+
+    if source_type == CompetenceType.CAN and target_type == CompetenceType.KNOW:
         return relation_type == KnowledgeElementRelationType.IMPLEMENTS
 
-    if source_type == CompetenceType.CAN and target_type == CompetenceType.MASTER:
+    if source_type == CompetenceType.MASTER and target_type == CompetenceType.MASTER:
+        return relation_type in PEER_ZUV_RELATION_TYPES
+
+    if source_type == CompetenceType.MASTER and target_type == CompetenceType.CAN:
         return relation_type == KnowledgeElementRelationType.AUTOMATES
 
     if source_type == CompetenceType.MASTER and target_type == CompetenceType.KNOW:
@@ -192,8 +210,9 @@ async def create_knowledge_element_relation(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=(
                 "Unsupported relation for the selected element pair. "
-                "Allowed combinations: know->know, can->know/can (implements), "
-                "can->master (automates), master->know (relies_on)."
+                "Allowed combinations: know->know, can->can, can->know (implements), "
+                "master->master, "
+                "master->can (automates), master->know (relies_on)."
             ),
         )
 
@@ -290,7 +309,7 @@ async def update_knowledge_element_relation(
             detail=(
                 "Unsupported relation for the selected element pair. "
                 "Allowed combinations: know->know, can->know/can (implements), "
-                "can->master (automates), master->know (relies_on)."
+                "master->can (automates), master->know (relies_on)."
             ),
         )
 

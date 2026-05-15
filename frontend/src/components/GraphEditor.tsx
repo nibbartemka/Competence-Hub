@@ -70,6 +70,11 @@ type MasterDomainObjectDraft = {
 
 type RelationDirection = "element1_to_element2" | "element2_to_element1";
 
+type SearchableOption = {
+  id: string;
+  label: string;
+};
+
 const COMPETENCE_OPTIONS: Array<{ label: string; value: CompetenceType }> = [
   { label: "Знать", value: "know" },
   { label: "Уметь", value: "can" },
@@ -97,15 +102,30 @@ const KNOW_TO_KNOW_RELATION_OPTIONS: Array<{
   { label: "Используется вместе", value: "used_with" },
 ];
 
+const PEER_ZUV_RELATION_OPTIONS: Array<{
+  label: string;
+  value: KnowledgeElementRelationType;
+}> = [
+  { label: "РўСЂРµР±СѓРµС‚", value: "requires" },
+  { label: "РЎС‚СЂРѕРёС‚СЃСЏ РЅР°", value: "builds_on" },
+  { label: "РЎРѕРґРµСЂР¶РёС‚", value: "contains" },
+  { label: "РЇРІР»СЏРµС‚СЃСЏ С‡Р°СЃС‚СЊСЋ", value: "part_of" },
+  { label: "РЈС‚РѕС‡РЅСЏРµС‚", value: "refines" },
+  { label: "РћР±РѕР±С‰Р°РµС‚", value: "generalizes" },
+  { label: "Р РѕРґСЃС‚РІРµРЅРЅРѕ", value: "similar" },
+  { label: "РџСЂРѕС‚РёРІРѕРїРѕСЃС‚Р°РІР»СЏРµС‚СЃСЏ", value: "contrasts_with" },
+  { label: "РСЃРїРѕР»СЊР·СѓРµС‚СЃСЏ РІРјРµСЃС‚Рµ", value: "used_with" },
+];
+
 const CAN_TO_KNOW_RELATION_OPTIONS: Array<{
   label: string;
   value: KnowledgeElementRelationType;
 }> = [{ label: "Реализует", value: "implements" }];
 
-const CAN_TO_MASTER_RELATION_OPTIONS: Array<{
+const MASTER_TO_CAN_RELATION_OPTIONS: Array<{
   label: string;
   value: KnowledgeElementRelationType;
-}> = [{ label: "Переходит во владение", value: "automates" }];
+}> = [{ label: "Автоматизирует", value: "automates" }];
 
 const MASTER_TO_KNOW_RELATION_OPTIONS: Array<{
   label: string;
@@ -120,8 +140,9 @@ function relationTypeLabel(value: KnowledgeElementRelationType) {
   return (
     [
       ...KNOW_TO_KNOW_RELATION_OPTIONS,
+      ...PEER_ZUV_RELATION_OPTIONS,
       ...CAN_TO_KNOW_RELATION_OPTIONS,
-      ...CAN_TO_MASTER_RELATION_OPTIONS,
+      ...MASTER_TO_CAN_RELATION_OPTIONS,
       ...MASTER_TO_KNOW_RELATION_OPTIONS,
     ].find((option) => option.value === value)?.label ?? value
   );
@@ -141,10 +162,6 @@ function extractErrorMessage(error: unknown) {
   }
 
   return "Не удалось выполнить запрос.";
-}
-
-function nextDifferentValue(currentValue: string, items: Array<{ id: string }>) {
-  return items.find((item) => item.id !== currentValue)?.id ?? items[0]?.id ?? "";
 }
 
 function uniqueElements(
@@ -194,6 +211,122 @@ function uniqueTopicOptions(topicsList: Topic[]) {
     .sort((left, right) => left.name.localeCompare(right.name, "ru"));
 }
 
+function elementOptionLabel(element: KnowledgeElement) {
+  return `${element.name} (${competenceLabel(element.competence_type)})`;
+}
+
+function matchesElementFilter(element: KnowledgeElement, query: string) {
+  const normalized = query.trim().toLowerCase();
+  if (!normalized) {
+    return true;
+  }
+
+  return `${element.name} ${competenceLabel(element.competence_type)}`
+    .toLowerCase()
+    .includes(normalized);
+}
+
+function matchesRelationFilter(
+  relation: KnowledgeElementRelation,
+  elementById: Map<string, KnowledgeElement>,
+  query: string,
+) {
+  const normalized = query.trim().toLowerCase();
+  if (!normalized) {
+    return true;
+  }
+
+  const sourceName = elementById.get(relation.source_element_id)?.name ?? "";
+  const targetName = elementById.get(relation.target_element_id)?.name ?? "";
+  const relationName = relationTypeLabel(relation.relation.relation_type);
+  return `${sourceName} ${targetName} ${relationName}`.toLowerCase().includes(normalized);
+}
+
+type SearchableSelectFieldProps = {
+  disabled?: boolean;
+  emptyText: string;
+  label: string;
+  onSelect: (id: string) => void;
+  onValueChange: (value: string) => void;
+  options: SearchableOption[];
+  placeholder: string;
+  value: string;
+};
+
+function SearchableSelectField({
+  disabled = false,
+  emptyText,
+  label,
+  onSelect,
+  onValueChange,
+  options,
+  placeholder,
+  value,
+}: SearchableSelectFieldProps) {
+  const [isOpen, setIsOpen] = useState(false);
+
+  const filteredOptions = useMemo(() => {
+    const normalized = value.trim().toLowerCase();
+    if (!normalized) {
+      return options;
+    }
+
+    return options.filter((option) => option.label.toLowerCase().startsWith(normalized));
+  }, [options, value]);
+
+  return (
+    <label className="field searchable-select">
+      <span>{label}</span>
+      <div className="searchable-select__control">
+        <input
+          autoComplete="off"
+          spellCheck={false}
+          value={value}
+          onBlur={() => {
+            window.setTimeout(() => setIsOpen(false), 120);
+          }}
+          onChange={(event) => {
+            const nextValue = event.target.value;
+            onValueChange(nextValue);
+            const exactMatch = options.find(
+              (option) => option.label.toLowerCase() === nextValue.trim().toLowerCase(),
+            );
+            onSelect(exactMatch?.id ?? "");
+            setIsOpen(true);
+          }}
+          onFocus={() => setIsOpen(true)}
+          placeholder={placeholder}
+          disabled={disabled}
+        />
+
+        {isOpen && !disabled ? (
+          <div className="searchable-select__menu">
+            {filteredOptions.length ? (
+              filteredOptions.map((option) => (
+                <button
+                  className="searchable-select__option"
+                  key={option.id}
+                  onMouseDown={(event) => {
+                    event.preventDefault();
+                    onValueChange(option.label);
+                    onSelect(option.id);
+                    setIsOpen(false);
+                  }}
+                  type="button"
+                >
+                  {option.label}
+                </button>
+              ))
+            ) : (
+              <div className="searchable-select__empty">{emptyText}</div>
+            )}
+          </div>
+        ) : null}
+      </div>
+    </label>
+  );
+}
+
 function getRelationOptions(
   relations: Relation[],
   sourceType?: CompetenceType,
@@ -203,10 +336,14 @@ function getRelationOptions(
 
   if (sourceType === "know" && targetType === "know") {
     allowedTypes = KNOW_TO_KNOW_RELATION_OPTIONS.map((option) => option.value);
+  } else if (sourceType === "can" && targetType === "can") {
+    allowedTypes = PEER_ZUV_RELATION_OPTIONS.map((option) => option.value);
   } else if (sourceType === "can" && targetType === "know") {
     allowedTypes = CAN_TO_KNOW_RELATION_OPTIONS.map((option) => option.value);
-  } else if (sourceType === "can" && targetType === "master") {
-    allowedTypes = CAN_TO_MASTER_RELATION_OPTIONS.map((option) => option.value);
+  } else if (sourceType === "master" && targetType === "master") {
+    allowedTypes = PEER_ZUV_RELATION_OPTIONS.map((option) => option.value);
+  } else if (sourceType === "master" && targetType === "can") {
+    allowedTypes = MASTER_TO_CAN_RELATION_OPTIONS.map((option) => option.value);
   } else if (sourceType === "master" && targetType === "know") {
     allowedTypes = MASTER_TO_KNOW_RELATION_OPTIONS.map((option) => option.value);
   }
@@ -310,20 +447,26 @@ export function GraphEditor({
 
   const [relationSourceElementId, setRelationSourceElementId] = useState("");
   const [relationTargetElementId, setRelationTargetElementId] = useState("");
+  const [relationSourceFilter, setRelationSourceFilter] = useState("");
+  const [relationTargetFilter, setRelationTargetFilter] = useState("");
   const [relationTopicId, setRelationTopicId] = useState("");
   const [relationDirection, setRelationDirection] =
     useState<RelationDirection>("element1_to_element2");
   const [relationDefinitionId, setRelationDefinitionId] = useState("");
   const [relationDescription, setRelationDescription] = useState("");
   const [editRelationId, setEditRelationId] = useState("");
+  const [editRelationFilter, setEditRelationFilter] = useState("");
   const [editRelationSourceElementId, setEditRelationSourceElementId] = useState("");
   const [editRelationTargetElementId, setEditRelationTargetElementId] = useState("");
+  const [editRelationSourceFilter, setEditRelationSourceFilter] = useState("");
+  const [editRelationTargetFilter, setEditRelationTargetFilter] = useState("");
   const [editRelationTopicId, setEditRelationTopicId] = useState("");
   const [editRelationDirection, setEditRelationDirection] =
     useState<RelationDirection>("element1_to_element2");
   const [editRelationDefinitionId, setEditRelationDefinitionId] = useState("");
   const [editRelationDescription, setEditRelationDescription] = useState("");
   const [deleteRelationId, setDeleteRelationId] = useState("");
+  const [deleteRelationFilter, setDeleteRelationFilter] = useState("");
   const [confirmDelete, setConfirmDelete] = useState<ConfirmDeleteState>(null);
 
   const sortedTopics = useMemo(
@@ -444,7 +587,14 @@ export function GraphEditor({
   }, [elementMasterDomainObjects, requiredKnowledgeForMaster]);
 
   const relationElements = sortedAllElements;
-
+  const relationElementOptions = useMemo(
+    () =>
+      relationElements.map((element) => ({
+        id: element.id,
+        label: elementOptionLabel(element),
+      })),
+    [relationElements],
+  );
   useEffect(() => {
     setActiveTab(initialTab);
   }, [initialTab]);
@@ -471,6 +621,22 @@ export function GraphEditor({
           return leftTarget.localeCompare(rightTarget, "ru");
         }),
     [elementById, knowledgeElementRelations],
+  );
+
+  const filteredEditRelations = useMemo(
+    () =>
+      sortedElementRelations.filter((relation) =>
+        matchesRelationFilter(relation, elementById, editRelationFilter),
+      ),
+    [editRelationFilter, elementById, sortedElementRelations],
+  );
+
+  const filteredDeleteRelations = useMemo(
+    () =>
+      sortedElementRelations.filter((relation) =>
+        matchesRelationFilter(relation, elementById, deleteRelationFilter),
+      ),
+    [deleteRelationFilter, elementById, sortedElementRelations],
   );
 
   const relationSourceElement = useMemo(
@@ -522,6 +688,17 @@ export function GraphEditor({
     () => relationElements.find((element) => element.id === editRelationSourceElementId),
     [editRelationSourceElementId, relationElements],
   );
+  const filteredEditRelationSourceElements = useMemo(
+    () =>
+      relationElements.filter((element) => matchesElementFilter(element, editRelationSourceFilter)),
+    [editRelationSourceFilter, relationElements],
+  );
+  const filteredEditRelationTargetElements = useMemo(
+    () =>
+      relationElements.filter((element) => matchesElementFilter(element, editRelationTargetFilter)),
+    [editRelationTargetFilter, relationElements],
+  );
+
   const editRelationTargetElement = useMemo(
     () => relationElements.find((element) => element.id === editRelationTargetElementId),
     [editRelationTargetElementId, relationElements],
@@ -770,13 +947,14 @@ export function GraphEditor({
     }
 
     if (!relationElements.some((element) => element.id === relationSourceElementId)) {
-      setRelationSourceElementId(relationElements[0].id);
+      setRelationSourceElementId("");
     }
 
     if (!relationElements.some((element) => element.id === relationTargetElementId)) {
-      setRelationTargetElementId(nextDifferentValue(relationSourceElementId, relationElements));
+      setRelationTargetElementId("");
     }
   }, [relationElements, relationSourceElementId, relationTargetElementId]);
+
 
   useEffect(() => {
     if (!availableRelationTopics.length) {
@@ -817,6 +995,26 @@ export function GraphEditor({
   }, [deleteRelationId, editRelationId, sortedElementRelations]);
 
   useEffect(() => {
+    if (!filteredEditRelations.length) {
+      setEditRelationId("");
+      return;
+    }
+    if (!filteredEditRelations.some((relation) => relation.id === editRelationId)) {
+      setEditRelationId(filteredEditRelations[0].id);
+    }
+  }, [editRelationId, filteredEditRelations]);
+
+  useEffect(() => {
+    if (!filteredDeleteRelations.length) {
+      setDeleteRelationId("");
+      return;
+    }
+    if (!filteredDeleteRelations.some((relation) => relation.id === deleteRelationId)) {
+      setDeleteRelationId(filteredDeleteRelations[0].id);
+    }
+  }, [deleteRelationId, filteredDeleteRelations]);
+
+  useEffect(() => {
     const selectedRelation = sortedElementRelations.find(
       (relation) => relation.id === editRelationId,
     );
@@ -827,6 +1025,7 @@ export function GraphEditor({
     setEditRelationDefinitionId(selectedRelation?.relation_id ?? "");
     setEditRelationDescription(selectedRelation?.description ?? "");
   }, [editRelationId, sortedElementRelations]);
+
 
   useEffect(() => {
     if (!editRelationOptions.length) {
@@ -1386,8 +1585,21 @@ export function GraphEditor({
   async function handleCreateElementRelation(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
 
+    if (!relationSourceElementId || !relationTargetElementId) {
+      setFeedback({ kind: "error", text: "Выбери оба элемента из списка." });
+      return;
+    }
+
     if (relationSourceElementId === relationTargetElementId) {
       setFeedback({ kind: "error", text: "Выбери два разных элемента." });
+      return;
+    }
+
+    if (!relationTopicId) {
+      setFeedback({
+        kind: "error",
+        text: "Для выбранной пары сейчас нет общей темы, в которой можно создать связь.",
+      });
       return;
     }
 
@@ -2774,41 +2986,32 @@ export function GraphEditor({
         <details className="editor-block" open>
           <summary>Добавить связь между элементами</summary>
           <form className="editor-form" onSubmit={handleCreateElementRelation}>
+            <div className="editor-form__grid editor-form__grid--searchable-pickers">
+              <SearchableSelectField
+                label="Элемент 1"
+                value={relationSourceFilter}
+                onValueChange={setRelationSourceFilter}
+                onSelect={setRelationSourceElementId}
+                options={relationElementOptions}
+                placeholder="Начни вводить название элемента"
+                emptyText="Совпадений не найдено"
+                disabled={!relationElementOptions.length}
+              />
+
+              <SearchableSelectField
+                label="Элемент 2"
+                value={relationTargetFilter}
+                onValueChange={setRelationTargetFilter}
+                onSelect={setRelationTargetElementId}
+                options={relationElementOptions}
+                placeholder="Начни вводить название элемента"
+                emptyText="Совпадений не найдено"
+                disabled={!relationElementOptions.length}
+              />
+            </div>
             {!sortedAllElements.length ? (
               <p className="editor-empty">Сначала создай элементы.</p>
             ) : null}
-
-            <div className="editor-form__grid">
-              <label className="field">
-                <span>Элемент 1</span>
-                <select
-                  value={relationSourceElementId}
-                  onChange={(event) => setRelationSourceElementId(event.target.value)}
-                  disabled={!relationElements.length}
-                >
-                  {relationElements.map((element) => (
-                    <option key={element.id} value={element.id}>
-                      {element.name} ({competenceLabel(element.competence_type)})
-                    </option>
-                  ))}
-                </select>
-              </label>
-
-              <label className="field">
-                <span>Элемент 2</span>
-                <select
-                  value={relationTargetElementId}
-                  onChange={(event) => setRelationTargetElementId(event.target.value)}
-                  disabled={!relationElements.length}
-                >
-                  {relationElements.map((element) => (
-                    <option key={element.id} value={element.id}>
-                      {element.name} ({competenceLabel(element.competence_type)})
-                    </option>
-                  ))}
-                </select>
-              </label>
-            </div>
 
             <div className="editor-form__grid">
               <label className="field">
@@ -2878,6 +3081,14 @@ export function GraphEditor({
         <details className="editor-block">
           <summary>Редактировать связь между элементами</summary>
           <form className="editor-form" onSubmit={handleUpdateElementRelation}>
+            <label className="field field--compact">
+              <span>Фильтр связи</span>
+              <input
+                value={editRelationFilter}
+                onChange={(event) => setEditRelationFilter(event.target.value)}
+                placeholder="Название элементов или тип связи"
+              />
+            </label>
             {!sortedElementRelations.length ? (
               <p className="editor-empty">Пока нет связей между элементами для редактирования.</p>
             ) : null}
@@ -2894,9 +3105,9 @@ export function GraphEditor({
               <select
                 value={editRelationId}
                 onChange={(event) => setEditRelationId(event.target.value)}
-                disabled={!sortedElementRelations.length}
+                disabled={!filteredEditRelations.length}
               >
-                {sortedElementRelations.map((relation) => (
+                {filteredEditRelations.map((relation) => (
                   <option key={relation.id} value={relation.id}>
                     {getElementRelationName(relation)}
                   </option>
@@ -2905,14 +3116,34 @@ export function GraphEditor({
             </label>
 
             <div className="editor-form__grid">
+              <label className="field field--compact">
+                <span>Фильтр элемента 1</span>
+                <input
+                  value={editRelationSourceFilter}
+                  onChange={(event) => setEditRelationSourceFilter(event.target.value)}
+                  placeholder="Название или компетенция"
+                />
+              </label>
+
+              <label className="field field--compact">
+                <span>Фильтр элемента 2</span>
+                <input
+                  value={editRelationTargetFilter}
+                  onChange={(event) => setEditRelationTargetFilter(event.target.value)}
+                  placeholder="Название или компетенция"
+                />
+              </label>
+            </div>
+
+            <div className="editor-form__grid">
               <label className="field">
                 <span>Элемент 1</span>
                 <select
                   value={editRelationSourceElementId}
                   onChange={(event) => setEditRelationSourceElementId(event.target.value)}
-                  disabled={!sortedElementRelations.length || !relationElements.length}
+                  disabled={!filteredEditRelations.length || !filteredEditRelationSourceElements.length}
                 >
-                  {relationElements.map((element) => (
+                  {filteredEditRelationSourceElements.map((element) => (
                     <option key={element.id} value={element.id}>
                       {element.name} ({competenceLabel(element.competence_type)})
                     </option>
@@ -2925,9 +3156,9 @@ export function GraphEditor({
                 <select
                   value={editRelationTargetElementId}
                   onChange={(event) => setEditRelationTargetElementId(event.target.value)}
-                  disabled={!sortedElementRelations.length || !relationElements.length}
+                  disabled={!filteredEditRelations.length || !filteredEditRelationTargetElements.length}
                 >
-                  {relationElements.map((element) => (
+                  {filteredEditRelationTargetElements.map((element) => (
                     <option key={element.id} value={element.id}>
                       {element.name} ({competenceLabel(element.competence_type)})
                     </option>
@@ -3006,6 +3237,14 @@ export function GraphEditor({
         <details className="editor-block">
           <summary>Удалить связь между элементами</summary>
           <form className="editor-form" onSubmit={handleDeleteElementRelation}>
+            <label className="field field--compact">
+              <span>Фильтр связи</span>
+              <input
+                value={deleteRelationFilter}
+                onChange={(event) => setDeleteRelationFilter(event.target.value)}
+                placeholder="Название элементов или тип связи"
+              />
+            </label>
             {!sortedElementRelations.length ? (
               <p className="editor-empty">Пока нет связей между элементами для удаления.</p>
             ) : null}
@@ -3015,9 +3254,9 @@ export function GraphEditor({
               <select
                 value={deleteRelationId}
                 onChange={(event) => setDeleteRelationId(event.target.value)}
-                disabled={!sortedElementRelations.length}
+                disabled={!filteredDeleteRelations.length}
               >
-                {sortedElementRelations.map((relation) => (
+                {filteredDeleteRelations.map((relation) => (
                   <option key={relation.id} value={relation.id}>
                     {getElementRelationName(relation)}
                   </option>
