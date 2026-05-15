@@ -313,6 +313,21 @@ function SearchableSelectField({
           placeholder={placeholder}
           disabled={disabled}
         />
+        {value && !disabled ? (
+          <button
+            className="searchable-select__clear"
+            type="button"
+            aria-label={`Очистить поле ${label}`}
+            onMouseDown={(event) => {
+              event.preventDefault();
+              onValueChange("");
+              onSelect("");
+              setIsOpen(true);
+            }}
+          >
+            ×
+          </button>
+        ) : null}
 
         {isOpen && !disabled ? (
           <div className="searchable-select__menu">

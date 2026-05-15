@@ -617,6 +617,35 @@ body:has(.session-profile-header) .home-shell {
   position: relative;
 }
 
+.searchable-select__control input {
+  padding-right: 42px;
+}
+
+.searchable-select__clear {
+  position: absolute;
+  top: 50%;
+  right: 10px;
+  transform: translateY(-50%);
+  width: 24px;
+  height: 24px;
+  border: 0;
+  border-radius: 999px;
+  background: rgba(220, 228, 240, 0.88);
+  color: #47607d;
+  font-size: 1rem;
+  line-height: 1;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.18s ease, color 0.18s ease;
+}
+
+.searchable-select__clear:hover {
+  background: rgba(195, 210, 229, 0.96);
+  color: #253b56;
+}
+
 .searchable-select__menu {
   position: absolute;
   top: calc(100% + 6px);
