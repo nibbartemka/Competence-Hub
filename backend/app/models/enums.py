@@ -15,6 +15,7 @@ class TopicKnowledgeElementRole(StrEnum):
 class KnowledgeElementRelationType(StrEnum):
     REQUIRES = "requires"
     BUILDS_ON = "builds_on"
+    RELIES_ON = "relies_on"
     CONTAINS = "contains"
     PART_OF = "part_of"
     PROPERTY_OF = "property_of"
