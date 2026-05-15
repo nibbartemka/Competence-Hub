@@ -734,6 +734,7 @@ function buildStudentTrajectoryElementsScene(
 
   detailsByNodeId[focusNodeId] = {
     title: topic.name,
+    chips: [],
     subtitle: "Формируемые элементы",
     description: topic.description ?? "Описание темы пока не добавлено.",
     stats: [{ label: "Элементов для изучения", value: String(selectedElements.length) }],
@@ -3098,7 +3099,7 @@ export default function TrajectoryDetailPage() {
                 {detail.description ? <p className="card__text">{detail.description}</p> : null}
 
                 <div className="chip-row">
-                  {detail.chips.map((chip) => (
+                  {(detail.chips ?? []).map((chip) => (
                     <span className={`chip chip--${chip.tone}`} key={chip.label}>
                       {chip.label}
                     </span>
@@ -3106,7 +3107,7 @@ export default function TrajectoryDetailPage() {
                 </div>
 
                 <div className="stat-grid">
-                  {detail.stats.map((stat) => (
+                  {(detail.stats ?? []).map((stat) => (
                     <div className="stat" key={stat.label}>
                       <span>{stat.label}</span>
                       {Array.isArray(stat.value) ? (

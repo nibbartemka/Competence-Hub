@@ -21,6 +21,7 @@ import {
   type GraphNodeRuntimeState,
 } from "./components/GraphNode";
 import { useNotifications } from "./notifications";
+import { readSession } from "./session";
 import { disciplinePathValue, matchesDisciplineIdentifier } from "./disciplineRouting";
 import {
   buildFocusedScene,
@@ -109,6 +110,8 @@ type TrajectoryDraftSnapshot = {
   updatedAt: string;
 };
 
+type OverviewPanelKey = "settings" | "validation" | "detail" | "saved";
+
 function trajectoryDraftKey(disciplineId: string) {
   return `competence-hub:trajectory-draft:${disciplineId}`;
 }
@@ -116,7 +119,6 @@ function trajectoryDraftKey(disciplineId: string) {
 function hasDraftContent(snapshot: TrajectoryDraftSnapshot) {
   return (
     snapshot.trajectoryName.trim().length > 0 ||
-    snapshot.selectedTeacherId.length > 0 ||
     snapshot.selectedGroupId.length > 0 ||
     snapshot.selectedTopicIds.length > 0 ||
     Object.values(snapshot.selectedElementsByTopic).some((elementIds) => elementIds.length > 0)
@@ -266,6 +268,9 @@ export default function TrajectoryGraphBuilder() {
   const { disciplineId } = useParams<{ disciplineId: string }>();
   const navigate = useNavigate();
   const graphRef = useRef<RelationGraphComponent>();
+  const activeSession = readSession();
+  const sessionTeacherId = activeSession?.role === "teacher" ? activeSession.userId : "";
+  const sessionTeacherName = activeSession?.role === "teacher" ? activeSession.displayName : "";
 
   const [disciplines, setDisciplines] = useState<Discipline[]>([]);
   const [groups, setGroups] = useState<Group[]>([]);
@@ -275,7 +280,7 @@ export default function TrajectoryGraphBuilder() {
   const [trajectories, setTrajectories] = useState<LearningTrajectorySummary[]>([]);
 
   const [trajectoryName, setTrajectoryName] = useState("");
-  const [selectedTeacherId, setSelectedTeacherId] = useState("");
+  const [selectedTeacherId, setSelectedTeacherId] = useState(sessionTeacherId);
   const [selectedGroupId, setSelectedGroupId] = useState("");
   const [targetMode, setTargetMode] = useState<"group" | "subgroup">("group");
   const [selectedSubgroupId, setSelectedSubgroupId] = useState("");
@@ -291,6 +296,7 @@ export default function TrajectoryGraphBuilder() {
   const [saving, setSaving] = useState(false);
   const [exportingImage, setExportingImage] = useState(false);
   const [draftRestored, setDraftRestored] = useState(false);
+  const [validationRequested, setValidationRequested] = useState(false);
   const [competenceFilters, setCompetenceFilters] = useState<Record<CompetenceType, boolean>>({
     know: true,
     can: true,
@@ -299,6 +305,12 @@ export default function TrajectoryGraphBuilder() {
   const [draggedTopicId, setDraggedTopicId] = useState("");
   const [dragOverTopicId, setDragOverTopicId] = useState("");
   const [selectedTopicsModalOpen, setSelectedTopicsModalOpen] = useState(false);
+  const [expandedPanels, setExpandedPanels] = useState<Record<OverviewPanelKey, boolean>>({
+    settings: false,
+    validation: false,
+    detail: false,
+    saved: false,
+  });
   const { pushNotification: pushAppNotification } = useNotifications();
 
   function pushNotification(message: { kind: "error" | "success"; text: string }) {
@@ -349,6 +361,8 @@ export default function TrajectoryGraphBuilder() {
   );
 
   const selectedTeacher = selectedTeacherId ? teacherById.get(selectedTeacherId) : undefined;
+  const selectedTeacherName =
+    selectedTeacher?.name || sessionTeacherName || disciplineTeachers[0]?.name || "Преподаватель";
 
   const availableGroups = useMemo(() => {
     if (!activeDiscipline || !selectedTeacher) return [];
@@ -910,6 +924,7 @@ export default function TrajectoryGraphBuilder() {
 
   useEffect(() => {
     setDraftRestored(false);
+    setValidationRequested(false);
   }, [disciplineId]);
 
   useEffect(() => {
@@ -1032,12 +1047,19 @@ export default function TrajectoryGraphBuilder() {
   ]);
 
   useEffect(() => {
+    if (sessionTeacherId && disciplineTeachers.some((teacher) => teacher.id === sessionTeacherId)) {
+      if (selectedTeacherId !== sessionTeacherId) {
+        setSelectedTeacherId(sessionTeacherId);
+      }
+      return;
+    }
+
     if (selectedTeacherId && disciplineTeachers.some((teacher) => teacher.id === selectedTeacherId)) {
       return;
     }
 
     setSelectedTeacherId(disciplineTeachers[0]?.id ?? "");
-  }, [disciplineTeachers, selectedTeacherId]);
+  }, [disciplineTeachers, selectedTeacherId, sessionTeacherId]);
 
   useEffect(() => {
     if (selectedGroupId && availableGroups.some((group) => group.id === selectedGroupId)) {
@@ -1116,6 +1138,19 @@ export default function TrajectoryGraphBuilder() {
       ...current,
       [competenceType]: !current[competenceType],
     }));
+  }
+
+  function toggleOverviewPanel(panelKey: OverviewPanelKey) {
+    setExpandedPanels((current) => {
+      const nextValue = !current[panelKey];
+      return {
+        settings: false,
+        validation: false,
+        detail: false,
+        saved: false,
+        [panelKey]: nextValue,
+      };
+    });
   }
 
   function getSelectedElementIdsForTopics(topicIds: string[]) {
@@ -1363,8 +1398,15 @@ export default function TrajectoryGraphBuilder() {
 
   async function handleCreateTrajectory() {
     if (!resolvedDisciplineId) return;
+    setValidationRequested(true);
 
     if (validationErrors.length) {
+      setExpandedPanels({
+        settings: false,
+        validation: true,
+        detail: false,
+        saved: false,
+      });
       pushNotification({ kind: "error", text: validationErrors[0] });
       return;
     }
@@ -1395,6 +1437,7 @@ export default function TrajectoryGraphBuilder() {
       setSelectedTopicIds([]);
       setSelectedElementsByTopic({});
       setElementThresholds({});
+      setValidationRequested(false);
       await refreshTrajectories();
       pushNotification({ kind: "success", text: "Траектория изучения создана." });
     } catch (error) {
@@ -1514,6 +1557,190 @@ export default function TrajectoryGraphBuilder() {
     );
   }
 
+  function renderSettingsPanelContent() {
+    return (
+      <>
+        <p className="draft-autosave-note">Черновик автосохраняется в этом браузере.</p>
+
+        <div className="trajectory-settings">
+          <label className="field">
+            <span>Название траектории</span>
+            <input
+              value={trajectoryName}
+              onChange={(event) => setTrajectoryName(event.target.value)}
+              placeholder="Например: Базовая траектория"
+            />
+          </label>
+
+          <label className="field">
+            <span>Преподаватель</span>
+            <input readOnly value={selectedTeacherName} />
+          </label>
+
+          <label className="field">
+            <span>Группа</span>
+            <select
+              value={selectedGroupId}
+              onChange={(event) => setSelectedGroupId(event.target.value)}
+              disabled={!availableGroups.length}
+            >
+              {availableGroups.map((group) => (
+                <option key={group.id} value={group.id}>
+                  {group.name}
+                </option>
+              ))}
+            </select>
+          </label>
+
+          <label className="field">
+            <span>Назначение</span>
+            <select
+              value={targetMode}
+              onChange={(event) => setTargetMode(event.target.value as "group" | "subgroup")}
+              disabled={!selectedGroupId || !subgroups.length}
+            >
+              <option value="group">Вся группа</option>
+              <option value="subgroup">Подгруппа</option>
+            </select>
+          </label>
+
+          {targetMode === "subgroup" ? (
+            <label className="field">
+              <span>Подгруппа</span>
+              <select
+                value={selectedSubgroupId}
+                onChange={(event) => setSelectedSubgroupId(event.target.value)}
+                disabled={!subgroups.length}
+              >
+                {subgroups.map((subgroup) => (
+                  <option key={subgroup.id} value={subgroup.id}>
+                    Подгруппа {subgroup.subgroup_num}
+                  </option>
+                ))}
+              </select>
+            </label>
+          ) : null}
+        </div>
+      </>
+    );
+  }
+
+  function renderValidationPanelContent() {
+    return (
+      <>
+        {!validationRequested ? (
+          <p className="card__text">
+            Нажми «Создать траекторию», и система покажет, что нужно исправить перед сохранением.
+          </p>
+        ) : (
+          <>
+            {validationErrors.length ? <p className="trajectory-errors-title">Ошибки</p> : null}
+            <div className="trajectory-validation trajectory-validation--compact">
+              {validationErrors.length ? (
+                validationErrors.slice(0, 5).map((error) => <span key={error}>{error}</span>)
+              ) : (
+                <strong>Траектория готова к сохранению.</strong>
+              )}
+            </div>
+          </>
+        )}
+
+        <button
+          className="secondary-button"
+          onClick={() => setSelectedTopicsModalOpen(true)}
+          type="button"
+        >
+          Выбранные темы
+        </button>
+
+        <button
+          className="primary-button trajectory-save-button"
+          disabled={saving}
+          onClick={() => void handleCreateTrajectory()}
+          type="button"
+        >
+          {saving ? "Сохраняю..." : "Создать траекторию"}
+        </button>
+      </>
+    );
+  }
+
+  function renderDetailPanelContent() {
+    if (!detail) {
+      return (
+        <p className="card__text">
+          Выдели тему или элемент на графе, чтобы увидеть детали и список связанных вершин.
+        </p>
+      );
+    }
+
+    return (
+      <>
+        {detail.subtitle ? <p className="card__lead">{detail.subtitle}</p> : null}
+        {detail.description ? <p className="card__text">{detail.description}</p> : null}
+
+        <div className="chip-row">
+          {(detail.chips ?? []).map((chip) => (
+            <span className={`chip chip--${chip.tone}`} key={chip.label}>
+              {chip.label}
+            </span>
+          ))}
+        </div>
+
+        <div className="stat-grid">
+          {(detail.stats ?? []).map((stat) => (
+            <div className="stat" key={stat.label}>
+              <span>{stat.label}</span>
+              {Array.isArray(stat.value) ? (
+                <ul className="stat__value-list">
+                  {stat.value.map((value) => (
+                    <li key={buildDetailValueKey(stat.label, value)}>{value}</li>
+                  ))}
+                </ul>
+              ) : (
+                <strong>{stat.value}</strong>
+              )}
+            </div>
+          ))}
+        </div>
+
+        {detail.footnote ? <p className="card__footnote">{detail.footnote}</p> : null}
+      </>
+    );
+  }
+
+  function renderSavedTrajectoriesPanelContent() {
+    if (!trajectories.length) {
+      return <p className="home-hint">Для выбранной группы траекторий пока нет.</p>;
+    }
+
+    return (
+      <div className="trajectory-saved-list">
+        {trajectories.map((trajectory) => (
+          <button
+            className="trajectory-saved-card"
+            key={trajectory.id}
+            onClick={() =>
+              navigate(`/disciplines/${resolvedDisciplinePath}/trajectories/${trajectory.id}`)
+            }
+            type="button"
+          >
+            <strong>{trajectory.name}</strong>
+            <span>
+              {trajectory.topic_count} тем · {trajectory.status === "draft"
+                ? "черновик"
+                : trajectory.status === "active"
+                  ? "активна"
+                  : "архив"} · {trajectory.is_actual ? "актуальна" : "устарела"} · {trajectory.group_id
+                ? groupById.get(trajectory.group_id)?.name
+                : "без группы"}
+            </span>
+          </button>
+        ))}
+      </div>
+    );
+  }
+
   if (!disciplineId) {
     return null;
   }
@@ -1521,7 +1748,7 @@ export default function TrajectoryGraphBuilder() {
   return (
     <div className={`page-shell trajectory-page immersive-page immersive-page--trajectory page-shell--${view.level}`}>
       <header className="hero trajectory-hero immersive-page__hero">
-        <div>
+        <div className="trajectory-hero__top">
           <p className="hero__eyebrow">Learning path</p>
           <h1>Конструктор траектории</h1>
           <p className="hero__subtitle">
@@ -1542,9 +1769,107 @@ export default function TrajectoryGraphBuilder() {
             На главную
           </button>
         </div>
+        <section className="trajectory-overview-strip" aria-label="Панель траектории">
+          <section className={`card card--soft trajectory-overview-card${expandedPanels.settings ? " trajectory-overview-card--expanded" : ""}`}>
+            <button
+              className="trajectory-overview-card__summary"
+              onClick={() => toggleOverviewPanel("settings")}
+              type="button"
+            >
+              <span>
+                <span className="card__eyebrow">Настройки</span>
+                <strong>{activeDiscipline?.name ?? "Дисциплина"}</strong>
+              </span>
+              <span className="trajectory-overview-card__toggle">
+                {expandedPanels.settings ? "Свернуть" : "Развернуть"}
+              </span>
+            </button>
+            {expandedPanels.settings ? (
+              <div className="trajectory-overview-card__body">{renderSettingsPanelContent()}</div>
+            ) : null}
+          </section>
+
+          <section className={`card card--soft trajectory-overview-card${expandedPanels.validation ? " trajectory-overview-card--expanded" : ""}`}>
+            <button
+              className="trajectory-overview-card__summary"
+              onClick={() => toggleOverviewPanel("validation")}
+              type="button"
+            >
+              <span>
+                <span className="card__eyebrow">Проверка</span>
+                <strong>
+                  {!validationRequested
+                    ? "Проверка запускается при создании"
+                    : validationErrors.length
+                      ? `Ошибок: ${validationErrors.length}`
+                      : "Траектория готова"}
+                </strong>
+              </span>
+              <span className="trajectory-overview-card__toggle">
+                {expandedPanels.validation ? "Свернуть" : "Развернуть"}
+              </span>
+            </button>
+            {expandedPanels.validation ? (
+              <div className="trajectory-overview-card__body">{renderValidationPanelContent()}</div>
+            ) : null}
+          </section>
+
+          <section className={`card card--soft trajectory-overview-card${expandedPanels.detail ? " trajectory-overview-card--expanded" : ""}`}>
+            <button
+              className="trajectory-overview-card__summary"
+              onClick={() => toggleOverviewPanel("detail")}
+              type="button"
+            >
+              <span>
+                <span className="card__eyebrow">Выбранная вершина</span>
+                <strong>{detail?.title ?? "Ничего не выбрано"}</strong>
+              </span>
+              <span className="trajectory-overview-card__toggle">
+                {expandedPanels.detail ? "Свернуть" : "Развернуть"}
+              </span>
+            </button>
+            {expandedPanels.detail ? (
+              <div className="trajectory-overview-card__body">{renderDetailPanelContent()}</div>
+            ) : null}
+          </section>
+
+          <section className={`card card--soft trajectory-overview-card${expandedPanels.saved ? " trajectory-overview-card--expanded" : ""}`}>
+            <button
+              className="trajectory-overview-card__summary"
+              onClick={() => toggleOverviewPanel("saved")}
+              type="button"
+            >
+              <span>
+                <span className="card__eyebrow">Сохраненные траектории</span>
+                <strong>{trajectories.length ? `${trajectories.length} найдено` : "Пока пусто"}</strong>
+              </span>
+              <span className="trajectory-overview-card__toggle">
+                {expandedPanels.saved ? "Свернуть" : "Развернуть"}
+              </span>
+            </button>
+            {expandedPanels.saved ? (
+              <div className="trajectory-overview-card__body">{renderSavedTrajectoriesPanelContent()}</div>
+            ) : null}
+          </section>
+        </section>
       </header>
-      <div className="trajectory-workspace">
-        <aside className="trajectory-sidebar">
+      {false ? (
+        <button
+          aria-label="Закрыть открытую панель"
+          className="trajectory-focus-backdrop"
+          onClick={() =>
+            setExpandedPanels({
+              settings: false,
+              validation: false,
+              detail: false,
+              saved: false,
+            })
+          }
+          type="button"
+        />
+      ) : null}
+      <div className="trajectory-workspace trajectory-workspace--single-column">
+        <aside className="trajectory-sidebar trajectory-sidebar--hidden" aria-hidden="true">
           <section className="card card--soft">
             <p className="card__eyebrow">Настройки</p>
             <h2>{activeDiscipline?.name ?? "Дисциплина"}</h2>
@@ -1642,7 +1967,7 @@ export default function TrajectoryGraphBuilder() {
 
             <button
               className="primary-button trajectory-save-button"
-              disabled={saving || validationErrors.length > 0}
+              disabled={saving}
               onClick={() => void handleCreateTrajectory()}
               type="button"
             >
@@ -1671,7 +1996,7 @@ export default function TrajectoryGraphBuilder() {
                 ) : null}
 
                 <div className="chip-row">
-                  {detail.chips.map((chip) => (
+                  {(detail.chips ?? []).map((chip) => (
                     <span className={`chip chip--${chip.tone}`} key={chip.label}>
                       {chip.label}
                     </span>
@@ -1679,7 +2004,7 @@ export default function TrajectoryGraphBuilder() {
                 </div>
 
                 <div className="stat-grid">
-                  {detail.stats.map((stat) => (
+                  {(detail.stats ?? []).map((stat) => (
                     <div className="stat" key={stat.label}>
                       <span>{stat.label}</span>
                       {Array.isArray(stat.value) ? (
@@ -1736,7 +2061,7 @@ export default function TrajectoryGraphBuilder() {
           </section>
         </aside>
 
-        <main className="trajectory-graph-column">
+        <main className="trajectory-graph-column trajectory-graph-column--full">
           <section className="graph-stage trajectory-graph-stage">
             <div className="graph-toolbar">
               <div>

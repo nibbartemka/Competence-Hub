@@ -66,6 +66,10 @@ textarea {
   overflow: hidden;
 }
 
+.trajectory-page.immersive-page {
+  overflow: visible;
+}
+
 body:has(.session-profile-header) .immersive-page,
 body:has(.session-profile-header) .page-shell,
 body:has(.session-profile-header) .student-home-page,
@@ -3399,6 +3403,100 @@ body:has(.session-profile-header) .home-shell {
   max-width: 720px;
 }
 
+.trajectory-hero {
+  position: relative;
+  z-index: 200;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 22px;
+  align-items: start;
+}
+
+.trajectory-hero__top {
+  min-width: 0;
+}
+
+.trajectory-overview-strip {
+  position: relative;
+  z-index: 210;
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 14px;
+  margin-top: 24px;
+  grid-column: 1 / -1;
+  align-items: start;
+}
+
+.trajectory-overview-card {
+  padding: 0;
+  position: relative;
+  overflow: visible;
+  align-self: start;
+}
+
+.trajectory-overview-card--expanded {
+  z-index: 220;
+}
+
+.trajectory-overview-card__summary {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  padding: 18px 20px;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  text-align: left;
+  font: inherit;
+}
+
+.trajectory-overview-card__summary strong {
+  display: block;
+  margin-top: 6px;
+  color: #224170;
+  font-size: 1rem;
+}
+
+.trajectory-overview-card__toggle {
+  flex: 0 0 auto;
+  color: #4a6cad;
+  font-size: 0.82rem;
+  font-weight: 700;
+}
+
+.trajectory-overview-card__body {
+  position: absolute;
+  top: calc(100% + 10px);
+  left: 0;
+  right: 0;
+  z-index: 230;
+  display: grid;
+  gap: 16px;
+  padding: 18px 20px 20px;
+  border: 1px solid rgba(36, 77, 149, 0.1);
+  border-radius: 24px;
+  background: rgba(255, 255, 255, 0.97);
+  box-shadow: 0 22px 54px rgba(23, 45, 82, 0.18);
+  backdrop-filter: blur(12px);
+}
+
+.trajectory-overview-card__body .trajectory-settings,
+.trajectory-overview-card__body .trajectory-validation,
+.trajectory-overview-card__body .chip-row,
+.trajectory-overview-card__body .stat-grid,
+.trajectory-overview-card__body .trajectory-saved-list {
+  margin-top: 0;
+}
+
+.trajectory-overview-card__body .trajectory-saved-list {
+  max-height: 320px;
+  overflow: auto;
+  padding-right: 4px;
+}
+
 .trajectory-page .hero,
 .trajectory-page .trajectory-workspace {
   width: min(var(--page-max-width), calc(100vw - (var(--page-side-gutter) * 2)));
@@ -3413,6 +3511,12 @@ body:has(.session-profile-header) .home-shell {
   margin-top: 22px;
 }
 
+.trajectory-workspace--single-column {
+  grid-template-columns: minmax(0, 1fr);
+  position: relative;
+  z-index: 1;
+}
+
 .trajectory-sidebar {
   display: grid;
   align-content: start;
@@ -3420,10 +3524,43 @@ body:has(.session-profile-header) .home-shell {
   max-width: 340px;
 }
 
+.trajectory-sidebar--hidden {
+  display: none;
+}
+
+.trajectory-graph-column--full {
+  min-width: 0;
+  position: relative;
+  z-index: 1;
+}
+
+.trajectory-graph-column--full .graph-stage,
+.trajectory-graph-column--full .graph-surface,
+.trajectory-graph-column--full .graph-frame {
+  position: relative;
+  z-index: 1;
+}
+
 .trajectory-settings {
   display: grid;
   gap: 12px;
   margin-top: 16px;
+}
+
+@media (max-width: 1500px) {
+  .trajectory-overview-strip {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 960px) {
+  .trajectory-hero {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .trajectory-overview-strip {
+    grid-template-columns: minmax(0, 1fr);
+  }
 }
 
 .trajectory-selected-list {
@@ -3658,11 +3795,30 @@ body:has(.session-profile-header) .home-shell {
 }
 
 .trajectory-graph-stage {
-  min-height: calc(100vh - 260px);
+  min-height: clamp(640px, 72vh, 780px);
 }
 
 .trajectory-graph-stage .graph-surface {
-  min-height: calc(100vh - 390px);
+  height: clamp(540px, 62vh, 680px);
+  min-height: clamp(540px, 62vh, 680px);
+}
+
+.trajectory-graph-stage .graph-frame {
+  position: relative;
+  inset: auto;
+  width: 100%;
+  height: 100%;
+  min-height: 100%;
+}
+
+.trajectory-graph-stage .graph-frame > .relation-graph,
+.trajectory-graph-stage .graph-frame > .relation-graph .rel-map {
+  width: 100%;
+  height: 100% !important;
+}
+
+.trajectory-page .modal-backdrop {
+  z-index: 2000;
 }
 
 .trajectory-toolbar-actions {
