@@ -29,6 +29,7 @@ AsyncSessionLocal: async_sessionmaker[AsyncSession] | None = None
 SQLITE_RELATION_DIRECTIONS: dict[str, str] = {
     "REQUIRES": "ONE_DIRECTION",
     "BUILDS_ON": "ONE_DIRECTION",
+    "RELIES_ON": "ONE_DIRECTION",
     "CONTAINS": "ONE_DIRECTION",
     "PART_OF": "ONE_DIRECTION",
     "PROPERTY_OF": "ONE_DIRECTION",
@@ -477,8 +478,8 @@ def _seed_default_admin_record(connection) -> None:
         connection.execute(
             text(
                 """
-                INSERT INTO admins (id, name, login, password)
-                VALUES (lower(hex(randomblob(16))), 'Администратор', 'admin', 'admin')
+                INSERT INTO admins (id, name, login, password, is_active)
+                VALUES (lower(hex(randomblob(16))), 'Администратор', 'admin', 'admin', 1)
                 """
             )
         )

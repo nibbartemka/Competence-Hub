@@ -422,15 +422,26 @@ async def _load_template_relations(
 
 async def _validate_checked_relations(
     trajectory: LearningTrajectory,
+    topic_id: UUID,
     primary_element_id: UUID,
     related_element_ids: list[UUID],
     checked_relation_ids: list[UUID],
     session: DbSession,
 ) -> list[KnowledgeElementRelation]:
-    if not checked_relation_ids:
-        return []
     if len(checked_relation_ids) != len(set(checked_relation_ids)):
         raise bad_request("Проверяемые связи в одном задании не должны повторяться.")
+
+    primary_result = await session.execute(
+        select(KnowledgeElement)
+        .options(lazyload("*"))
+        .where(KnowledgeElement.id == primary_element_id)
+    )
+    primary_element = primary_result.scalar_one_or_none()
+    if primary_element is None:
+        raise bad_request("Ключевой элемент задания не найден.")
+
+    if not checked_relation_ids and primary_element.competence_type != CompetenceType.CAN:
+        return []
 
     checked_element_ids = {primary_element_id, *related_element_ids}
     result = await session.execute(
@@ -450,9 +461,36 @@ async def _validate_checked_relations(
     if missing_ids:
         raise bad_request("Одна из проверяемых связей не найдена.")
 
+    if primary_element.competence_type == CompetenceType.CAN:
+        mandatory_result = await session.execute(
+            select(KnowledgeElementRelation)
+            .options(
+                selectinload(KnowledgeElementRelation.relation).options(lazyload("*")),
+                selectinload(KnowledgeElementRelation.target_element).options(lazyload("*")),
+            )
+            .where(
+                KnowledgeElementRelation.topic_id == topic_id,
+                KnowledgeElementRelation.source_element_id == primary_element_id,
+            )
+        )
+        mandatory_relation_ids = {
+            relation.id
+            for relation in mandatory_result.scalars().all()
+            if relation.relation_type == KnowledgeElementRelationType.IMPLEMENTS
+            and relation.target_element.competence_type == CompetenceType.KNOW
+        }
+        if not mandatory_relation_ids:
+            raise bad_request(
+                "У выбранного элемента «Уметь» нет обязательных связей «реализует» с элементами «Знать» этой темы."
+            )
+        if not mandatory_relation_ids.issubset(set(checked_relation_ids)):
+            raise bad_request(
+                "Для задания уровня «Уметь» нужно сохранить все обязательные связи «реализует» с элементами «Знать»."
+            )
+
     for relation in relations:
-        if relation.relation_type not in TASK_CHECKED_RELATIONS:
-            raise bad_request("Для заданий «Знать» выбрана неподдерживаемая проверяемая связь.")
+        if relation.topic_id != topic_id:
+            raise bad_request("Проверяемая связь должна относиться к выбранной теме задания.")
         if (
             relation.source_element_id not in checked_element_ids
             or relation.target_element_id not in checked_element_ids
@@ -465,11 +503,51 @@ async def _validate_checked_relations(
             or relation.target_element.discipline_id != trajectory.discipline_id
         ):
             raise bad_request("Проверяемая связь должна принадлежать дисциплине этой траектории.")
+
+        if primary_element.competence_type == CompetenceType.CAN:
+            if relation.relation_type != KnowledgeElementRelationType.IMPLEMENTS:
+                raise bad_request("Для заданий «Уметь» можно проверять только связи «реализует».")
+            if primary_element_id not in {
+                relation.source_element_id,
+                relation.target_element_id,
+            }:
+                raise bad_request(
+                    "Проверяемая связь задания «Уметь» должна быть связана с его ключевым элементом."
+                )
+            relation_competence_types = {
+                relation.source_element.competence_type,
+                relation.target_element.competence_type,
+            }
+            if relation_competence_types not in (
+                {CompetenceType.CAN, CompetenceType.KNOW},
+                {CompetenceType.CAN},
+            ):
+                raise bad_request(
+                    "Для заданий «Уметь» допустимы только связи с элементами «Знать» или «Уметь»."
+                )
+            continue
+
+        if relation.relation_type not in TASK_CHECKED_RELATIONS - {
+            KnowledgeElementRelationType.IMPLEMENTS
+        }:
+            raise bad_request("Для заданий «Знать» выбрана неподдерживаемая проверяемая связь.")
         if (
             relation.source_element.competence_type != CompetenceType.KNOW
             or relation.target_element.competence_type != CompetenceType.KNOW
         ):
-            raise bad_request("Проверяемые связи в заданиях пока доступны только для элементов «Знать».")
+            raise bad_request("Проверяемые связи в заданиях «Знать» доступны только для элементов «Знать».")
+
+    if primary_element.competence_type == CompetenceType.CAN:
+        relation_related_element_ids = {
+            relation.target_element_id
+            if relation.source_element_id == primary_element_id
+            else relation.source_element_id
+            for relation in relations
+        }
+        if set(related_element_ids) != relation_related_element_ids:
+            raise bad_request(
+                "Связанные элементы задания «Уметь» должны совпадать с выбранными проверяемыми связями."
+            )
 
     return [relation_by_id[relation_id] for relation_id in checked_relation_ids]
 
@@ -574,6 +652,7 @@ async def create_learning_trajectory_task(
     )
     checked_relations = await _validate_checked_relations(
         trajectory=trajectory,
+        topic_id=payload.topic_id,
         primary_element_id=payload.primary_element_id,
         related_element_ids=payload.related_element_ids,
         checked_relation_ids=payload.checked_relation_ids,
@@ -635,6 +714,7 @@ async def update_learning_trajectory_task(
     )
     checked_relations = await _validate_checked_relations(
         trajectory=trajectory,
+        topic_id=payload.topic_id,
         primary_element_id=payload.primary_element_id,
         related_element_ids=payload.related_element_ids,
         checked_relation_ids=payload.checked_relation_ids,

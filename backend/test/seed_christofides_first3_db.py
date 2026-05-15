@@ -96,6 +96,7 @@ CAN_OPERATION_REF_BY_KEY: dict[str, str] = {
 RELATION_DIRECTION_BY_TYPE: dict[KnowledgeElementRelationType, RelationDirectionType] = {
     KnowledgeElementRelationType.REQUIRES: RelationDirectionType.ONE_DIRECTION,
     KnowledgeElementRelationType.BUILDS_ON: RelationDirectionType.ONE_DIRECTION,
+    KnowledgeElementRelationType.RELIES_ON: RelationDirectionType.ONE_DIRECTION,
     KnowledgeElementRelationType.CONTAINS: RelationDirectionType.ONE_DIRECTION,
     KnowledgeElementRelationType.PART_OF: RelationDirectionType.ONE_DIRECTION,
     KnowledgeElementRelationType.PROPERTY_OF: RelationDirectionType.ONE_DIRECTION,

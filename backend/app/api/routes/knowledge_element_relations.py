@@ -62,6 +62,9 @@ def _is_allowed_relation(
     if source_type == CompetenceType.CAN and target_type == CompetenceType.MASTER:
         return relation_type == KnowledgeElementRelationType.AUTOMATES
 
+    if source_type == CompetenceType.MASTER and target_type == CompetenceType.KNOW:
+        return relation_type == KnowledgeElementRelationType.RELIES_ON
+
     return False
 
 
@@ -190,7 +193,7 @@ async def create_knowledge_element_relation(
             detail=(
                 "Unsupported relation for the selected element pair. "
                 "Allowed combinations: know->know, can->know/can (implements), "
-                "can->master (automates)."
+                "can->master (automates), master->know (relies_on)."
             ),
         )
 
@@ -286,8 +289,8 @@ async def update_knowledge_element_relation(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=(
                 "Unsupported relation for the selected element pair. "
-                "Allowed combinations: know->know, can->know (implements), "
-                "can->master (automates)."
+                "Allowed combinations: know->know, can->know/can (implements), "
+                "can->master (automates), master->know (relies_on)."
             ),
         )
 

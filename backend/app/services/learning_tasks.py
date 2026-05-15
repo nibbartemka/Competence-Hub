@@ -49,6 +49,7 @@ TASK_CHECKED_RELATIONS = {
     KnowledgeElementRelationType.CONTRASTS_WITH,
     KnowledgeElementRelationType.USED_WITH,
     KnowledgeElementRelationType.BUILDS_ON,
+    KnowledgeElementRelationType.IMPLEMENTS,
 }
 
 ACTIVE_TASK_TEMPLATE_KINDS = {
@@ -625,7 +626,12 @@ def validate_task_payload(
     allowed_related_elements: dict[UUID, KnowledgeElement] = {}
     for trajectory_element in trajectory_topic.elements:
         element = trajectory_element.element
-        if element.competence_type == CompetenceType.KNOW:
+        if (
+            primary_element.competence_type == CompetenceType.CAN
+            and element.competence_type in {CompetenceType.KNOW, CompetenceType.CAN}
+        ):
+            allowed_related_elements[element.id] = element
+        elif element.competence_type == CompetenceType.KNOW:
             allowed_related_elements[element.id] = element
 
     if primary_element.competence_type == CompetenceType.CAN:
@@ -634,9 +640,7 @@ def validate_task_payload(
         if payload.task_type != LearningTrajectoryTaskType.TEXT:
             raise bad_request("Для элементов «Уметь» пока доступен только текстовый ответ.")
         if not payload.related_element_ids:
-            raise bad_request("Для задания уровня «Уметь» нужно указать связанные элементы «Знать» этой темы.")
-        if payload.checked_relation_ids:
-            raise bad_request("Проверяемые связи для заданий уровня «Уметь» сейчас не используются.")
+            raise bad_request("Для задания уровня «Уметь» нужно указать связанные элементы этой темы.")
 
     if payload.primary_element_id in payload.related_element_ids:
         raise bad_request("Ключевой элемент не нужно дублировать среди связанных элементов.")
@@ -648,7 +652,7 @@ def validate_task_payload(
     for related_element_id in payload.related_element_ids:
         if related_element_id not in allowed_related_elements:
             raise bad_request(
-                "Связанные элементы должны входить в сохранённую траекторию и иметь компетенцию «Знать»."
+                "Связанные элементы должны входить в сохранённую траекторию и иметь допустимую компетенцию."
             )
         related_elements.append(allowed_related_elements[related_element_id])
 
