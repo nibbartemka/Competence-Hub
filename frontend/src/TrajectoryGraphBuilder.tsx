@@ -21,7 +21,7 @@ import {
   type GraphNodeRuntimeState,
 } from "./components/GraphNode";
 import { useNotifications } from "./notifications";
-import { readSession } from "./session";
+import { getSessionHomePath, readSession } from "./session";
 import { disciplinePathValue, matchesDisciplineIdentifier } from "./disciplineRouting";
 import {
   buildFocusedScene,
@@ -1760,13 +1760,10 @@ export default function TrajectoryGraphBuilder() {
         <div className="hero__controls">
           <button
             className="ghost-button"
-            onClick={() => navigate(`/disciplines/${resolvedDisciplinePath}/knowledge`)}
+            onClick={() => navigate(getSessionHomePath(activeSession))}
             type="button"
           >
-            Назад к графу
-          </button>
-          <button className="ghost-button" onClick={() => navigate("/")} type="button">
-            На главную
+            Личный кабинет
           </button>
         </div>
         <section className="trajectory-overview-strip" aria-label="Панель траектории">
