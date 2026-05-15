@@ -10,6 +10,7 @@ class KnowledgeElementCreate(BaseModel):
     description: str | None = None
     competence_type: CompetenceType
     discipline_id: UUID
+    subject_area_description: str | None = None
     operation_ref: str | None = Field(default=None, max_length=255)
 
 
@@ -17,7 +18,23 @@ class KnowledgeElementUpdate(BaseModel):
     name: str = Field(min_length=1, max_length=255)
     description: str | None = None
     competence_type: CompetenceType
+    subject_area_description: str | None = None
     operation_ref: str | None = Field(default=None, max_length=255)
+
+
+class MasterElementDomainObjectCreate(BaseModel):
+    object_name: str = Field(min_length=1, max_length=255)
+    knowledge_element_id: UUID
+
+
+class StructuredMasterKnowledgeElementCreate(BaseModel):
+    name: str = Field(min_length=1, max_length=255)
+    description: str | None = None
+    discipline_id: UUID
+    topic_id: UUID
+    subject_area_description: str = Field(min_length=1)
+    automated_skill_element_id: UUID
+    domain_objects: list[MasterElementDomainObjectCreate] = Field(min_length=1)
 
 
 class KnowledgeElementRead(BaseModel):
@@ -28,4 +45,5 @@ class KnowledgeElementRead(BaseModel):
     description: str | None
     competence_type: CompetenceType
     discipline_id: UUID | None
+    subject_area_description: str | None
     operation_ref: str | None

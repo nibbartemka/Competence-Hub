@@ -113,6 +113,7 @@ export type KnowledgeElement = {
   description: string | null;
   competence_type: CompetenceType;
   discipline_id: string | null;
+  subject_area_description: string | null;
   operation_ref: string | null;
 };
 

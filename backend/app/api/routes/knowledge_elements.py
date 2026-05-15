@@ -7,12 +7,22 @@ from sqlalchemy.orm import lazyload
 from app.api.crud import commit_or_409, flush_or_409, not_found
 from app.api.deps import DbSession
 from app.algorithm_library import get_operation_contract
-from app.models import Discipline, KnowledgeElement, SkillAssessmentTask, Topic, TopicKnowledgeElement
-from app.models.enums import CompetenceType
+from app.models import (
+    Discipline,
+    KnowledgeElement,
+    KnowledgeElementRelation,
+    MasterElementDomainObject,
+    Relation,
+    SkillAssessmentTask,
+    Topic,
+    TopicKnowledgeElement,
+)
+from app.models.enums import CompetenceType, KnowledgeElementRelationType, TopicKnowledgeElementRole
 from app.schemas import (
     KnowledgeElementCreate,
     KnowledgeElementRead,
     KnowledgeElementUpdate,
+    StructuredMasterKnowledgeElementCreate,
 )
 from app.services.knowledge_graph_integrity import (
     bump_knowledge_graph_version,
@@ -50,6 +60,25 @@ def _normalize_operation_ref(
     return None
 
 
+def _normalize_subject_area_description(
+    competence_type: CompetenceType,
+    subject_area_description: str | None,
+) -> str | None:
+    normalized = (subject_area_description or "").strip() or None
+    if competence_type == CompetenceType.MASTER:
+        return normalized
+
+    if normalized is not None:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=(
+                "Only knowledge elements of competence 'master' can include "
+                "a subject area description."
+            ),
+        )
+    return None
+
+
 @router.get("/", response_model=list[KnowledgeElementRead])
 async def list_knowledge_elements(
     session: DbSession,
@@ -73,6 +102,15 @@ async def create_knowledge_element(
     payload: KnowledgeElementCreate,
     session: DbSession,
 ) -> KnowledgeElement:
+    if payload.competence_type == CompetenceType.MASTER:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=(
+                "Knowledge elements of competence 'master' must be created "
+                "through the structured master element flow."
+            ),
+        )
+
     discipline_exists = await session.execute(
         select(Discipline.id).where(Discipline.id == payload.discipline_id)
     )
@@ -83,10 +121,15 @@ async def create_knowledge_element(
         payload.competence_type,
         payload.operation_ref,
     )
+    subject_area_description = _normalize_subject_area_description(
+        payload.competence_type,
+        payload.subject_area_description,
+    )
 
     element = KnowledgeElement(
         name=payload.name,
         description=payload.description,
+        subject_area_description=subject_area_description,
         competence_type=payload.competence_type,
         discipline_id=payload.discipline_id,
         operation_ref=operation_ref,
@@ -97,6 +140,204 @@ async def create_knowledge_element(
     await commit_or_409(session)
     await session.refresh(element)
     return element
+
+
+@router.post(
+    "/master-structured",
+    response_model=KnowledgeElementRead,
+    status_code=status.HTTP_201_CREATED,
+)
+async def create_structured_master_knowledge_element(
+    payload: StructuredMasterKnowledgeElementCreate,
+    session: DbSession,
+) -> KnowledgeElement:
+    discipline_exists = await session.execute(
+        select(Discipline.id).where(Discipline.id == payload.discipline_id)
+    )
+    if discipline_exists.scalar_one_or_none() is None:
+        raise not_found("Discipline", payload.discipline_id)
+
+    topic_result = await session.execute(
+        select(Topic).options(lazyload("*")).where(Topic.id == payload.topic_id)
+    )
+    topic = topic_result.scalar_one_or_none()
+    if topic is None:
+        raise not_found("Topic", payload.topic_id)
+    if topic.discipline_id != payload.discipline_id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Selected topic must belong to the same discipline.",
+        )
+
+    skill_result = await session.execute(
+        select(KnowledgeElement)
+        .options(lazyload("*"))
+        .where(KnowledgeElement.id == payload.automated_skill_element_id)
+    )
+    skill_element = skill_result.scalar_one_or_none()
+    if skill_element is None:
+        raise not_found("Knowledge element", payload.automated_skill_element_id)
+    if skill_element.discipline_id != payload.discipline_id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Selected skill element must belong to the same discipline.",
+        )
+    if skill_element.competence_type != CompetenceType.CAN:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Structured master element flow expects a skill element of competence 'can'.",
+        )
+    if not skill_element.operation_ref:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Selected skill element must be linked to an algorithm operation.",
+        )
+
+    skill_topic_link_result = await session.execute(
+        select(TopicKnowledgeElement.id).where(
+            TopicKnowledgeElement.topic_id == payload.topic_id,
+            TopicKnowledgeElement.element_id == skill_element.id,
+        )
+    )
+    if skill_topic_link_result.scalar_one_or_none() is None:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Selected skill element must be linked to the chosen topic.",
+        )
+
+    relation_result = await session.execute(
+        select(Relation).options(lazyload("*")).where(
+            Relation.relation_type.in_(
+                [
+                    KnowledgeElementRelationType.IMPLEMENTS,
+                    KnowledgeElementRelationType.AUTOMATES,
+                ]
+            )
+        )
+    )
+    relations_by_type = {
+        relation.relation_type: relation
+        for relation in relation_result.scalars().all()
+    }
+    implements_relation = relations_by_type.get(KnowledgeElementRelationType.IMPLEMENTS)
+    automates_relation = relations_by_type.get(KnowledgeElementRelationType.AUTOMATES)
+    if implements_relation is None or automates_relation is None:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Required relation definitions 'implements' and 'automates' were not found.",
+        )
+
+    required_knowledge_result = await session.execute(
+        select(KnowledgeElement)
+        .join(
+            KnowledgeElementRelation,
+            KnowledgeElementRelation.target_element_id == KnowledgeElement.id,
+        )
+        .join(
+            TopicKnowledgeElement,
+            TopicKnowledgeElement.element_id == KnowledgeElement.id,
+        )
+        .where(
+            KnowledgeElementRelation.topic_id == payload.topic_id,
+            KnowledgeElementRelation.source_element_id == skill_element.id,
+            KnowledgeElementRelation.relation_id == implements_relation.id,
+            TopicKnowledgeElement.topic_id == payload.topic_id,
+            KnowledgeElement.competence_type == CompetenceType.KNOW,
+        )
+        .order_by(KnowledgeElement.name)
+    )
+    required_knowledge_elements = list(required_knowledge_result.scalars().all())
+    required_knowledge_by_id = {
+        element.id: element for element in required_knowledge_elements
+    }
+    if not required_knowledge_by_id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=(
+                "Selected skill element has no related knowledge elements of competence "
+                "'know' in the chosen topic."
+            ),
+        )
+
+    cleaned_domain_objects: list[tuple[str, UUID]] = []
+    covered_knowledge_ids: set[UUID] = set()
+    for domain_object in payload.domain_objects:
+        object_name = domain_object.object_name.strip()
+        if not object_name:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Each subject area object must have a name.",
+            )
+        if domain_object.knowledge_element_id not in required_knowledge_by_id:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=(
+                    "Subject area objects can only reference knowledge elements of "
+                    "competence 'know' that are linked to the selected skill element "
+                    "inside the chosen topic."
+                ),
+            )
+        cleaned_domain_objects.append(
+            (object_name, domain_object.knowledge_element_id)
+        )
+        covered_knowledge_ids.add(domain_object.knowledge_element_id)
+
+    missing_knowledge = [
+        element.name
+        for element_id, element in required_knowledge_by_id.items()
+        if element_id not in covered_knowledge_ids
+    ]
+    if missing_knowledge:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=(
+                "All related knowledge elements of competence 'know' must be covered. "
+                f"Missing: {', '.join(missing_knowledge)}."
+            ),
+        )
+
+    master_element = KnowledgeElement(
+        name=payload.name,
+        description=payload.description,
+        subject_area_description=payload.subject_area_description.strip(),
+        competence_type=CompetenceType.MASTER,
+        discipline_id=payload.discipline_id,
+        operation_ref=None,
+    )
+    session.add(master_element)
+    await flush_or_409(session)
+
+    session.add(
+        TopicKnowledgeElement(
+            topic_id=payload.topic_id,
+            element_id=master_element.id,
+            role=TopicKnowledgeElementRole.FORMED,
+            note=None,
+        )
+    )
+    session.add(
+        KnowledgeElementRelation(
+            topic_id=payload.topic_id,
+            source_element_id=skill_element.id,
+            target_element_id=master_element.id,
+            relation_id=automates_relation.id,
+            description=None,
+        )
+    )
+    for object_name, knowledge_element_id in cleaned_domain_objects:
+        session.add(
+            MasterElementDomainObject(
+                object_name=object_name,
+                master_element_id=master_element.id,
+                knowledge_element_id=knowledge_element_id,
+            )
+        )
+
+    await flush_or_409(session)
+    await bump_knowledge_graph_version(session, [payload.discipline_id])
+    await commit_or_409(session)
+    await session.refresh(master_element)
+    return master_element
 
 
 @router.get("/{element_id}", response_model=KnowledgeElementRead)
@@ -123,9 +364,36 @@ async def update_knowledge_element(
     if element is None:
         raise not_found("Knowledge element", element_id)
 
+    if (
+        payload.competence_type == CompetenceType.MASTER
+        and element.competence_type != CompetenceType.MASTER
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=(
+                "Use the structured master element flow to create knowledge elements "
+                "of competence 'master'."
+            ),
+        )
+    if (
+        element.competence_type == CompetenceType.MASTER
+        and payload.competence_type != CompetenceType.MASTER
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=(
+                "Knowledge elements of competence 'master' cannot be converted to "
+                "another competence through the generic editor."
+            ),
+        )
+
     operation_ref = _normalize_operation_ref(
         payload.competence_type,
         payload.operation_ref,
+    )
+    subject_area_description = _normalize_subject_area_description(
+        payload.competence_type,
+        payload.subject_area_description,
     )
 
     if element.competence_type == CompetenceType.CAN and payload.competence_type != CompetenceType.CAN:
@@ -163,6 +431,7 @@ async def update_knowledge_element(
 
     element.name = payload.name
     element.description = payload.description
+    element.subject_area_description = subject_area_description
     element.competence_type = payload.competence_type
     element.operation_ref = operation_ref
     if element.discipline_id is not None:

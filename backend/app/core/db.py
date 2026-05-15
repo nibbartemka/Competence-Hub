@@ -820,6 +820,15 @@ def _sync_sqlite_schema(connection) -> None:
                 "ADD COLUMN operation_ref VARCHAR(255)"
             )
         )
+    if _sqlite_has_table(connection, "knowledge_elements") and not _sqlite_has_column(
+        connection, "knowledge_elements", "subject_area_description"
+    ):
+        connection.execute(
+            text(
+                "ALTER TABLE knowledge_elements "
+                "ADD COLUMN subject_area_description TEXT"
+            )
+        )
     if _sqlite_has_table(connection, "disciplines") and not _sqlite_has_column(
         connection, "disciplines", "knowledge_graph_version"
     ):

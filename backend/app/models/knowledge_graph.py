@@ -136,6 +136,7 @@ class KnowledgeElement(Base):
     id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
     name: Mapped[str] = mapped_column(String(255), nullable=False)
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
+    subject_area_description: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     competence_type: Mapped[CompetenceType] = mapped_column(
         Enum(CompetenceType, name="competence_type_enum"),
@@ -180,6 +181,14 @@ class KnowledgeElement(Base):
     skill_assessment_tasks: Mapped[list["SkillAssessmentTask"]] = relationship(
         "SkillAssessmentTask",
         back_populates="skill_element",
+        cascade="all, delete-orphan",
+        lazy="selectin",
+    )
+
+    master_domain_objects: Mapped[list["MasterElementDomainObject"]] = relationship(
+        "MasterElementDomainObject",
+        foreign_keys="MasterElementDomainObject.master_element_id",
+        back_populates="master_element",
         cascade="all, delete-orphan",
         lazy="selectin",
     )
@@ -323,3 +332,32 @@ class KnowledgeElementRelation(Base):
     @property
     def direction(self) -> RelationDirectionType:
         return self.relation.direction
+
+
+class MasterElementDomainObject(Base):
+    __tablename__ = "master_element_domain_objects"
+
+    id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
+    object_name: Mapped[str] = mapped_column(String(255), nullable=False)
+
+    master_element_id: Mapped[UUID] = mapped_column(
+        ForeignKey("knowledge_elements.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    knowledge_element_id: Mapped[UUID] = mapped_column(
+        ForeignKey("knowledge_elements.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+
+    master_element: Mapped["KnowledgeElement"] = relationship(
+        "KnowledgeElement",
+        foreign_keys=[master_element_id],
+        back_populates="master_domain_objects",
+        lazy="selectin",
+    )
+
+    knowledge_element: Mapped["KnowledgeElement"] = relationship(
+        "KnowledgeElement",
+        foreign_keys=[knowledge_element_id],
+        lazy="selectin",
+    )

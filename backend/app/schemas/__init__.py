@@ -26,6 +26,8 @@ from .knowledge_elements import (
     KnowledgeElementCreate,
     KnowledgeElementRead,
     KnowledgeElementUpdate,
+    MasterElementDomainObjectCreate,
+    StructuredMasterKnowledgeElementCreate,
 )
 from .operation_contracts import OperationContractRead
 from .skill_assessment_tasks import SkillAssessmentTaskCreate, SkillAssessmentTaskRead
@@ -113,6 +115,8 @@ __all__ = [
     "KnowledgeElementCreate",
     "KnowledgeElementRead",
     "KnowledgeElementUpdate",
+    "MasterElementDomainObjectCreate",
+    "StructuredMasterKnowledgeElementCreate",
     "OperationContractRead",
     "SkillAssessmentTaskCreate",
     "SkillAssessmentTaskRead",

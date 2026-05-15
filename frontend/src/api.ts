@@ -417,6 +417,7 @@ export function createKnowledgeElement(payload: {
   description: string;
   competence_type: CompetenceType;
   discipline_id: string;
+  subject_area_description?: string | null;
   operation_ref?: string | null;
 }) {
   return request<KnowledgeElement>("/knowledge-elements/", {
@@ -431,11 +432,30 @@ export function updateKnowledgeElement(
     name: string;
     description: string;
     competence_type: CompetenceType;
+    subject_area_description?: string | null;
     operation_ref?: string | null;
   },
 ) {
   return request<KnowledgeElement>(`/knowledge-elements/${elementId}`, {
     method: "PUT",
+    body: payload,
+  });
+}
+
+export function createStructuredMasterKnowledgeElement(payload: {
+  name: string;
+  description: string;
+  discipline_id: string;
+  topic_id: string;
+  subject_area_description: string;
+  automated_skill_element_id: string;
+  domain_objects: Array<{
+    object_name: string;
+    knowledge_element_id: string;
+  }>;
+}) {
+  return request<KnowledgeElement>("/knowledge-elements/master-structured", {
+    method: "POST",
     body: payload,
   });
 }

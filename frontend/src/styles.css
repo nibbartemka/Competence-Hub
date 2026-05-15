@@ -687,6 +687,20 @@ body:has(.session-profile-header) .home-shell {
   gap: 12px;
 }
 
+.editor-domain-objects {
+  display: grid;
+  gap: 12px;
+}
+
+.editor-domain-object {
+  display: grid;
+  gap: 12px;
+  padding: 14px;
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.92);
+  border: 1px solid rgba(31, 55, 84, 0.08);
+}
+
 .editor-status {
   margin-top: 14px;
   padding: 12px 14px;
