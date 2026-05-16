@@ -7,6 +7,14 @@ import {
   isAbortError,
   submitStudentTaskScore,
 } from "./api";
+import {
+  buildStructuredOperationAnswerText,
+  hasStructuredOperationContent,
+  OperationAnswerEditor,
+  OperationInputPreview,
+  OperationOutputPreview,
+} from "./components/OperationTaskSchemaViews";
+import StudentTaskDebugAnswerModal from "./components/StudentTaskDebugAnswerModal";
 import { getSessionHomePath, readSession, sessionMatches } from "./session";
 import type { StudentAssignedTask, StudentTopicControl } from "./types";
 
@@ -81,6 +89,7 @@ export default function StudentTopicControlPage() {
   const [error, setError] = useState("");
   const [continuePractice, setContinuePractice] = useState(false);
   const [skillPractice, setSkillPractice] = useState(false);
+  const [debugTask, setDebugTask] = useState<StudentAssignedTask | null>(null);
 
   useEffect(() => {
     const activeSession = readSession();
@@ -213,7 +222,13 @@ export default function StudentTopicControlPage() {
     try {
       setSaving(true);
       setError("");
-      await submitStudentTaskScore(task.id, studentId, answer, task.task_instance_id);
+      const nextAnswer =
+        task.task_type === "text" && hasStructuredOperationContent(task.content)
+          ? {
+              text: buildStructuredOperationAnswerText(answer, task.content),
+            }
+          : answer;
+      await submitStudentTaskScore(task.id, studentId, nextAnswer, task.task_instance_id);
       await loadControl(undefined, continuePractice, skillPractice);
     } catch (submitError) {
       setError(extractErrorMessage(submitError));
@@ -239,26 +254,44 @@ export default function StudentTopicControlPage() {
 
   function renderAnswer(task: StudentAssignedTask) {
     if (task.task_type === "text") {
+      const hasStructuredContent = hasStructuredOperationContent(task.content);
+      const answerText = buildStructuredOperationAnswerText(answer, task.content);
       return (
         <div className="student-task-answer">
           {task.content.contract_title ? (
             <p className="card__text">Операция: {task.content.contract_title}</p>
           ) : null}
-          {task.content.input_payload ? (
-            <label className="field">
-              <span>Входные данные</span>
-              <textarea rows={8} value={JSON.stringify(task.content.input_payload, null, 2)} readOnly />
-            </label>
+          <OperationInputPreview payload={task.content.input_payload} schema={task.content.input_schema} />
+          {hasStructuredContent ? <OperationOutputPreview content={task.content} /> : null}
+          {hasStructuredContent ? (
+            <OperationAnswerEditor
+              inputPayload={task.content.input_payload}
+              onChangeText={updateTextAnswer}
+              schema={task.content.output_schema}
+              valueText={answerText}
+            />
           ) : null}
-          <label className="field">
-            <span>Ответ студента</span>
+          {hasStructuredContent ? (
             <textarea
+              className="visually-hidden"
+              aria-hidden="true"
+              disabled
               rows={6}
-              value={String(answer.text ?? "")}
-              onChange={(event) => updateTextAnswer(event.target.value)}
+              value={answerText}
+              onChange={() => undefined}
               placeholder={task.content.placeholder ?? "Введите ответ"}
             />
-          </label>
+          ) : (
+            <label className="field">
+              <span>Ответ студента</span>
+              <textarea
+                rows={6}
+                value={String(answer.text ?? "")}
+                onChange={(event) => updateTextAnswer(event.target.value)}
+                placeholder={task.content.placeholder ?? "Введите ответ"}
+              />
+            </label>
+          )}
         </div>
       );
     }
@@ -471,6 +504,14 @@ export default function StudentTopicControlPage() {
                   className="ghost-button"
                   type="button"
                   disabled={saving}
+                  onClick={() => setDebugTask(currentTask)}
+                >
+                  Показать эталон
+                </button>
+                <button
+                  className="ghost-button"
+                  type="button"
+                  disabled={saving}
                   onClick={() => void reloadCurrentState()}
                 >
                   Обновить тему
@@ -532,6 +573,8 @@ export default function StudentTopicControlPage() {
           )}
         </aside>
       </main>
+
+      <StudentTaskDebugAnswerModal onClose={() => setDebugTask(null)} task={debugTask} />
     </div>
   );
 }

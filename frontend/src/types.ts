@@ -442,6 +442,7 @@ export type StudentTaskContent = {
   contract_title?: string;
   input_schema?: Record<string, unknown>;
   output_schema?: Record<string, unknown>;
+  debug_solution?: Record<string, unknown>;
 };
 
 export type StudentAssignedTask = {

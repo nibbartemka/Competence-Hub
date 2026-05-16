@@ -31,6 +31,14 @@ import {
 import OperationInputEditor, {
   validateOperationInput,
 } from "./components/OperationInputEditor";
+import {
+  buildStructuredOperationAnswerText,
+  hasStructuredOperationContent,
+  OperationAnswerEditor,
+  OperationInputPreview,
+  OperationOutputPreview,
+} from "./components/OperationTaskSchemaViews";
+import StudentTaskDebugAnswerModal from "./components/StudentTaskDebugAnswerModal";
 import { useNotifications } from "./notifications";
 import { getSessionHomePath } from "./session";
 import { disciplinePathValue } from "./disciplineRouting";
@@ -942,6 +950,7 @@ export default function TrajectoryDetailPage() {
   const [studentTrajectoryMastery, setStudentTrajectoryMastery] =
     useState<StudentTrajectoryMastery | null>(null);
   const [studentTaskAnswers, setStudentTaskAnswers] = useState<Record<string, Record<string, unknown>>>({});
+  const [debugStudentTask, setDebugStudentTask] = useState<StudentAssignedTask | null>(null);
   const [savingStudentTaskId, setSavingStudentTaskId] = useState("");
   const [studentDataLoading, setStudentDataLoading] = useState(false);
   const [studentTaskModalOpen, setStudentTaskModalOpen] = useState(false);
@@ -2228,10 +2237,17 @@ export default function TrajectoryDetailPage() {
 
     try {
       setSavingStudentTaskId(task.id);
+      const rawAnswer = studentTaskAnswers[task.id] ?? buildStudentTaskAnswerDraft(task);
+      const nextAnswer =
+        task.task_type === "text" && hasStructuredOperationContent(task.content)
+          ? {
+              text: buildStructuredOperationAnswerText(rawAnswer, task.content),
+            }
+          : rawAnswer;
       const updatedTask = await submitStudentTaskScore(
         task.id,
         studentIdFromQuery,
-        studentTaskAnswers[task.id] ?? buildStudentTaskAnswerDraft(task),
+        nextAnswer,
         task.task_instance_id,
       );
       setStudentTasks((current) =>
@@ -2344,26 +2360,45 @@ export default function TrajectoryDetailPage() {
 
   function renderDetachedTextTaskAnswer(task: StudentAssignedTask, answer: Record<string, unknown>) {
     if (task.task_type === "text") {
+      const hasStructuredContent = hasStructuredOperationContent(task.content);
+      const answerText = buildStructuredOperationAnswerText(answer, task.content);
       return (
         <div className="student-task-answer">
           {task.content.contract_title ? (
             <p className="card__text">Операция: {task.content.contract_title}</p>
           ) : null}
-          {task.content.input_payload ? (
-            <label className="field">
-              <span>Входные данные</span>
-              <textarea rows={8} value={JSON.stringify(task.content.input_payload, null, 2)} readOnly disabled />
-            </label>
+          <OperationInputPreview payload={task.content.input_payload} schema={task.content.input_schema} />
+          {hasStructuredContent ? <OperationOutputPreview content={task.content} /> : null}
+          {hasStructuredContent ? (
+            <OperationAnswerEditor
+              disabled={savingStudentTaskId === task.id}
+              inputPayload={task.content.input_payload}
+              onChangeText={(value) => updateStudentTextAnswer(task.id, value)}
+              schema={task.content.output_schema}
+              valueText={answerText}
+            />
           ) : null}
-          <label className="field">
-            <span>Ответ студента</span>
+          {hasStructuredContent ? (
             <textarea
+              className="visually-hidden"
+              aria-hidden="true"
+              disabled
               rows={6}
-              value={String(answer.text ?? "")}
-              onChange={(event) => updateStudentTextAnswer(task.id, event.target.value)}
+              value={answerText}
+              onChange={() => undefined}
               placeholder={task.content.placeholder ?? "Введите ответ"}
             />
-          </label>
+          ) : (
+            <label className="field">
+              <span>Ответ студента</span>
+              <textarea
+                rows={6}
+                value={String(answer.text ?? "")}
+                onChange={(event) => updateStudentTextAnswer(task.id, event.target.value)}
+                placeholder={task.content.placeholder ?? "Введите ответ"}
+              />
+            </label>
+          )}
         </div>
       );
     }
@@ -2451,6 +2486,21 @@ export default function TrajectoryDetailPage() {
               );
             })}
           </div>
+        ) : null}
+
+        {(taskCompetenceTab === "can" || taskTemplateKind === "text_definition") && selectedPrimaryOperation ? (
+          <>
+            <OperationInputPreview
+              payload={taskSkillInputPayload}
+              schema={selectedPrimaryOperation.input_schema}
+            />
+            <OperationOutputPreview
+              content={{
+                input_payload: taskSkillInputPayload,
+                output_schema: selectedPrimaryOperation.output_schema,
+              }}
+            />
+          </>
         ) : null}
 
         {taskCheckedRelationIds.length ? (
@@ -3352,6 +3402,14 @@ export default function TrajectoryDetailPage() {
 
                     <div className="student-task-card__actions">
                       <button
+                        className="ghost-button"
+                        type="button"
+                        disabled={savingStudentTaskId === task.id}
+                        onClick={() => setDebugStudentTask(task)}
+                      >
+                        Показать эталон
+                      </button>
+                      <button
                         className="primary-button"
                         type="button"
                         disabled={savingStudentTaskId === task.id}
@@ -3960,6 +4018,14 @@ export default function TrajectoryDetailPage() {
                         {renderStudentTaskAnswerEditor(selectedTopicRecommendedTask)}
                         <div className="student-task-card__actions">
                           <button
+                            className="ghost-button"
+                            type="button"
+                            disabled={savingStudentTaskId === selectedTopicRecommendedTask.id}
+                            onClick={() => setDebugStudentTask(selectedTopicRecommendedTask)}
+                          >
+                            Показать эталон
+                          </button>
+                          <button
                             className="primary-button"
                             type="button"
                             disabled={savingStudentTaskId === selectedTopicRecommendedTask.id}
@@ -3999,6 +4065,8 @@ export default function TrajectoryDetailPage() {
           </div>
         </div>
       ) : null}
+
+      <StudentTaskDebugAnswerModal onClose={() => setDebugStudentTask(null)} task={debugStudentTask} />
     </div>
   );
 }
