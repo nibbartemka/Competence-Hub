@@ -717,14 +717,23 @@ def build_student_task_content_from_snapshot(
         LearningTrajectoryTaskType.SINGLE_CHOICE,
         LearningTrajectoryTaskType.MULTIPLE_CHOICE,
     }:
+        options = [
+            {
+                "id": option["id"],
+                "text": option["text"],
+            }
+            for option in content.get("options", [])
+        ]
         return {
-            "options": [
-                {
-                    "id": option["id"],
-                    "text": option["text"],
-                }
-                for option in content.get("options", [])
-            ]
+            "options": options,
+            "debug_solution": {
+                "kind": "choice",
+                "correct_option_ids": [
+                    option["id"]
+                    for option in content.get("options", [])
+                    if option.get("is_correct")
+                ],
+            },
         }
 
     if task.task_type == LearningTrajectoryTaskType.MATCHING:
@@ -740,6 +749,10 @@ def build_student_task_content_from_snapshot(
                 for pair in pairs
             ],
             "right_items": right_items,
+            "debug_solution": {
+                "kind": "matching",
+                "pairs": pairs,
+            },
         }
 
     if task.task_type == LearningTrajectoryTaskType.ORDERING:
@@ -748,7 +761,28 @@ def build_student_task_content_from_snapshot(
             for item in content.get("items", [])
         ]
         random.Random(seed or str(task.id)).shuffle(items)
-        return {"items": items}
+        correct_order_ids = [
+            str(item_id)
+            for item_id in content.get("correct_order_ids", [])
+            if str(item_id).strip()
+        ]
+        item_by_id = {
+            str(item["id"]): str(item["text"])
+            for item in content.get("items", [])
+            if str(item.get("id", "")).strip()
+        }
+        return {
+            "items": items,
+            "debug_solution": {
+                "kind": "ordering",
+                "correct_order_ids": correct_order_ids,
+                "ordered_texts": [
+                    item_by_id[item_id]
+                    for item_id in correct_order_ids
+                    if item_id in item_by_id
+                ],
+            },
+        }
 
     if task.task_type == LearningTrajectoryTaskType.TEXT:
         return {
@@ -757,6 +791,11 @@ def build_student_task_content_from_snapshot(
             "contract_title": content.get("contract_title", ""),
             "input_schema": content.get("input_schema", {}),
             "output_schema": content.get("output_schema", {}),
+            "debug_solution": {
+                "kind": "text",
+                "expected_output": content.get("expected_output"),
+                "accepted_answers": content.get("accepted_answers", []),
+            },
         }
 
     return {}
