@@ -17,6 +17,7 @@ import {
   updateKnowledgeElementRelation,
   updateTopic,
 } from "../api";
+import { useNotifications } from "../notifications";
 import type {
   CompetenceType,
   KnowledgeElement,
@@ -438,7 +439,15 @@ export function GraphEditor({
   const [operationContracts, setOperationContracts] = useState<OperationContract[]>([]);
   const [relationCatalog, setRelationCatalog] = useState<Relation[]>([]);
   const [busyAction, setBusyAction] = useState("");
-  const [feedback, setFeedback] = useState<Feedback | null>(null);
+  const { pushNotification } = useNotifications();
+
+  function setFeedback(nextFeedback: Feedback | null) {
+    if (!nextFeedback) {
+      return;
+    }
+
+    pushNotification(nextFeedback.kind, nextFeedback.text);
+  }
 
   const [topicName, setTopicName] = useState("");
   const [topicDescription, setTopicDescription] = useState("");
@@ -3424,10 +3433,6 @@ export function GraphEditor({
           Модальное окно разбито на разделы «Темы», «Элементы» и «Связи». Логика
           создания темы с требуемыми элементами и добавлением новых элементов сохранена.
         </p>
-
-        {feedback ? (
-          <div className={`editor-status editor-status--${feedback.kind}`}>{feedback.text}</div>
-        ) : null}
 
         <div className="editor-tabs">
           <button

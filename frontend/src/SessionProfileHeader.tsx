@@ -38,7 +38,14 @@ export function SessionProfileHeader() {
   const [notificationsOpen, setNotificationsOpen] = useState(false);
   const [profileOpen, setProfileOpen] = useState(false);
   const profilePanelRef = useRef<HTMLElement | null>(null);
-  const { dismissNotification, markAllAsRead, notifications, unreadCount } = useNotifications();
+  const {
+    dismissNotification,
+    dismissToast,
+    markAllAsRead,
+    notifications,
+    unreadCount,
+    visibleToasts,
+  } = useNotifications();
 
   const isAuthPage =
     location.pathname === "/" ||
@@ -240,6 +247,22 @@ export function SessionProfileHeader() {
             </button>
           </div>
         </div>
+
+        {visibleToasts.length ? (
+          <section aria-label="Всплывающие уведомления" className="session-toast-stack">
+            {visibleToasts.map((toast) => (
+              <article className={`toast-message toast-message--${toast.kind}`} key={toast.id}>
+                <p>{toast.text}</p>
+                <button
+                  aria-label="Скрыть уведомление"
+                  className="toast-message__close"
+                  onClick={() => dismissToast(toast.id)}
+                  type="button"
+                />
+              </article>
+            ))}
+          </section>
+        ) : null}
 
         {notificationsOpen ? (
           <section

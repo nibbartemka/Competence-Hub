@@ -1,12 +1,15 @@
 import {
   createContext,
   type PropsWithChildren,
+  useEffect,
   useContext,
   useMemo,
+  useRef,
   useState,
 } from "react";
 
 export type AppNotificationKind = "error" | "success";
+const TOAST_DURATION_MS = 5000;
 
 export type AppNotification = {
   id: string;
@@ -16,18 +19,54 @@ export type AppNotification = {
   read: boolean;
 };
 
+export type AppToast = {
+  id: string;
+  kind: AppNotificationKind;
+  notificationId: string;
+  text: string;
+  createdAt: number;
+};
+
 type NotificationsContextValue = {
   dismissNotification: (id: string) => void;
+  dismissToast: (id: string) => void;
   markAllAsRead: () => void;
   notifications: AppNotification[];
   pushNotification: (kind: AppNotificationKind, text: string) => void;
   unreadCount: number;
+  visibleToasts: AppToast[];
 };
 
 const NotificationsContext = createContext<NotificationsContextValue | null>(null);
 
 export function NotificationsProvider({ children }: PropsWithChildren) {
   const [notifications, setNotifications] = useState<AppNotification[]>([]);
+  const [visibleToasts, setVisibleToasts] = useState<AppToast[]>([]);
+  const toastTimeoutsRef = useRef(new Map<string, number>());
+
+  function clearToastTimeout(toastId: string) {
+    const timeoutId = toastTimeoutsRef.current.get(toastId);
+    if (timeoutId === undefined) {
+      return;
+    }
+
+    window.clearTimeout(timeoutId);
+    toastTimeoutsRef.current.delete(toastId);
+  }
+
+  function dismissToast(id: string) {
+    clearToastTimeout(id);
+    setVisibleToasts((current) => current.filter((toast) => toast.id !== id));
+  }
+
+  useEffect(() => {
+    return () => {
+      for (const timeoutId of toastTimeoutsRef.current.values()) {
+        window.clearTimeout(timeoutId);
+      }
+      toastTimeoutsRef.current.clear();
+    };
+  }, []);
 
   const value = useMemo<NotificationsContextValue>(() => {
     function pushNotification(kind: AppNotificationKind, text: string) {
@@ -36,29 +75,63 @@ export function NotificationsProvider({ children }: PropsWithChildren) {
         return;
       }
 
+      const createdAt = Date.now();
+      const duplicate = notifications.find(
+        (notification) => notification.kind === kind && notification.text === normalizedText,
+      );
+      const notificationId =
+        duplicate?.id ?? `${createdAt}-${Math.random().toString(36).slice(2)}`;
+      const toastId = `${createdAt}-${Math.random().toString(36).slice(2)}`;
+
       setNotifications((current) => {
-        const duplicate = current.find(
-          (notification) => notification.kind === kind && notification.text === normalizedText,
-        );
         if (duplicate) {
-          return current.map((notification) =>
-            notification.id === duplicate.id ? { ...notification, read: false } : notification,
-          );
+          const refreshedNotification: AppNotification = {
+            ...duplicate,
+            createdAt,
+            read: false,
+          };
+          return [
+            refreshedNotification,
+            ...current.filter((notification) => notification.id !== duplicate.id),
+          ];
         }
 
-        const next: AppNotification[] = [
-          {
-            id: `${Date.now()}-${Math.random().toString(36).slice(2)}`,
-            kind,
-            text: normalizedText,
-            createdAt: Date.now(),
-            read: false,
-          },
-          ...current,
-        ];
+        const nextNotification: AppNotification = {
+          id: notificationId,
+          kind,
+          text: normalizedText,
+          createdAt,
+          read: false,
+        };
+
+        const next: AppNotification[] = [nextNotification, ...current];
 
         return next.slice(0, 20);
       });
+
+      setVisibleToasts((current) => {
+        const nextToast: AppToast = {
+          id: toastId,
+          kind,
+          notificationId,
+          text: normalizedText,
+          createdAt,
+        };
+        const next = [nextToast, ...current];
+        const removed = next.slice(3);
+        for (const toast of removed) {
+          clearToastTimeout(toast.id);
+        }
+        return next.slice(0, 3);
+      });
+
+      clearToastTimeout(toastId);
+      toastTimeoutsRef.current.set(
+        toastId,
+        window.setTimeout(() => {
+          dismissToast(toastId);
+        }, TOAST_DURATION_MS),
+      );
     }
 
     function dismissNotification(id: string) {
@@ -77,6 +150,7 @@ export function NotificationsProvider({ children }: PropsWithChildren) {
 
     return {
       dismissNotification,
+      dismissToast,
       markAllAsRead,
       notifications,
       pushNotification,
@@ -84,8 +158,9 @@ export function NotificationsProvider({ children }: PropsWithChildren) {
         (count, notification) => count + (notification.read ? 0 : 1),
         0,
       ),
+      visibleToasts,
     };
-  }, [notifications]);
+  }, [notifications, visibleToasts]);
 
   return (
     <NotificationsContext.Provider value={value}>{children}</NotificationsContext.Provider>

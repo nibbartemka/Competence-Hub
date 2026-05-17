@@ -6343,6 +6343,18 @@ body:has(.session-profile-header) .home-shell {
   pointer-events: auto;
 }
 
+.session-toast-stack {
+  justify-self: end;
+  width: min(420px, calc(100vw - 48px));
+  display: grid;
+  gap: 10px;
+  pointer-events: none;
+}
+
+.session-toast-stack .toast-message {
+  pointer-events: auto;
+}
+
 .session-profile-header__bar {
   width: 100%;
   display: flex;
@@ -6772,6 +6784,7 @@ body:has(.session-profile-header) .home-shell {
 
   .session-profile-header__shell,
   .session-profile-header__bar,
+  .session-toast-stack,
   .session-notification-sheet,
   .session-profile-sheet {
     width: 100%;

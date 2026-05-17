@@ -38,6 +38,7 @@ import type {
   GraphScene,
   Group,
   KnowledgeElement,
+  KnowledgeElementRelation,
   KnowledgeElementRelationType,
   LearningTrajectorySummary,
   SceneNodeData,
@@ -112,6 +113,11 @@ type TrajectoryDraftSnapshot = {
 };
 
 type OverviewPanelKey = "settings" | "validation" | "detail" | "saved";
+
+type ElementSelectionState = {
+  isFormed: boolean;
+  missingDependencies: string[];
+};
 
 function trajectoryDraftKey(disciplineId: string) {
   return `competence-hub:trajectory-draft:${disciplineId}`;
@@ -423,6 +429,22 @@ export default function TrajectoryGraphBuilder() {
     return result;
   }, [formedElementsByTopic]);
 
+  const elementRelationsByTopicAndSource = useMemo(() => {
+    const result = new Map<string, Map<string, KnowledgeElementRelation[]>>();
+    if (!graph) {
+      return result;
+    }
+
+    for (const relation of graph.knowledge_element_relations) {
+      const topicRelations = result.get(relation.topic_id) ?? new Map();
+      const sourceRelations = topicRelations.get(relation.source_element_id) ?? [];
+      topicRelations.set(relation.source_element_id, [...sourceRelations, relation]);
+      result.set(relation.topic_id, topicRelations);
+    }
+
+    return result;
+  }, [graph]);
+
   const selectedTopicSet = useMemo(
     () => new Set(selectedTopicIds),
     [selectedTopicIds],
@@ -698,9 +720,10 @@ export default function TrajectoryGraphBuilder() {
 
     const showElementBlockedMessage = (
       elementName: string,
-      missingPrerequisites: string[],
-      isFormed: boolean,
+      selectionState: ElementSelectionState,
     ) => {
+      const isFormed = selectionState.isFormed;
+      const missingPrerequisites = selectionState.missingDependencies;
       const reason = !isFormed
         ? "он является предпосылкой этой темы, а в траекторию добавляются только формируемые элементы."
         : `сначала выбери ${missingPrerequisites.join(", ")}.`;
@@ -781,22 +804,15 @@ export default function TrajectoryGraphBuilder() {
 
           const nodeId = `element:${topicId}:${link.element_id}`;
           const element = elementById.get(link.element_id);
-          const isFormed = link.role === "formed";
-          const missingPrerequisites = graph.knowledge_element_relations
-            .filter(
-              (relation) =>
-                relation.source_element_id === link.element_id &&
-                ELEMENT_PREREQUISITE_RELATIONS.has(relation.relation_type) &&
-                formedElementIdsInTopic.has(relation.target_element_id) &&
-                !selectedElementIds.has(relation.target_element_id),
-            )
-            .map((relation) => {
-              const prerequisiteName =
-                elementById.get(relation.target_element_id)?.name ?? relation.target_element_id;
-              return `"${prerequisiteName}" (${ELEMENT_RELATION_LABELS[relation.relation_type]})`;
-            });
+          const selectionState = getElementSelectionState(
+            topicId,
+            link.element_id,
+            selectedElementIds,
+          );
           const isSelected = selectedElementIds.has(link.element_id);
-          const isBlocked = !isSelected && (!isFormed || missingPrerequisites.length > 0);
+          const isBlocked =
+            !isSelected &&
+            (!selectionState.isFormed || selectionState.missingDependencies.length > 0);
           const toggleCurrentElement = () => toggleElement(topicId, link.element_id);
 
           if (isSelected) {
@@ -818,11 +834,7 @@ export default function TrajectoryGraphBuilder() {
           if (isBlocked) {
             const showBlockedReason = () => {
               setSelectedNodeId(nodeId);
-              showElementBlockedMessage(
-                element?.name ?? link.element_id,
-                missingPrerequisites,
-                isFormed,
-              );
+              showElementBlockedMessage(element?.name ?? link.element_id, selectionState);
             };
             cardActionByNodeId.set(nodeId, showBlockedReason);
             hintActionByNodeId.set(nodeId, showBlockedReason);
@@ -1177,6 +1189,81 @@ export default function TrajectoryGraphBuilder() {
     );
   }
 
+  function getElementSelectionState(
+    topicId: string,
+    elementId: string,
+    selectedElementIds: Set<string>,
+  ): ElementSelectionState {
+    const element = elementById.get(elementId);
+    const formedElementIdsInTopic = validElementIdsByTopic.get(topicId) ?? new Set<string>();
+
+    if (!element || !formedElementIdsInTopic.has(elementId)) {
+      return {
+        isFormed: false,
+        missingDependencies: [],
+      };
+    }
+
+    const topicRelations =
+      elementRelationsByTopicAndSource.get(topicId)?.get(elementId) ?? [];
+    const missingDependencies = new Set<string>();
+
+    for (const relation of topicRelations) {
+      const targetElement = elementById.get(relation.target_element_id);
+      if (!targetElement || selectedElementIds.has(targetElement.id)) {
+        continue;
+      }
+
+      const relationIsIntraTopicPrerequisite =
+        ELEMENT_PREREQUISITE_RELATIONS.has(relation.relation_type) &&
+        formedElementIdsInTopic.has(targetElement.id);
+      const relationIsRequiredKnowledgeForSkill =
+        element.competence_type === "can" &&
+        relation.relation_type === "implements" &&
+        targetElement.competence_type === "know";
+      const relationIsRequiredSkillForMaster =
+        element.competence_type === "master" &&
+        relation.relation_type === "automates" &&
+        targetElement.competence_type === "can";
+      const relationIsRequiredKnowledgeForMaster =
+        element.competence_type === "master" &&
+        relation.relation_type === "relies_on" &&
+        targetElement.competence_type === "know";
+
+      if (
+        !relationIsIntraTopicPrerequisite &&
+        !relationIsRequiredKnowledgeForSkill &&
+        !relationIsRequiredSkillForMaster &&
+        !relationIsRequiredKnowledgeForMaster
+      ) {
+        continue;
+      }
+
+      missingDependencies.add(
+        `${COMPETENCE_LABELS[targetElement.competence_type].toLowerCase()} "${targetElement.name}" (${ELEMENT_RELATION_LABELS[relation.relation_type]})`,
+      );
+    }
+
+    return {
+      isFormed: true,
+      missingDependencies: [...missingDependencies].sort((left, right) =>
+        left.localeCompare(right, "ru"),
+      ),
+    };
+  }
+
+  function buildElementBlockedReason(state: ElementSelectionState) {
+    if (!state.isFormed) {
+      return "он является предпосылкой этой темы, а в траекторию добавляются только формируемые элементы.";
+    }
+
+    if (!state.missingDependencies.length) {
+      return "";
+    }
+
+    return `сначала выбери ${state.missingDependencies.join(", ")}.`;
+  }
+
   function buildMissingElementsMessage(topicId: string, elements: KnowledgeElement[]) {
     return `Тему "${topicName(topicById, topicId)}" пока нельзя выбрать: не сформированы элементы ${elements
       .map((element) => `"${element.name}"`)
@@ -1355,6 +1442,22 @@ export default function TrajectoryGraphBuilder() {
       return;
     }
 
+    const selectedElementIds = new Set(selectedElementsByTopic[topicId] ?? []);
+    const isAlreadySelected = selectedElementIds.has(elementId);
+
+    if (!isAlreadySelected) {
+      const selectionState = getElementSelectionState(topicId, elementId, selectedElementIds);
+      const blockedReason = buildElementBlockedReason(selectionState);
+
+      if (blockedReason) {
+        pushNotification({
+          kind: "error",
+          text: `Р­Р»РµРјРµРЅС‚ "${element.name}" РїРѕРєР° РЅРµР»СЊР·СЏ РІС‹Р±СЂР°С‚СЊ: ${blockedReason}`,
+        });
+        return;
+      }
+    }
+
     setSelectedElementsByTopic((current) => {
       const selectedElements = current[topicId] ?? [];
       const nextElements = selectedElements.includes(elementId)
@@ -1377,6 +1480,69 @@ export default function TrajectoryGraphBuilder() {
       };
     });
   }
+
+  useEffect(() => {
+    if (!graph) {
+      return;
+    }
+
+    const nextSelectedElementsByTopic: Record<string, string[]> = {};
+    for (const topicId of selectedTopicIds) {
+      const currentSelectedElements = selectedElementsByTopic[topicId] ?? [];
+      const nextSelectedSet = new Set(currentSelectedElements);
+
+      let keepPruning = true;
+
+      while (keepPruning) {
+        keepPruning = false;
+
+        for (const elementId of [...nextSelectedSet]) {
+          const selectionState = getElementSelectionState(topicId, elementId, nextSelectedSet);
+          if (!selectionState.isFormed || selectionState.missingDependencies.length > 0) {
+            nextSelectedSet.delete(elementId);
+            keepPruning = true;
+          }
+        }
+      }
+
+      const nextSelectedElements = currentSelectedElements.filter((elementId) =>
+        nextSelectedSet.has(elementId),
+      );
+
+      if (nextSelectedElements.length) {
+        nextSelectedElementsByTopic[topicId] = nextSelectedElements;
+      }
+    }
+
+    const nextElementThresholds: Record<string, number> = {};
+    for (const [topicId, elementIds] of Object.entries(nextSelectedElementsByTopic)) {
+      for (const elementId of elementIds) {
+        const key = buildElementKey(topicId, elementId);
+        nextElementThresholds[key] = elementThresholds[key] ?? 0;
+      }
+    }
+
+    const selectionPayloadChanged =
+      JSON.stringify(nextSelectedElementsByTopic) !== JSON.stringify(selectedElementsByTopic);
+    const thresholdsChanged =
+      JSON.stringify(nextElementThresholds) !== JSON.stringify(elementThresholds);
+
+    if (!selectionPayloadChanged && !thresholdsChanged) {
+      return;
+    }
+
+    if (selectionPayloadChanged) {
+      setSelectedElementsByTopic(nextSelectedElementsByTopic);
+    }
+    if (thresholdsChanged) {
+      setElementThresholds(nextElementThresholds);
+    }
+  }, [
+    elementThresholds,
+    graph,
+    selectedElementsByTopic,
+    selectedTopicIds,
+  ]);
 
 
   function updateElementThreshold(topicId: string, elementId: string, value: number) {

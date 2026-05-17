@@ -101,6 +101,9 @@ const GRAPH_OPTIONS: RGOptions = {
   defaultLineTextOffset_y: -10,
 };
 
+const TASK_DIFFICULTY_MIN = 0;
+const TASK_DIFFICULTY_MAX = 100;
+
 const TASK_TYPE_LABELS = {
   single_choice: "Один выбор",
   multiple_choice: "Несколько выборов",
@@ -252,6 +255,10 @@ function studentTaskProgressLabel(status: StudentAssignedTask["progress"]["statu
 function extractErrorMessage(error: unknown) {
   if (error instanceof Error) return error.message;
   return "Не удалось выполнить действие с траекторией.";
+}
+
+function clampTaskDifficulty(value: number) {
+  return Math.max(TASK_DIFFICULTY_MIN, Math.min(TASK_DIFFICULTY_MAX, Number(value) || 0));
 }
 
 function estimateTrajectoryNodeHeight(topic: Topic) {
@@ -2225,7 +2232,7 @@ export default function TrajectoryDetailPage() {
     setTaskDistractorElementIds(task.content.distractor_element_ids ?? []);
     setTaskTitle(task.title);
     setTaskPrompt(task.prompt);
-    setTaskDifficulty(task.difficulty);
+    setTaskDifficulty(clampTaskDifficulty(task.difficulty));
     setTaskType(task.task_type);
     setTaskTemplateKind(task.template_kind);
     setTaskOptions(
@@ -2397,7 +2404,7 @@ export default function TrajectoryDetailPage() {
         checked_relation_ids: taskCheckedRelationIds,
         title: taskTitle.trim(),
         prompt: taskPrompt.trim(),
-        difficulty: Math.max(0, Math.min(100, Number(taskDifficulty) || 0)),
+        difficulty: clampTaskDifficulty(taskDifficulty),
         task_type: normalizedTaskType,
         template_kind: normalizedTemplateKind,
         content: buildTaskContentPayload(),
@@ -3287,11 +3294,14 @@ export default function TrajectoryDetailPage() {
                   <label className="field">
                     <span>Сложность</span>
                     <input
-                      min={0}
-                      max={100}
+                      min={TASK_DIFFICULTY_MIN}
+                      max={TASK_DIFFICULTY_MAX}
+                      step={1}
                       type="number"
                       value={taskDifficulty}
-                      onChange={(event) => setTaskDifficulty(Number(event.target.value))}
+                      onChange={(event) =>
+                        setTaskDifficulty(clampTaskDifficulty(Number(event.target.value)))
+                      }
                       disabled={saving}
                     />
                   </label>
@@ -4227,11 +4237,14 @@ export default function TrajectoryDetailPage() {
                 <label className="field">
                   <span>Сложность</span>
                   <input
-                    min={0}
-                    max={100}
+                    min={TASK_DIFFICULTY_MIN}
+                    max={TASK_DIFFICULTY_MAX}
+                    step={1}
                     type="number"
                     value={taskDifficulty}
-                    onChange={(event) => setTaskDifficulty(Number(event.target.value))}
+                    onChange={(event) =>
+                      setTaskDifficulty(clampTaskDifficulty(Number(event.target.value)))
+                    }
                     disabled={saving}
                   />
                 </label>
