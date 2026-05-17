@@ -4709,6 +4709,11 @@ body:has(.session-profile-header) .home-shell {
   gap: 16px;
 }
 
+.student-trajectory-grid--compact {
+  grid-template-columns: repeat(auto-fit, minmax(280px, 360px));
+  justify-content: start;
+}
+
 .student-trajectory-card {
   display: grid;
   gap: 14px;
@@ -4744,6 +4749,21 @@ body:has(.session-profile-header) .home-shell {
   margin-top: 4px;
   color: var(--muted);
   font-size: 0.84rem;
+}
+
+.student-trajectory-card__meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.student-trajectory-card__meta span {
+  padding: 6px 10px;
+  border-radius: 999px;
+  background: rgba(230, 238, 251, 0.92);
+  color: #41639a;
+  font-size: 0.78rem;
+  font-weight: 700;
 }
 
 .student-trajectory-card__footer {
