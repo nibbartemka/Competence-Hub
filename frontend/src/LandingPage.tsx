@@ -156,7 +156,7 @@ export function LandingPage() {
         return;
       }
       if (result.role === "teacher") {
-        navigate(`/teachers/${result.user_id}/home`);
+        navigate(`/teachers/${result.user_id}`);
         return;
       }
       navigate(`/students/${result.user_id}`);

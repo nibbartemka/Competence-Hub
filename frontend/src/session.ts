@@ -104,7 +104,7 @@ export function getSessionHomePath(session = readSession()) {
 
   if (session.role === "admin") return `/admins/${session.userId}/home`;
   if (session.role === "expert") return `/experts/${session.userId}/home`;
-  if (session.role === "teacher") return `/teachers/${session.userId}/home`;
+  if (session.role === "teacher") return `/teachers/${session.userId}`;
   return `/students/${session.userId}`;
 }
 

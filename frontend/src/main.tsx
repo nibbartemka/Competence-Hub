@@ -1,6 +1,12 @@
 import React from "react";
 import ReactDOM from "react-dom/client";
-import { createBrowserRouter, Outlet, RouterProvider } from "react-router-dom";
+import {
+  Navigate,
+  Outlet,
+  RouterProvider,
+  createBrowserRouter,
+  useParams,
+} from "react-router-dom";
 
 import AdminUserProfilePage from "./AdminUserProfilePage";
 import DisciplineOverviewPage from "./DisciplineOverviewPage";
@@ -25,6 +31,16 @@ function AppShell() {
   );
 }
 
+function LegacyTeacherHomeRedirect() {
+  const { teacherId } = useParams<{ teacherId: string }>();
+
+  if (!teacherId) {
+    return <Navigate replace to="/" />;
+  }
+
+  return <Navigate replace to={`/teachers/${teacherId}`} />;
+}
+
 const router = createBrowserRouter([
   {
     element: <AppShell />,
@@ -34,7 +50,7 @@ const router = createBrowserRouter([
       { path: "/login/:role", element: <LandingPage /> },
       { path: "/admins/:adminId/home", element: <HomePage /> },
       { path: "/experts/:expertId/home", element: <HomePage /> },
-      { path: "/teachers/:teacherId/home", element: <HomePage /> },
+      { path: "/teachers/:teacherId/home", element: <LegacyTeacherHomeRedirect /> },
       { path: "/students/:studentId/home", element: <StudentDashboardPage /> },
       { path: "/disciplines/:disciplineId", element: <DisciplineOverviewPage /> },
       { path: "/disciplines/:disciplineId/knowledge", element: <KnowledgeGraph /> },
