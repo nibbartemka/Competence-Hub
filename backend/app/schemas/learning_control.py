@@ -32,7 +32,9 @@ class StudentTopicControlRead(BaseModel):
     is_extra_practice: bool = False
     practice_stage: str = "know"
     knowledge_threshold_passed: bool = False
+    skill_threshold_passed: bool = False
     skill_practice_available: bool = False
+    master_practice_available: bool = False
     show_next_topic_prompt: bool = False
     next_topic: StudentTopicControlNextTopicRead | None = None
     elements: list[StudentTopicControlElementRead] = Field(default_factory=list)

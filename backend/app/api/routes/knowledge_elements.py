@@ -27,6 +27,7 @@ from app.schemas import (
 from app.services.knowledge_graph_integrity import (
     bump_knowledge_graph_version,
     ensure_element_can_be_removed,
+    ensure_master_relies_on_relations,
 )
 from app.services.topic_dependencies import sync_topic_dependencies_for_disciplines
 
@@ -211,6 +212,7 @@ async def create_structured_master_knowledge_element(
                 [
                     KnowledgeElementRelationType.IMPLEMENTS,
                     KnowledgeElementRelationType.AUTOMATES,
+                    KnowledgeElementRelationType.RELIES_ON,
                 ]
             )
         )
@@ -221,10 +223,14 @@ async def create_structured_master_knowledge_element(
     }
     implements_relation = relations_by_type.get(KnowledgeElementRelationType.IMPLEMENTS)
     automates_relation = relations_by_type.get(KnowledgeElementRelationType.AUTOMATES)
-    if implements_relation is None or automates_relation is None:
+    relies_on_relation = relations_by_type.get(KnowledgeElementRelationType.RELIES_ON)
+    if implements_relation is None or automates_relation is None or relies_on_relation is None:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Required relation definitions 'implements' and 'automates' were not found.",
+            detail=(
+                "Required relation definitions 'implements', 'automates' and "
+                "'relies_on' were not found."
+            ),
         )
 
     required_knowledge_result = await session.execute(
@@ -259,8 +265,25 @@ async def create_structured_master_knowledge_element(
             ),
         )
 
+    topic_knowledge_result = await session.execute(
+        select(KnowledgeElement)
+        .join(
+            TopicKnowledgeElement,
+            TopicKnowledgeElement.element_id == KnowledgeElement.id,
+        )
+        .where(
+            TopicKnowledgeElement.topic_id == payload.topic_id,
+            KnowledgeElement.competence_type == CompetenceType.KNOW,
+        )
+        .order_by(KnowledgeElement.name)
+    )
+    topic_knowledge_by_id = {
+        element.id: element for element in topic_knowledge_result.scalars().all()
+    }
+
     cleaned_domain_objects: list[tuple[str, UUID]] = []
     covered_knowledge_ids: set[UUID] = set()
+    seen_domain_object_pairs: set[tuple[str, UUID]] = set()
     for domain_object in payload.domain_objects:
         object_name = domain_object.object_name.strip()
         if not object_name:
@@ -268,15 +291,24 @@ async def create_structured_master_knowledge_element(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Each subject area object must have a name.",
             )
-        if domain_object.knowledge_element_id not in required_knowledge_by_id:
+        if domain_object.knowledge_element_id not in topic_knowledge_by_id:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail=(
                     "Subject area objects can only reference knowledge elements of "
-                    "competence 'know' that are linked to the selected skill element "
-                    "inside the chosen topic."
+                    "competence 'know' from the selected topic."
                 ),
             )
+        normalized_pair = (object_name.casefold(), domain_object.knowledge_element_id)
+        if normalized_pair in seen_domain_object_pairs:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=(
+                    "Duplicate subject area object mappings are not allowed. "
+                    "Remove repeated object-to-knowledge pairs."
+                ),
+            )
+        seen_domain_object_pairs.add(normalized_pair)
         cleaned_domain_objects.append(
             (object_name, domain_object.knowledge_element_id)
         )
@@ -334,6 +366,7 @@ async def create_structured_master_knowledge_element(
         )
 
     await flush_or_409(session)
+    await ensure_master_relies_on_relations(session, payload.discipline_id)
     await bump_knowledge_graph_version(session, [payload.discipline_id])
     await commit_or_409(session)
     await session.refresh(master_element)

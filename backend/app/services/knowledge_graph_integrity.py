@@ -3,17 +3,22 @@ from uuid import UUID
 
 from fastapi import HTTPException, status
 from sqlalchemy import select
+from sqlalchemy.orm import lazyload
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models import (
     Discipline,
+    KnowledgeElement,
+    KnowledgeElementRelation,
     LearningTrajectory,
     LearningTrajectoryElement,
     LearningTrajectoryTopic,
+    MasterElementDomainObject,
+    Relation,
     Topic,
     TopicKnowledgeElement,
 )
-from app.models.enums import LearningTrajectoryStatus
+from app.models.enums import KnowledgeElementRelationType, LearningTrajectoryStatus
 from app.services.topic_dependencies import get_topic_dependency_cycle_for_discipline
 
 
@@ -28,6 +33,103 @@ async def bump_knowledge_graph_version(
     result = await session.execute(select(Discipline).where(Discipline.id.in_(unique_ids)))
     for discipline in result.scalars().all():
         discipline.knowledge_graph_version += 1
+
+
+async def ensure_master_relies_on_relations(
+    session: AsyncSession,
+    discipline_id: UUID,
+) -> int:
+    relation_result = await session.execute(
+        select(Relation)
+        .options(lazyload("*"))
+        .where(Relation.relation_type == KnowledgeElementRelationType.RELIES_ON)
+    )
+    relies_on_relation = relation_result.scalar_one_or_none()
+    if relies_on_relation is None:
+        return 0
+
+    domain_object_result = await session.execute(
+        select(
+            MasterElementDomainObject.master_element_id,
+            MasterElementDomainObject.knowledge_element_id,
+        )
+        .join(
+            KnowledgeElement,
+            KnowledgeElement.id == MasterElementDomainObject.master_element_id,
+        )
+        .where(KnowledgeElement.discipline_id == discipline_id)
+    )
+    domain_object_pairs = list(domain_object_result.all())
+    if not domain_object_pairs:
+        return 0
+
+    involved_element_ids = {
+        element_id
+        for pair in domain_object_pairs
+        for element_id in pair
+    }
+    topic_link_result = await session.execute(
+        select(TopicKnowledgeElement.topic_id, TopicKnowledgeElement.element_id)
+        .join(Topic, Topic.id == TopicKnowledgeElement.topic_id)
+        .where(
+            Topic.discipline_id == discipline_id,
+            TopicKnowledgeElement.element_id.in_(involved_element_ids),
+        )
+    )
+    topic_ids_by_element_id: dict[UUID, set[UUID]] = {}
+    for topic_id, element_id in topic_link_result.all():
+        topic_ids_by_element_id.setdefault(element_id, set()).add(topic_id)
+
+    existing_relation_result = await session.execute(
+        select(
+            KnowledgeElementRelation.topic_id,
+            KnowledgeElementRelation.source_element_id,
+            KnowledgeElementRelation.target_element_id,
+        )
+        .join(Relation, Relation.id == KnowledgeElementRelation.relation_id)
+        .where(
+            Relation.relation_type == KnowledgeElementRelationType.RELIES_ON,
+            KnowledgeElementRelation.source_element_id.in_(
+                [master_element_id for master_element_id, _ in domain_object_pairs]
+            ),
+            KnowledgeElementRelation.target_element_id.in_(
+                [knowledge_element_id for _, knowledge_element_id in domain_object_pairs]
+            ),
+        )
+    )
+    existing_relations = {
+        (topic_id, source_element_id, target_element_id)
+        for topic_id, source_element_id, target_element_id in existing_relation_result.all()
+    }
+
+    created_count = 0
+    for master_element_id, knowledge_element_id in domain_object_pairs:
+        master_topic_ids = topic_ids_by_element_id.get(master_element_id, set())
+        knowledge_topic_ids = topic_ids_by_element_id.get(knowledge_element_id, set())
+        shared_topic_ids = master_topic_ids & knowledge_topic_ids
+        if not shared_topic_ids:
+            continue
+
+        for topic_id in shared_topic_ids:
+            relation_key = (topic_id, master_element_id, knowledge_element_id)
+            if relation_key in existing_relations:
+                continue
+            session.add(
+                KnowledgeElementRelation(
+                    topic_id=topic_id,
+                    source_element_id=master_element_id,
+                    target_element_id=knowledge_element_id,
+                    relation_id=relies_on_relation.id,
+                    description=None,
+                )
+            )
+            existing_relations.add(relation_key)
+            created_count += 1
+
+    if created_count:
+        await session.flush()
+
+    return created_count
 
 
 async def assert_no_topic_dependency_cycle(

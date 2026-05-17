@@ -17,6 +17,7 @@ from app.models import (
     LearningTrajectoryTaskElement,
     LearningTrajectoryTaskRelation,
     LearningTrajectoryTopic,
+    MasterElementDomainObject,
     Student,
     StudentElementMastery,
     StudentTaskProgress,
@@ -48,6 +49,7 @@ from .learning_trajectory_tasks import (
     _trajectory_topic_knowledge_complete,
     _trajectory_topic_is_unlocked,
     _trajectory_topic_mastery,
+    _trajectory_topic_skill_complete,
 )
 
 
@@ -67,14 +69,18 @@ def _student_can_access_trajectory(student: Student, trajectory: LearningTraject
 def _control_task_options():
     return (
         lazyload("*"),
-        selectinload(LearningTrajectoryTask.trajectory),
+        selectinload(LearningTrajectoryTask.trajectory).selectinload(
+            LearningTrajectory.teacher
+        ),
         selectinload(LearningTrajectoryTask.trajectory_topic).selectinload(
             LearningTrajectoryTopic.topic
         ),
         selectinload(LearningTrajectoryTask.trajectory_topic).selectinload(
             LearningTrajectoryTopic.elements
         ).selectinload(LearningTrajectoryElement.element),
-        selectinload(LearningTrajectoryTask.primary_element),
+        selectinload(LearningTrajectoryTask.primary_element).selectinload(
+            KnowledgeElement.master_domain_objects
+        ).selectinload(MasterElementDomainObject.knowledge_element),
         selectinload(LearningTrajectoryTask.related_elements).selectinload(
             LearningTrajectoryTaskElement.element
         ),
@@ -211,7 +217,7 @@ async def _build_student_topic_control(
     topic_id: UUID | None = None,
     topic_position: int | None = None,
     continue_practice: bool = False,
-    skill_practice: bool = False,
+    practice_stage: str = "know",
 ) -> StudentTopicControlRead:
     student = await _get_student_for_control(student_id, session)
     trajectory = await _get_trajectory_for_control(trajectory_id, session)
@@ -266,8 +272,16 @@ async def _build_student_topic_control(
     tasks: list[LearningTrajectoryTask] = []
     stage_tasks: list[LearningTrajectoryTask] = []
     progress_by_task_id: dict[UUID, StudentTaskProgress] = {}
-    practice_stage = "can" if skill_practice else "know"
+    normalized_practice_stage = (
+        practice_stage
+        if practice_stage in {"know", "can", "master"}
+        else "know"
+    )
     knowledge_threshold_passed = _trajectory_topic_knowledge_complete(
+        trajectory_topic,
+        mastery_by_element_id,
+    )
+    skill_threshold_passed = _trajectory_topic_skill_complete(
         trajectory_topic,
         mastery_by_element_id,
     )
@@ -299,6 +313,7 @@ async def _build_student_topic_control(
         and next_topic_read.is_unlocked
     )
     skill_practice_available = False
+    master_practice_available = False
 
     if is_unlocked:
         tasks = await _load_control_tasks(trajectory.id, trajectory_topic.id, session)
@@ -311,11 +326,19 @@ async def _build_student_topic_control(
             knowledge_threshold_passed
             and any(task.primary_element.competence_type == CompetenceType.CAN for task in tasks)
         )
+        master_practice_available = bool(
+            skill_threshold_passed
+            and any(task.primary_element.competence_type == CompetenceType.MASTER for task in tasks)
+        )
+        stage_competence = {
+            "know": CompetenceType.KNOW,
+            "can": CompetenceType.CAN,
+            "master": CompetenceType.MASTER,
+        }[normalized_practice_stage]
         stage_tasks = [
             task
             for task in tasks
-            if task.primary_element.competence_type
-            == (CompetenceType.CAN if skill_practice else CompetenceType.KNOW)
+            if task.primary_element.competence_type == stage_competence
         ]
 
     has_tasks = bool(stage_tasks)
@@ -388,9 +411,11 @@ async def _build_student_topic_control(
         has_tasks=has_tasks,
         continue_practice_available=continue_practice_available,
         is_extra_practice=continue_practice,
-        practice_stage=practice_stage,
+        practice_stage=normalized_practice_stage,
         knowledge_threshold_passed=knowledge_threshold_passed,
+        skill_threshold_passed=skill_threshold_passed,
         skill_practice_available=skill_practice_available,
+        master_practice_available=master_practice_available,
         show_next_topic_prompt=show_next_topic_prompt,
         next_topic=next_topic_read,
         elements=elements,
@@ -408,7 +433,7 @@ async def get_student_topic_control(
     topic_id: UUID,
     session: DbSession,
     continue_practice: bool = Query(False),
-    skill_practice: bool = Query(False),
+    practice_stage: str = Query("know"),
 ) -> StudentTopicControlRead:
     return await _build_student_topic_control(
         student_id,
@@ -416,7 +441,7 @@ async def get_student_topic_control(
         session,
         topic_id=topic_id,
         continue_practice=continue_practice,
-        skill_practice=skill_practice,
+        practice_stage=practice_stage,
     )
 
 
@@ -483,7 +508,7 @@ async def get_student_topic_control_by_position(
     topic_position: int,
     session: DbSession,
     continue_practice: bool = Query(False),
-    skill_practice: bool = Query(False),
+    practice_stage: str = Query("know"),
 ) -> StudentTopicControlRead:
     return await _build_student_topic_control(
         student_id,
@@ -491,5 +516,5 @@ async def get_student_topic_control_by_position(
         session,
         topic_position=topic_position,
         continue_practice=continue_practice,
-        skill_practice=skill_practice,
+        practice_stage=practice_stage,
     )

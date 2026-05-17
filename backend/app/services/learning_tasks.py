@@ -224,6 +224,13 @@ def _validate_ordering_content(content: dict[str, Any]) -> dict[str, Any]:
 
 
 def _validate_text_content(content: dict[str, Any]) -> dict[str, Any]:
+    if bool(content.get("manual_review")):
+        placeholder = str(content.get("placeholder", "")).strip()
+        return {
+            "manual_review": True,
+            "placeholder": placeholder or "Опиши решение и результат.",
+        }
+
     operation_ref = str(content.get("operation_ref", "")).strip()
     if operation_ref:
         input_payload = content.get("input_payload")
@@ -417,6 +424,13 @@ def build_content_from_template(
             "placeholder": str(content.get("placeholder", "")).strip() or "Введите ответ в формате JSON",
         }
 
+    if task_type == LearningTrajectoryTaskType.TEXT and primary_element.competence_type == CompetenceType.MASTER:
+        return {
+            "manual_review": True,
+            "submission_kind": "file",
+            "placeholder": str(content.get("placeholder", "")).strip() or "Прикрепите файл с решением.",
+        }
+
     if template_kind == LearningTrajectoryTaskTemplateKind.DEFINITION_CHOICE:
         if not related_elements:
             raise bad_request("Для шаблона выбора правильного определения нужен минимум один дополнительный элемент темы.")
@@ -581,6 +595,39 @@ def normalize_task_content(
     raise bad_request("Неподдерживаемый тип задания.")
 
 
+def normalize_task_request_payload(
+    trajectory: LearningTrajectory,
+    payload: LearningTrajectoryTaskCreate,
+) -> LearningTrajectoryTaskCreate:
+    trajectory_topic = next(
+        (item for item in trajectory.topics if item.topic_id == payload.topic_id),
+        None,
+    )
+    if trajectory_topic is None:
+        return payload
+
+    primary_element = next(
+        (
+            item.element
+            for item in trajectory_topic.elements
+            if item.element_id == payload.primary_element_id
+        ),
+        None,
+    )
+    if primary_element is None:
+        return payload
+
+    if primary_element.competence_type in {CompetenceType.CAN, CompetenceType.MASTER}:
+        return payload.model_copy(
+            update={
+                "template_kind": LearningTrajectoryTaskTemplateKind.MANUAL,
+                "task_type": LearningTrajectoryTaskType.TEXT,
+            }
+        )
+
+    return payload
+
+
 def validate_task_payload(
     trajectory: LearningTrajectory,
     payload: LearningTrajectoryTaskCreate,
@@ -620,15 +667,21 @@ def validate_task_payload(
     if primary_element.competence_type not in {CompetenceType.KNOW, CompetenceType.CAN, CompetenceType.MASTER}:
         raise bad_request("Ручные задания пока доступны только для компетенции «Знать».")
 
-    if primary_element.competence_type == CompetenceType.MASTER:
-        raise bad_request("Задания для компетенции «Владеть» пока не поддерживаются.")
-
     allowed_related_elements: dict[UUID, KnowledgeElement] = {}
     for trajectory_element in trajectory_topic.elements:
         element = trajectory_element.element
         if (
             primary_element.competence_type == CompetenceType.CAN
             and element.competence_type in {CompetenceType.KNOW, CompetenceType.CAN}
+        ):
+            allowed_related_elements[element.id] = element
+        elif (
+            primary_element.competence_type == CompetenceType.MASTER
+            and element.competence_type in {
+                CompetenceType.KNOW,
+                CompetenceType.CAN,
+                CompetenceType.MASTER,
+            }
         ):
             allowed_related_elements[element.id] = element
         elif element.competence_type == CompetenceType.KNOW:
@@ -641,6 +694,13 @@ def validate_task_payload(
             raise bad_request("Для элементов «Уметь» пока доступен только текстовый ответ.")
         if not payload.related_element_ids:
             raise bad_request("Для задания уровня «Уметь» нужно указать связанные элементы этой темы.")
+    elif primary_element.competence_type == CompetenceType.MASTER:
+        if payload.template_kind != LearningTrajectoryTaskTemplateKind.MANUAL:
+            raise bad_request("Для элементов «Владеть» пока доступен только ручной шаблон задания.")
+        if payload.task_type != LearningTrajectoryTaskType.TEXT:
+            raise bad_request("Для элементов «Владеть» пока доступен только текстовый ответ.")
+        if not payload.related_element_ids:
+            raise bad_request("Для задания уровня «Владеть» нужно указать связанные элементы этой темы.")
 
     if payload.primary_element_id in payload.related_element_ids:
         raise bad_request("Ключевой элемент не нужно дублировать среди связанных элементов.")
@@ -675,8 +735,73 @@ def merge_mastery_value(current_value: int | None, score: int) -> int:
     return max(0, min(100, round(next_value)))
 
 
+def _build_master_manual_review_context(task: LearningTrajectoryTask) -> dict[str, Any] | None:
+    if task.primary_element.competence_type != CompetenceType.MASTER:
+        return None
+
+    skill_relations = [
+        link.relation
+        for link in task.checked_relations
+        if link.relation.relation_type == KnowledgeElementRelationType.AUTOMATES
+        and link.relation.source_element_id == task.primary_element_id
+        and link.relation.target_element.competence_type == CompetenceType.CAN
+    ]
+    knowledge_relations = [
+        link.relation
+        for link in task.checked_relations
+        if link.relation.relation_type == KnowledgeElementRelationType.RELIES_ON
+        and link.relation.source_element_id == task.primary_element_id
+        and link.relation.target_element.competence_type == CompetenceType.KNOW
+    ]
+    checked_knowledge_ids = {
+        relation.target_element_id
+        for relation in knowledge_relations
+    }
+
+    return {
+        "subject_area_description": task.primary_element.subject_area_description or "",
+        "skill_elements": [
+            {
+                "element_id": str(relation.target_element.id),
+                "name": relation.target_element.name,
+                "description": relation.target_element.description,
+            }
+            for relation in skill_relations
+        ],
+        "knowledge_elements": [
+            {
+                "element_id": str(relation.target_element.id),
+                "name": relation.target_element.name,
+                "description": relation.target_element.description,
+            }
+            for relation in knowledge_relations
+        ],
+        "domain_object_mappings": [
+            {
+                "object_name": mapping.object_name,
+                "knowledge_element_id": str(mapping.knowledge_element.id),
+                "knowledge_element_name": mapping.knowledge_element.name,
+                "knowledge_element_description": mapping.knowledge_element.description,
+            }
+            for mapping in task.primary_element.master_domain_objects
+            if mapping.knowledge_element_id in checked_knowledge_ids
+        ],
+    }
+
+
 def build_teacher_task_content(task: LearningTrajectoryTask) -> dict[str, Any]:
-    return parse_task_content_json(task.content_json)
+    content = parse_task_content_json(task.content_json)
+    if (
+        task.task_type == LearningTrajectoryTaskType.TEXT
+        and task.primary_element.competence_type == CompetenceType.MASTER
+        and bool(content.get("manual_review"))
+    ):
+        return {
+            **content,
+            "submission_kind": "file",
+            "manual_review_context": _build_master_manual_review_context(task),
+        }
+    return content
 
 
 def _normalized_matching_pairs(content: dict[str, Any]) -> list[dict[str, str]]:
@@ -785,12 +910,24 @@ def build_student_task_content_from_snapshot(
         }
 
     if task.task_type == LearningTrajectoryTaskType.TEXT:
+        manual_review = bool(content.get("manual_review"))
+        if manual_review and task.primary_element.competence_type == CompetenceType.MASTER:
+            return {
+                "placeholder": content.get("placeholder", ""),
+                "manual_review": True,
+                "submission_kind": "file",
+                "manual_review_context": _build_master_manual_review_context(task),
+                "debug_solution": {
+                    "kind": "manual_review",
+                },
+            }
         return {
             "placeholder": content.get("placeholder", ""),
             "input_payload": content.get("input_payload", {}),
             "contract_title": content.get("contract_title", ""),
             "input_schema": content.get("input_schema", {}),
             "output_schema": content.get("output_schema", {}),
+            "manual_review": manual_review,
             "debug_solution": {
                 "kind": "text",
                 "expected_output": content.get("expected_output"),
@@ -909,6 +1046,7 @@ def build_student_task_read(
         task_instance_id=task_instance_id,
         trajectory_id=task.trajectory_id,
         trajectory_name=task.trajectory.name,
+        teacher_name=task.trajectory.teacher.name if task.trajectory.teacher is not None else None,
         discipline_id=task.trajectory.discipline_id,
         discipline_name=discipline_name,
         topic_id=task.trajectory_topic.topic_id,
@@ -1063,6 +1201,8 @@ def build_adaptive_candidate_pool(
             continue
 
         progress = progress_by_task_id.get(task.id)
+        if progress and progress.status == StudentTaskProgressStatus.PENDING_REVIEW:
+            continue
         if not task_stage_unlocked(
             task,
             mastery_by_element_id,
@@ -1339,6 +1479,13 @@ def _score_text(content: dict[str, Any], answer_payload: dict[str, Any]) -> tupl
             "is_correct": False,
             "message": "Ответ пустой.",
             "accepted_answers": content.get("accepted_answers", []),
+        }
+
+    if bool(content.get("manual_review")):
+        return 0, {
+            "is_correct": False,
+            "message": "Для этого задания автоматическая проверка пока не настроена.",
+            "manual_review": True,
         }
 
     operation_ref = str(content.get("operation_ref", "")).strip()

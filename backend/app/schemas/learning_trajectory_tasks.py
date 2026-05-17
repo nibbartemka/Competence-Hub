@@ -78,6 +78,11 @@ class StudentTaskAnswerSubmit(BaseModel):
     duration_seconds: int | None = Field(default=None, ge=0)
 
 
+class StudentTaskManualReviewUpdate(BaseModel):
+    score: int = Field(ge=0, le=100)
+    review_comment: str = Field(default="", max_length=5000)
+
+
 class StudentTaskProgressRead(BaseModel):
     status: StudentTaskProgressStatus
     attempts_count: int
@@ -99,6 +104,7 @@ class StudentAssignedTaskRead(BaseModel):
     task_instance_id: UUID | None = None
     trajectory_id: UUID
     trajectory_name: str
+    teacher_name: str | None = None
     discipline_id: UUID
     discipline_name: str
     topic_id: UUID

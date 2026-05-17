@@ -76,6 +76,7 @@ class ControlStatus(StrEnum):
 class StudentTaskProgressStatus(StrEnum):
     NOT_STARTED = "not_started"
     IN_PROGRESS = "in_progress"
+    PENDING_REVIEW = "pending_review"
     COMPLETED = "completed"
 
 

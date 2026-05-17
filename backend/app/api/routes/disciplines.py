@@ -41,6 +41,7 @@ from app.services.knowledge_graph_import import (
     build_knowledge_graph_import_preview,
     execute_knowledge_graph_import,
 )
+from app.services.knowledge_graph_integrity import ensure_master_relies_on_relations
 
 
 router = APIRouter(prefix="/disciplines", tags=["Disciplines"])
@@ -297,6 +298,8 @@ async def get_discipline_knowledge_graph(
 ) -> DisciplineKnowledgeGraphRead:
     discipline_model = await get_discipline_model(discipline_identifier, session)
     discipline_id = discipline_model.id
+    if await ensure_master_relies_on_relations(session, discipline_id):
+        await commit_or_409(session)
     discipline = await get_discipline_for_read(str(discipline_id), session)
 
     topics_result = await session.execute(
