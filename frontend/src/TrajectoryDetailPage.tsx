@@ -10,6 +10,7 @@ import RelationGraph, {
 import {
   createLearningTrajectoryTask,
   deleteLearningTrajectoryTask,
+  downloadStudentTaskSubmissionFile,
   fetchDisciplineKnowledgeGraph,
   fetchLearningTrajectory,
   fetchLearningTrajectoryTasks,
@@ -18,6 +19,8 @@ import {
   fetchStudentTasks,
   fetchStudentTrajectoryMastery,
   isAbortError,
+  reviewStudentTaskSubmission,
+  submitStudentTaskFileSubmission,
   submitStudentTaskScore,
   updateLearningTrajectoryTask,
   updateLearningTrajectoryStatus,
@@ -40,7 +43,7 @@ import {
 } from "./components/OperationTaskSchemaViews";
 import StudentTaskDebugAnswerModal from "./components/StudentTaskDebugAnswerModal";
 import { useNotifications } from "./notifications";
-import { getSessionHomePath } from "./session";
+import { getSessionHomePath, readSession } from "./session";
 import { disciplinePathValue } from "./disciplineRouting";
 import {
   buildFocusedScene,
@@ -103,6 +106,7 @@ const TASK_TYPE_LABELS = {
   multiple_choice: "Несколько выборов",
   matching: "Сопоставление",
   ordering: "Порядок",
+  text: "Текст / файл",
 } as Record<LearningTrajectoryTaskType, string>;
 
 const TASK_TEMPLATE_LABELS = {
@@ -166,6 +170,7 @@ const CHECKED_TASK_RELATION_LABELS: Partial<Record<KnowledgeElementRelationType,
   contrasts_with: "противопоставляется",
   used_with: "используется вместе",
   implements: "реализует",
+  automates: "автоматизирует",
 };
 
 type TaskCompetenceTab = KnowledgeElement["competence_type"];
@@ -214,6 +219,34 @@ function buildStudentTaskAnswerDraft(task: StudentAssignedTask) {
   }
 
   return buildEmptyStudentTaskAnswer(task);
+}
+
+function isManualMasterTask(task: StudentAssignedTask) {
+  return (
+    task.task_type === "text" &&
+    task.primary_element &&
+    task.content.manual_review === true &&
+    task.content.submission_kind === "file"
+  );
+}
+
+function extractSubmittedFileMeta(task: StudentAssignedTask) {
+  const payload = task.progress.last_answer_payload;
+  if (!payload || payload.submission_kind !== "file") {
+    return null;
+  }
+  return {
+    originalName: String(payload.original_name ?? ""),
+    uploadedAt: String(payload.uploaded_at ?? ""),
+    sizeBytes: Number(payload.size_bytes ?? 0),
+  };
+}
+
+function studentTaskProgressLabel(status: StudentAssignedTask["progress"]["status"]) {
+  if (status === "not_started") return "Не начато";
+  if (status === "in_progress") return "В работе";
+  if (status === "pending_review") return "Ждет проверки";
+  return "Проверено";
 }
 
 function extractErrorMessage(error: unknown) {
@@ -950,14 +983,25 @@ export default function TrajectoryDetailPage() {
   const [studentTrajectoryMastery, setStudentTrajectoryMastery] =
     useState<StudentTrajectoryMastery | null>(null);
   const [studentTaskAnswers, setStudentTaskAnswers] = useState<Record<string, Record<string, unknown>>>({});
+  const [studentTaskFiles, setStudentTaskFiles] = useState<Record<string, File | null>>({});
+  const [teacherReviewDrafts, setTeacherReviewDrafts] = useState<
+    Record<string, { score: number; reviewComment: string }>
+  >({});
   const [debugStudentTask, setDebugStudentTask] = useState<StudentAssignedTask | null>(null);
   const [savingStudentTaskId, setSavingStudentTaskId] = useState("");
   const [studentDataLoading, setStudentDataLoading] = useState(false);
   const [studentTaskModalOpen, setStudentTaskModalOpen] = useState(false);
   const [studentView, setStudentView] = useState<ViewMode>({ level: "topics" });
+  const [autoReviewFocusApplied, setAutoReviewFocusApplied] = useState(false);
   const studentIdFromQuery = searchParams.get("student") ?? "";
+  const reviewModeFromQuery = searchParams.get("review") ?? "";
   const isStudentMode = Boolean(studentIdFromQuery);
   const showStudentView = isStudentMode || studentPreviewOpen;
+  const activeSession = readSession();
+  const isTeacherReviewMode =
+    Boolean(studentIdFromQuery) &&
+    activeSession?.role === "teacher" &&
+    activeSession.userId === trajectory?.teacher_id;
   const resolvedDisciplineId = graph?.discipline.id ?? "";
   const resolvedDisciplinePath = disciplinePathValue(graph?.discipline, disciplineId ?? "");
   const { pushNotification } = useNotifications();
@@ -973,11 +1017,17 @@ export default function TrajectoryDetailPage() {
       setStudentTaskModalOpen(false);
       setStudentDataLoading(false);
       setStudentTrajectoryMastery(null);
+      setStudentTaskFiles({});
+      setTeacherReviewDrafts({});
       setView({ level: "topics" });
       return;
     }
     setStudentView({ level: "topics" });
   }, [showStudentView]);
+
+  useEffect(() => {
+    setAutoReviewFocusApplied(false);
+  }, [studentIdFromQuery, trajectoryId, reviewModeFromQuery]);
 
   useEffect(() => {
     if (!topicOrder.length) {
@@ -1069,15 +1119,30 @@ export default function TrajectoryDetailPage() {
     async function loadStudentMastery() {
       try {
         setStudentDataLoading(true);
-        const nextMastery = await fetchStudentTrajectoryMastery(
-          studentIdFromQuery,
-          currentTrajectoryId,
-          controller.signal,
-        );
+        const [nextMastery, nextStudentTasks, nextRecommendedTask] = await Promise.all([
+          fetchStudentTrajectoryMastery(
+            studentIdFromQuery,
+            currentTrajectoryId,
+            controller.signal,
+          ),
+          fetchStudentTasks(
+            studentIdFromQuery,
+            controller.signal,
+            undefined,
+            currentTrajectoryId,
+          ),
+          fetchRecommendedStudentTask(
+            studentIdFromQuery,
+            controller.signal,
+            undefined,
+            currentTrajectoryId,
+          ).catch(() => null),
+        ]);
         setStudentTrajectoryMastery(nextMastery);
-        setStudentTasks([]);
-        setRecommendedStudentTask(null);
+        setStudentTasks(nextStudentTasks);
+        setRecommendedStudentTask(nextRecommendedTask);
         setStudentTaskAnswers({});
+        setStudentTaskFiles({});
       } catch (error) {
         if (!isAbortError(error)) {
           pushNotification("error", extractErrorMessage(error));
@@ -1091,7 +1156,7 @@ export default function TrajectoryDetailPage() {
 
     void loadStudentMastery();
     return () => controller.abort();
-  }, [showStudentView, studentIdFromQuery, trajectoryId]);
+  }, [disciplineId, showStudentView, studentIdFromQuery, trajectoryId]);
 
   const topicById = useMemo(
     () => new Map((graph?.topics ?? []).map((topic) => [topic.id, topic])),
@@ -1227,6 +1292,12 @@ export default function TrajectoryDetailPage() {
                   return;
                 }
 
+                if (isTeacherReviewMode) {
+                  setSelectedNodeId(`topic:${data.topicId}`);
+                  setStudentTaskModalOpen(true);
+                  return;
+                }
+
                 if (isStudentMode && trajectoryId) {
                   const trajectoryTopic = trajectory.topics.find(
                     (item) => item.topic_id === data.topicId,
@@ -1282,6 +1353,7 @@ export default function TrajectoryDetailPage() {
     elementById,
     graph,
     isStudentMode,
+    isTeacherReviewMode,
     navigate,
     pushNotification,
     selectedNodeId,
@@ -1311,6 +1383,12 @@ export default function TrajectoryDetailPage() {
                 return;
               }
 
+              if (isTeacherReviewMode && node.id.startsWith("topic:")) {
+                setSelectedNodeId(node.id);
+                setStudentTaskModalOpen(true);
+                return;
+              }
+
               setSelectedNodeId(node.id);
               return;
             }
@@ -1327,7 +1405,7 @@ export default function TrajectoryDetailPage() {
         ]),
       ),
     }),
-    [dimmedNodeIds, scene, selectedNodeId, showStudentView],
+    [dimmedNodeIds, isTeacherReviewMode, scene, selectedNodeId, showStudentView],
   );
   const detail: DetailCard | null =
     selectedNodeId === NO_NODE_SELECTION
@@ -1431,6 +1509,73 @@ export default function TrajectoryDetailPage() {
       );
     });
   }, [elementById, graph, taskPrimaryElementId, taskTopicId, topicTrajectoryElementIds]);
+  const mandatoryMasterSkillRelations = useMemo(() => {
+    if (!graph || !taskTopicId || !taskPrimaryElementId) return [];
+    return graph.knowledge_element_relations.filter((relation) => {
+      const targetElement = elementById.get(relation.target_element_id);
+      return (
+        relation.topic_id === taskTopicId &&
+        relation.source_element_id === taskPrimaryElementId &&
+        relation.relation_type === "automates" &&
+        targetElement?.competence_type === "can" &&
+        topicTrajectoryElementIds.has(relation.target_element_id)
+      );
+    });
+  }, [elementById, graph, taskPrimaryElementId, taskTopicId, topicTrajectoryElementIds]);
+  const mandatoryMasterKnowledgeRelations = useMemo(() => {
+    if (!graph || !taskTopicId || !taskPrimaryElementId) return [];
+    return graph.knowledge_element_relations.filter((relation) => {
+      const targetElement = elementById.get(relation.target_element_id);
+      return (
+        relation.topic_id === taskTopicId &&
+        relation.source_element_id === taskPrimaryElementId &&
+        relation.relation_type === "relies_on" &&
+        targetElement?.competence_type === "know" &&
+        topicTrajectoryElementIds.has(relation.target_element_id)
+      );
+    });
+  }, [elementById, graph, taskPrimaryElementId, taskTopicId, topicTrajectoryElementIds]);
+  const mandatoryMasterRelations = useMemo(
+    () => [...mandatoryMasterSkillRelations, ...mandatoryMasterKnowledgeRelations],
+    [mandatoryMasterKnowledgeRelations, mandatoryMasterSkillRelations],
+  );
+  const availableMasterSkillElements = useMemo(
+    () =>
+      mandatoryMasterSkillRelations
+        .map((relation) => elementById.get(relation.target_element_id))
+        .filter((element): element is KnowledgeElement => Boolean(element))
+        .sort((left, right) => left.name.localeCompare(right.name, "ru")),
+    [elementById, mandatoryMasterSkillRelations],
+  );
+  const availableMasterKnowledgeElements = useMemo(
+    () =>
+      mandatoryMasterKnowledgeRelations
+        .map((relation) => elementById.get(relation.target_element_id))
+        .filter((element): element is KnowledgeElement => Boolean(element))
+        .sort((left, right) => left.name.localeCompare(right.name, "ru")),
+    [elementById, mandatoryMasterKnowledgeRelations],
+  );
+  const optionalMasterRelations = useMemo(() => {
+    if (!graph || !taskTopicId || !taskPrimaryElementId) return [];
+    return graph.knowledge_element_relations.filter((relation) => {
+      if (
+        relation.topic_id !== taskTopicId ||
+        relation.source_element_id !== taskPrimaryElementId &&
+          relation.target_element_id !== taskPrimaryElementId
+      ) {
+        return false;
+      }
+      const otherElementId =
+        relation.source_element_id === taskPrimaryElementId
+          ? relation.target_element_id
+          : relation.source_element_id;
+      return (
+        topicTrajectoryElementIds.has(otherElementId) &&
+        elementById.get(otherElementId)?.competence_type === "master" &&
+        relation.relation_type !== "implements"
+      );
+    });
+  }, [elementById, graph, taskPrimaryElementId, taskTopicId, topicTrajectoryElementIds]);
   const relevantTaskElements = useMemo(
     () =>
       availableTaskElements.filter((element) =>
@@ -1483,6 +1628,13 @@ export default function TrajectoryDetailPage() {
     () => studentTasks.filter((task) => task.topic_id === selectedTopicId),
     [selectedTopicId, studentTasks],
   );
+  const pendingMasterReviewCount = useMemo(
+    () =>
+      studentTasks.filter(
+        (task) => isManualMasterTask(task) && task.progress.status === "pending_review",
+      ).length,
+    [studentTasks],
+  );
   const selectedTopicRecommendedTask = useMemo(() => {
     if (recommendedStudentTask?.topic_id === selectedTopicId) {
       return recommendedStudentTask;
@@ -1496,6 +1648,27 @@ export default function TrajectoryDetailPage() {
       null
     );
   }, [isStudentMode, recommendedStudentTask, selectedTopicId, selectedTopicStudentTasks]);
+
+  useEffect(() => {
+    if (!isTeacherReviewMode || reviewModeFromQuery !== "master" || autoReviewFocusApplied) {
+      return;
+    }
+    const firstPendingTask = studentTasks.find(
+      (task) => isManualMasterTask(task) && task.progress.status === "pending_review",
+    );
+    if (!firstPendingTask) {
+      setAutoReviewFocusApplied(true);
+      return;
+    }
+    setSelectedNodeId(`topic:${firstPendingTask.topic_id}`);
+    setStudentTaskModalOpen(true);
+    setAutoReviewFocusApplied(true);
+  }, [
+    autoReviewFocusApplied,
+    isTeacherReviewMode,
+    reviewModeFromQuery,
+    studentTasks,
+  ]);
   const graphLoading = loading || layoutLoading || (showStudentView && studentDataLoading);
   const filteredTasks = useMemo(() => {
     const normalizedSearch = taskListSearch.trim().toLocaleLowerCase("ru");
@@ -1634,6 +1807,14 @@ export default function TrajectoryDetailPage() {
   }
 
   function buildTaskContentPayload(): LearningTrajectoryTaskContent {
+    if (selectedPrimaryElement?.competence_type === "master") {
+      return {
+        placeholder: taskTextPlaceholder.trim(),
+        manual_review: true,
+        submission_kind: "file",
+      };
+    }
+
     if (taskType === "text") {
       return {
         input_payload: taskSkillInputPayload,
@@ -1674,10 +1855,17 @@ export default function TrajectoryDetailPage() {
   }
 
   function validateTaskTemplate() {
-    if (taskType === "text") {
-      if (selectedPrimaryElement?.competence_type !== "can") {
-        return "Текстовый ответ сейчас используется только для заданий уровня «Уметь».";
+    if (selectedPrimaryElement?.competence_type === "master") {
+      if (!mandatoryMasterSkillRelations.length) {
+        return "У выбранного элемента «Владеть» нет обязательных связей «автоматизирует» с элементами «Уметь» в этой теме.";
       }
+      if (!mandatoryMasterKnowledgeRelations.length) {
+        return "У выбранного элемента «Владеть» нет обязательных связей «опирается на» с элементами «Знать» в этой теме.";
+      }
+      return "";
+    }
+
+    if (selectedPrimaryElement?.competence_type === "can") {
       if (!selectedPrimaryElement.operation_ref) {
         return "У выбранного элемента «Уметь» не задана операция алгоритмической библиотеки.";
       }
@@ -1685,6 +1873,10 @@ export default function TrajectoryDetailPage() {
         return "У выбранного элемента «Уметь» нет связанных формируемых элементов «Знать» в этой теме.";
       }
       return validateOperationInput(selectedPrimaryOperation?.input_schema ?? null, taskSkillInputPayload);
+    }
+
+    if (taskType === "text") {
+      return "Текстовый ответ сейчас используется только для заданий уровня «Уметь» и «Владеть».";
     }
 
     if (
@@ -1840,6 +2032,45 @@ export default function TrajectoryDetailPage() {
   ]);
 
   useEffect(() => {
+    if (selectedPrimaryElement?.competence_type !== "master") {
+      return;
+    }
+    const mandatoryRelationIds = mandatoryMasterRelations.map((relation) => relation.id);
+    const optionalRelationIds = new Set(optionalMasterRelations.map((relation) => relation.id));
+    const selectedOptionalRelations = taskCheckedRelationIds.filter((relationId) =>
+      optionalRelationIds.has(relationId),
+    );
+    const nextRelationIds = [...mandatoryRelationIds, ...selectedOptionalRelations];
+    const nextIds = [
+      ...mandatoryMasterRelations.map((relation) => relation.target_element_id),
+      ...optionalMasterRelations
+        .filter((relation) => selectedOptionalRelations.includes(relation.id))
+        .map((relation) =>
+          relation.source_element_id === taskPrimaryElementId
+            ? relation.target_element_id
+            : relation.source_element_id,
+        ),
+    ];
+    setTaskRelatedElementIds((current) =>
+      current.length === nextIds.length && current.every((item, index) => item === nextIds[index])
+        ? current
+        : nextIds,
+    );
+    setTaskCheckedRelationIds((current) =>
+      current.length === nextRelationIds.length &&
+      current.every((item, index) => item === nextRelationIds[index])
+        ? current
+        : nextRelationIds,
+    );
+  }, [
+    mandatoryMasterRelations,
+    optionalMasterRelations,
+    selectedPrimaryElement,
+    taskCheckedRelationIds,
+    taskPrimaryElementId,
+  ]);
+
+  useEffect(() => {
     if (selectedPrimaryElement?.competence_type !== "can" || !selectedPrimaryOperation) {
       return;
     }
@@ -1852,6 +2083,15 @@ export default function TrajectoryDetailPage() {
       current.trim() ? current : "Введите ответ в формате JSON"
     );
   }, [selectedPrimaryElement, selectedPrimaryOperation]);
+
+  useEffect(() => {
+    if (selectedPrimaryElement?.competence_type !== "master") {
+      return;
+    }
+    setTaskTextPlaceholder((current) =>
+      current.trim() ? current : "Опиши решение и результат."
+    );
+  }, [selectedPrimaryElement]);
 
   async function persistTopicOrder(nextOrder: string[]) {
     if (!graph || !trajectory || !trajectoryId) return;
@@ -2023,6 +2263,12 @@ export default function TrajectoryDetailPage() {
     toggleTaskCheckedRelation(relationId);
   }
 
+  function toggleMasterOptionalRelation(relationId: string) {
+    const mandatoryRelationIds = new Set(mandatoryMasterRelations.map((relation) => relation.id));
+    if (mandatoryRelationIds.has(relationId)) return;
+    toggleTaskCheckedRelation(relationId);
+  }
+
   function handleTaskCompetenceTabChange(nextTab: TaskCompetenceTab) {
     setTaskCompetenceTab(nextTab);
     setTaskPreviewOpen(false);
@@ -2119,10 +2365,6 @@ export default function TrajectoryDetailPage() {
 
   async function handleSaveTask() {
     if (!trajectoryId) return;
-    if (taskCompetenceTab === "master") {
-      pushNotification("error", "Создание заданий уровня «Владеть» пока не реализовано.");
-      return;
-    }
     if (!taskTopicId || !taskPrimaryElementId || !taskTitle.trim() || !taskPrompt.trim()) {
       pushNotification("error", "Для задания нужны тема, ключевой элемент, заголовок и текст задания.");
       return;
@@ -2136,6 +2378,18 @@ export default function TrajectoryDetailPage() {
 
     try {
       setSaving(true);
+      const normalizedTemplateKind =
+        selectedPrimaryElement?.competence_type === "can" ||
+        selectedPrimaryElement?.competence_type === "master"
+          ? "manual"
+          : taskTemplateKind;
+      const normalizedTaskType =
+        selectedPrimaryElement?.competence_type === "can" ||
+        selectedPrimaryElement?.competence_type === "master"
+          ? "text"
+          : normalizedTemplateKind === "manual"
+            ? taskType
+            : TASK_TEMPLATE_TYPE[normalizedTemplateKind];
       const payload = {
         topic_id: taskTopicId,
         primary_element_id: taskPrimaryElementId,
@@ -2144,8 +2398,8 @@ export default function TrajectoryDetailPage() {
         title: taskTitle.trim(),
         prompt: taskPrompt.trim(),
         difficulty: Math.max(0, Math.min(100, Number(taskDifficulty) || 0)),
-        task_type: taskTemplateKind === "manual" ? taskType : TASK_TEMPLATE_TYPE[taskTemplateKind],
-        template_kind: taskTemplateKind,
+        task_type: normalizedTaskType,
+        template_kind: normalizedTemplateKind,
         content: buildTaskContentPayload(),
       };
       const savedTask = editingTaskId
@@ -2232,11 +2486,106 @@ export default function TrajectoryDetailPage() {
     updateStudentTaskAnswer(taskId, { text: value });
   }
 
+  function updateStudentTaskFile(taskId: string, file: File | null) {
+    setStudentTaskFiles((current) => ({ ...current, [taskId]: file }));
+  }
+
+  function updateTeacherReviewDraft(
+    taskId: string,
+    patch: Partial<{ score: number; reviewComment: string }>,
+  ) {
+    setTeacherReviewDrafts((current) => ({
+      ...current,
+      [taskId]: {
+        score: current[taskId]?.score ?? 60,
+        reviewComment: current[taskId]?.reviewComment ?? "",
+        ...patch,
+      },
+    }));
+  }
+
+  async function handleDownloadStudentSubmission(task: StudentAssignedTask) {
+    if (!studentIdFromQuery) return;
+    try {
+      const { blob, fileName } = await downloadStudentTaskSubmissionFile(task.id, studentIdFromQuery);
+      const url = URL.createObjectURL(blob);
+      const anchor = document.createElement("a");
+      anchor.href = url;
+      anchor.download = fileName;
+      document.body.appendChild(anchor);
+      anchor.click();
+      anchor.remove();
+      URL.revokeObjectURL(url);
+    } catch (error) {
+      pushNotification("error", extractErrorMessage(error));
+    }
+  }
+
+  async function handleTeacherReviewTask(task: StudentAssignedTask) {
+    if (!studentIdFromQuery) return;
+    const draft = teacherReviewDrafts[task.id] ?? { score: 60, reviewComment: "" };
+    try {
+      setSavingStudentTaskId(task.id);
+      const updatedTask = await reviewStudentTaskSubmission(task.id, studentIdFromQuery, {
+        score: draft.score,
+        review_comment: draft.reviewComment,
+      });
+      setStudentTasks((current) =>
+        current.map((currentTask) => (currentTask.id === updatedTask.id ? updatedTask : currentTask)),
+      );
+      if (recommendedStudentTask?.id === updatedTask.id) {
+        setRecommendedStudentTask(updatedTask);
+      }
+      pushNotification("success", "Оценка сохранена.");
+    } catch (error) {
+      pushNotification("error", extractErrorMessage(error));
+    } finally {
+      setSavingStudentTaskId("");
+    }
+  }
+
   async function handleSubmitStudentTask(task: StudentAssignedTask) {
     if (!studentIdFromQuery) return;
 
     try {
       setSavingStudentTaskId(task.id);
+      if (isManualMasterTask(task)) {
+        const file = studentTaskFiles[task.id];
+        if (!file) {
+          pushNotification("error", "Сначала выбери файл с решением.");
+          return;
+        }
+        const updatedTask = await submitStudentTaskFileSubmission(
+          task.id,
+          studentIdFromQuery,
+          file,
+          task.task_instance_id,
+        );
+        setStudentTasks((current) =>
+          current.map((currentTask) => (currentTask.id === updatedTask.id ? updatedTask : currentTask)),
+        );
+        if (recommendedStudentTask?.id === updatedTask.id) {
+          setRecommendedStudentTask(updatedTask);
+        } else {
+          const nextRecommendedTask = await fetchRecommendedStudentTask(
+            studentIdFromQuery,
+            undefined,
+            resolvedDisciplineId || undefined,
+            trajectoryId,
+            selectedTopicId,
+          );
+          setRecommendedStudentTask(nextRecommendedTask);
+        }
+        setStudentTaskFiles((current) => ({ ...current, [task.id]: null }));
+        const teacherName = task.teacher_name?.trim();
+        pushNotification(
+          "success",
+          teacherName
+            ? `Работа отправлена на проверку преподавателю: ${teacherName}.`
+            : "Работа отправлена на проверку вашему преподавателю.",
+        );
+        return;
+      }
       const rawAnswer = studentTaskAnswers[task.id] ?? buildStudentTaskAnswerDraft(task);
       const nextAnswer =
         task.task_type === "text" && hasStructuredOperationContent(task.content)
@@ -2360,6 +2709,39 @@ export default function TrajectoryDetailPage() {
 
   function renderDetachedTextTaskAnswer(task: StudentAssignedTask, answer: Record<string, unknown>) {
     if (task.task_type === "text") {
+      if (isManualMasterTask(task)) {
+        const submittedFile = extractSubmittedFileMeta(task);
+        const selectedFile = studentTaskFiles[task.id];
+        return (
+          <div className="student-task-answer">
+            <div className="teacher-review-checklist">
+              <div className="teacher-review-checklist__section">
+                <span className="card__eyebrow">Предметная область</span>
+                <p>{task.content.manual_review_context?.subject_area_description || "Не заполнена."}</p>
+              </div>
+            </div>
+            <label className="field">
+              <span>Файл решения</span>
+              <input
+                type="file"
+                disabled={savingStudentTaskId === task.id || task.progress.status === "pending_review"}
+                onChange={(event) =>
+                  updateStudentTaskFile(task.id, event.target.files?.[0] ?? null)
+                }
+              />
+            </label>
+            {selectedFile ? (
+              <p className="card__text">Выбран файл: {selectedFile.name}</p>
+            ) : null}
+            {submittedFile?.originalName ? (
+              <p className="card__text">
+                Последняя отправка: {submittedFile.originalName}
+                {task.progress.status === "pending_review" ? " · ждёт проверки" : ""}
+              </p>
+            ) : null}
+          </div>
+        );
+      }
       const hasStructuredContent = hasStructuredOperationContent(task.content);
       const answerText = buildStructuredOperationAnswerText(answer, task.content);
       return (
@@ -2403,6 +2785,138 @@ export default function TrajectoryDetailPage() {
       );
     }
     return null;
+  }
+
+  function renderTeacherManualReview(task: StudentAssignedTask) {
+    if (!isManualMasterTask(task) || !studentIdFromQuery) {
+      return null;
+    }
+
+    const reviewContext = task.content.manual_review_context;
+    const reviewDraft = teacherReviewDrafts[task.id] ?? { score: 60, reviewComment: "" };
+    const submittedFile = extractSubmittedFileMeta(task);
+
+    return (
+      <div className="teacher-review-card">
+        <div className="teacher-review-card__header">
+          <strong>Ручная проверка преподавателем</strong>
+          <span className="hero__chip">{studentTaskProgressLabel(task.progress.status)}</span>
+        </div>
+
+        {submittedFile?.originalName ? (
+          <div className="teacher-review-card__actions">
+            <button
+              className="secondary-button"
+              type="button"
+              onClick={() => void handleDownloadStudentSubmission(task)}
+            >
+              Скачать файл
+            </button>
+            <span className="card__text">{submittedFile.originalName}</span>
+          </div>
+        ) : (
+          <p className="card__text">Студент ещё не отправил файл по этому заданию.</p>
+        )}
+
+        {reviewContext ? (
+          <div className="teacher-review-checklist">
+            <div className="teacher-review-checklist__section">
+              <span className="card__eyebrow">Предметная область</span>
+              <p>{reviewContext.subject_area_description || "Не заполнена."}</p>
+            </div>
+            <div className="teacher-review-checklist__section">
+              <span className="card__eyebrow">Элемент «Уметь»</span>
+              {(reviewContext.skill_elements ?? []).length ? (
+                (reviewContext.skill_elements ?? []).map((item) => (
+                  <div className="teacher-review-checklist__item" key={item.element_id}>
+                    <strong>{item.name}</strong>
+                    <span>{item.description || "Описание не добавлено."}</span>
+                  </div>
+                ))
+              ) : (
+                <p>Не найден.</p>
+              )}
+            </div>
+            <div className="teacher-review-checklist__section">
+              <span className="card__eyebrow">Связанные элементы «Знать»</span>
+              {(reviewContext.knowledge_elements ?? []).length ? (
+                (reviewContext.knowledge_elements ?? []).map((item) => (
+                  <div className="teacher-review-checklist__item" key={item.element_id}>
+                    <strong>{item.name}</strong>
+                    <span>{item.description || "Описание не добавлено."}</span>
+                  </div>
+                ))
+              ) : (
+                <p>Не найдены.</p>
+              )}
+            </div>
+            <div className="teacher-review-checklist__section">
+              <span className="card__eyebrow">Сопоставления объект → «Знать»</span>
+              {(reviewContext.domain_object_mappings ?? []).length ? (
+                (reviewContext.domain_object_mappings ?? []).map((item, index) => (
+                  <div className="teacher-review-checklist__item" key={`${item.object_name}-${index}`}>
+                    <strong>{item.object_name}</strong>
+                    <span>
+                      {item.knowledge_element_name}
+                      {item.knowledge_element_description
+                        ? ` — ${item.knowledge_element_description}`
+                        : ""}
+                    </span>
+                  </div>
+                ))
+              ) : (
+                <p>Сопоставления не найдены.</p>
+              )}
+            </div>
+          </div>
+        ) : null}
+
+        <div className="teacher-review-form">
+          <label className="field">
+            <span>Оценка</span>
+            <input
+              type="number"
+              min={0}
+              max={100}
+              value={reviewDraft.score}
+              onChange={(event) =>
+                updateTeacherReviewDraft(task.id, {
+                  score: Math.max(0, Math.min(100, Number(event.target.value) || 0)),
+                })
+              }
+            />
+          </label>
+          <label className="field">
+            <span>Комментарий преподавателя</span>
+            <textarea
+              rows={4}
+              value={reviewDraft.reviewComment}
+              onChange={(event) =>
+                updateTeacherReviewDraft(task.id, { reviewComment: event.target.value })
+              }
+              placeholder="Кратко отметь сильные стороны, ошибки и что стоит доработать."
+            />
+          </label>
+        </div>
+
+        {task.progress.last_feedback?.review_comment ? (
+          <div className="student-task-card__feedback">
+            {String(task.progress.last_feedback.review_comment)}
+          </div>
+        ) : null}
+
+        <div className="teacher-review-card__actions">
+          <button
+            className="primary-button"
+            type="button"
+            disabled={!submittedFile || savingStudentTaskId === task.id}
+            onClick={() => void handleTeacherReviewTask(task)}
+          >
+            {savingStudentTaskId === task.id ? "Сохраняю..." : "Сохранить оценку"}
+          </button>
+        </div>
+      </div>
+    );
   }
 
   function toggleTaskListCompetenceFilter(type: KnowledgeElement["competence_type"]) {
@@ -2689,16 +3203,6 @@ export default function TrajectoryDetailPage() {
                   ))}
                 </div>
 
-                {taskCompetenceTab === "master" ? (
-                  <div className="trajectory-task-placeholder">
-                    <strong>Задания уровня «Владеть»</strong>
-                    <p className="card__text">
-                      Этот тип заданий пока не реализован. Здесь появится отдельный конструктор после
-                      описания формата проверки владения.
-                    </p>
-                  </div>
-                ) : null}
-
                 <div className="trajectory-task-editor__grid">
                   <label className="field">
                     <span>Тема траектории</span>
@@ -2843,6 +3347,53 @@ export default function TrajectoryDetailPage() {
                           {element.name}
                         </span>
                       ))}
+                    </div>
+                  </div>
+                ) : null}
+                {taskCompetenceTab === "master" ? (
+                  <div className="trajectory-task-related">
+                    <strong>Настройка задания уровня «Владеть»</strong>
+                    <p className="card__text">
+                      Обязательные связанные элементы подставляются автоматически: элементы «Уметь» по связи
+                      «автоматизирует» и элементы «Знать» по связи «опирается на» в рамках этой темы.
+                      Дополнительно можно отметить связи с другими элементами «Владеть» этой же темы.
+                    </p>
+                    <label className="field">
+                      <span>Подсказка в поле ответа</span>
+                      <input
+                        value={taskTextPlaceholder}
+                        onChange={(event) => setTaskTextPlaceholder(event.target.value)}
+                        placeholder="Например: Опиши решение и результат"
+                        disabled={saving}
+                      />
+                    </label>
+                    <strong>Обязательные элементы «Уметь»</strong>
+                    <div className="trajectory-task-preview__items">
+                      {availableMasterSkillElements.length ? (
+                        availableMasterSkillElements.map((element) => (
+                          <span className="trajectory-task-preview__item trajectory-task-preview__item--correct" key={`master-skill-${element.id}`}>
+                            {element.name}
+                          </span>
+                        ))
+                      ) : (
+                        <p className="card__text">
+                          Для выбранного элемента пока не найдено обязательных связей «автоматизирует» с элементами «Уметь».
+                        </p>
+                      )}
+                    </div>
+                    <strong>Обязательные элементы «Знать»</strong>
+                    <div className="trajectory-task-preview__items">
+                      {availableMasterKnowledgeElements.length ? (
+                        availableMasterKnowledgeElements.map((element) => (
+                          <span className="trajectory-task-preview__item trajectory-task-preview__item--correct" key={`master-know-${element.id}`}>
+                            {element.name}
+                          </span>
+                        ))
+                      ) : (
+                        <p className="card__text">
+                          Для выбранного элемента пока не найдено обязательных связей «опирается на» с элементами «Знать».
+                        </p>
+                      )}
                     </div>
                   </div>
                 ) : null}
@@ -3038,16 +3589,55 @@ export default function TrajectoryDetailPage() {
                     )}
                   </div>
                 ) : null}
+                {taskCompetenceTab === "master" ? (
+                  <div className="trajectory-task-related">
+                    <strong>Проверяемые связи</strong>
+                    <p className="card__text">
+                      Связи «автоматизирует» и «опирается на» подставляются автоматически и остаются обязательными.
+                      Дополнительно можно отметить связи с другими элементами «Владеть» этой темы.
+                    </p>
+                    <div className="trajectory-task-related__list">
+                      {mandatoryMasterRelations.map((relation) => (
+                        <label className="trajectory-task-related__item" key={`master-mandatory-${relation.id}`}>
+                          <input checked disabled type="checkbox" />
+                          <span>{checkedRelationLabel(relation, elementById)}</span>
+                        </label>
+                      ))}
+                    </div>
+                    {optionalMasterRelations.length ? (
+                      <>
+                        <strong>Дополнительные связи с «Владеть»</strong>
+                        <div className="trajectory-task-related__list">
+                          {optionalMasterRelations.map((relation) => (
+                            <label className="trajectory-task-related__item" key={`master-optional-${relation.id}`}>
+                              <input
+                                checked={taskCheckedRelationIds.includes(relation.id)}
+                                disabled={saving}
+                                onChange={() => toggleMasterOptionalRelation(relation.id)}
+                                type="checkbox"
+                              />
+                              <span>{checkedRelationLabel(relation, elementById)}</span>
+                            </label>
+                          ))}
+                        </div>
+                      </>
+                    ) : (
+                      <p className="card__text">
+                        У выбранного элемента пока нет дополнительных связей с другими элементами «Владеть» этой темы.
+                      </p>
+                    )}
+                  </div>
+                ) : null}
                 <div className="trajectory-task-editor__actions">
                   <button
                     className="ghost-button"
                     type="button"
-                    disabled={taskCompetenceTab === "master" || !taskTopicId || !taskPrimaryElementId || !taskTitle.trim() || !taskPrompt.trim()}
+                    disabled={!taskTopicId || !taskPrimaryElementId || !taskTitle.trim() || !taskPrompt.trim()}
                     onClick={() => setTaskPreviewOpen((current) => !current)}
                   >
                     {taskPreviewOpen ? "Скрыть предпросмотр" : "Предпросмотр"}
                   </button>
-                  <button className="primary-button" type="button" disabled={saving || taskCompetenceTab === "master" || !taskTopicId || !taskPrimaryElementId || !taskTitle.trim() || !taskPrompt.trim()} onClick={() => void handleSaveTask()}>
+                  <button className="primary-button" type="button" disabled={saving || !taskTopicId || !taskPrimaryElementId || !taskTitle.trim() || !taskPrompt.trim()} onClick={() => void handleSaveTask()}>
                     {editingTaskId ? "Сохранить задание" : "Добавить задание"}
                   </button>
                   {editingTaskId ? (
@@ -3168,7 +3758,9 @@ export default function TrajectoryDetailPage() {
           <p className="hero__eyebrow">Learning path</p>
           <h1>{trajectory?.name ?? "Траектория изучения"}</h1>
           <p className="hero__subtitle">
-            {isStudentMode
+            {isTeacherReviewMode
+              ? "Режим проверки работ студента по заданиям уровня «Владеть»."
+              : isStudentMode
               ? "Студент видит только порядок тем и элементы, которые будут изучаться в каждой теме."
               : "Просмотр сохранённой траектории и быстрый редактор порядка тем."}
           </p>
@@ -3177,6 +3769,11 @@ export default function TrajectoryDetailPage() {
         <div className="hero__controls trajectory-detail-hero-actions">
           {isStudentMode ? (
             <>
+              {isTeacherReviewMode ? (
+                <span className="hero__chip">
+                  Ожидают проверки: {pendingMasterReviewCount}
+                </span>
+              ) : null}
               <button
                 className="ghost-button"
                 onClick={() => navigate(getSessionHomePath())}
@@ -3594,16 +4191,6 @@ export default function TrajectoryDetailPage() {
                 ))}
               </div>
 
-              {taskCompetenceTab === "master" ? (
-                <div className="trajectory-task-placeholder">
-                  <strong>Задания уровня «Владеть»</strong>
-                  <p className="card__text">
-                    Этот тип заданий пока не реализован. Здесь появится отдельный конструктор после
-                    описания формата проверки владения.
-                  </p>
-                </div>
-              ) : null}
-
               <div className="trajectory-task-editor__grid">
                 <label className="field">
                   <span>Тема траектории</span>
@@ -3821,6 +4408,53 @@ export default function TrajectoryDetailPage() {
                   </div>
                 </div>
               ) : null}
+              {taskCompetenceTab === "master" ? (
+                <div className="trajectory-task-related">
+                  <strong>Настройка задания уровня «Владеть»</strong>
+                  <p className="card__text">
+                    Обязательные связанные элементы подставляются автоматически: элементы «Уметь» по связи
+                    «автоматизирует» и элементы «Знать» по связи «опирается на» в рамках этой темы.
+                    Дополнительно можно отметить связи с другими элементами «Владеть» этой же темы.
+                  </p>
+                  <label className="field">
+                    <span>Подсказка в поле ответа</span>
+                    <input
+                      value={taskTextPlaceholder}
+                      onChange={(event) => setTaskTextPlaceholder(event.target.value)}
+                      placeholder="Например: Опиши решение и результат"
+                      disabled={saving}
+                    />
+                  </label>
+                  <strong>Обязательные элементы «Уметь»</strong>
+                  <div className="trajectory-task-preview__items">
+                    {availableMasterSkillElements.length ? (
+                      availableMasterSkillElements.map((element) => (
+                        <span className="trajectory-task-preview__item trajectory-task-preview__item--correct" key={`inline-master-skill-${element.id}`}>
+                          {element.name}
+                        </span>
+                      ))
+                    ) : (
+                      <p className="card__text">
+                        Для выбранного элемента пока не найдено обязательных связей «автоматизирует» с элементами «Уметь».
+                      </p>
+                    )}
+                  </div>
+                  <strong>Обязательные элементы «Знать»</strong>
+                  <div className="trajectory-task-preview__items">
+                    {availableMasterKnowledgeElements.length ? (
+                      availableMasterKnowledgeElements.map((element) => (
+                        <span className="trajectory-task-preview__item trajectory-task-preview__item--correct" key={`inline-master-know-${element.id}`}>
+                          {element.name}
+                        </span>
+                      ))
+                    ) : (
+                      <p className="card__text">
+                        Для выбранного элемента пока не найдено обязательных связей «опирается на» с элементами «Знать».
+                      </p>
+                    )}
+                  </div>
+                </div>
+              ) : null}
               {taskCompetenceTab === "know" ? (
               <div className="trajectory-task-related">
                 <strong>Связанные элементы</strong>
@@ -3881,12 +4515,51 @@ export default function TrajectoryDetailPage() {
                   )}
                 </div>
               ) : null}
+              {taskCompetenceTab === "master" ? (
+                <div className="trajectory-task-related">
+                  <strong>Проверяемые связи</strong>
+                  <p className="card__text">
+                    Связи «автоматизирует» и «опирается на» подставляются автоматически и остаются обязательными.
+                    Дополнительно можно отметить связи с другими элементами «Владеть» этой темы.
+                  </p>
+                  <div className="trajectory-task-related__list">
+                    {mandatoryMasterRelations.map((relation) => (
+                      <label className="trajectory-task-related__item" key={`inline-master-mandatory-${relation.id}`}>
+                        <input checked disabled type="checkbox" />
+                        <span>{checkedRelationLabel(relation, elementById)}</span>
+                      </label>
+                    ))}
+                  </div>
+                  {optionalMasterRelations.length ? (
+                    <>
+                      <strong>Дополнительные связи с «Владеть»</strong>
+                      <div className="trajectory-task-related__list">
+                        {optionalMasterRelations.map((relation) => (
+                          <label className="trajectory-task-related__item" key={`inline-master-optional-${relation.id}`}>
+                            <input
+                              checked={taskCheckedRelationIds.includes(relation.id)}
+                              disabled={saving}
+                              onChange={() => toggleMasterOptionalRelation(relation.id)}
+                              type="checkbox"
+                            />
+                            <span>{checkedRelationLabel(relation, elementById)}</span>
+                          </label>
+                        ))}
+                      </div>
+                    </>
+                  ) : (
+                    <p className="card__text">
+                      У выбранного элемента пока нет дополнительных связей с другими элементами «Владеть» этой темы.
+                    </p>
+                  )}
+                </div>
+              ) : null}
 
               <div className="trajectory-task-editor__actions">
                 <button
                   className="primary-button"
                   type="button"
-                  disabled={saving || taskCompetenceTab === "master" || !taskTopicId || !taskPrimaryElementId || !taskTitle.trim() || !taskPrompt.trim()}
+                  disabled={saving || !taskTopicId || !taskPrimaryElementId || !taskTitle.trim() || !taskPrompt.trim()}
                   onClick={() => void handleSaveTask()}
                 >
                   {editingTaskId ? "Сохранить задание" : "Добавить задание"}
@@ -3980,6 +4653,13 @@ export default function TrajectoryDetailPage() {
                 <p className="card__eyebrow">Студент</p>
                 <h2>{topicName(topicById, selectedTopicId)}</h2>
               </div>
+              {isTeacherReviewMode ? (
+                <span className="hero__chip">
+                  Ожидают проверки: {selectedTopicStudentTasks.filter(
+                    (task) => isManualMasterTask(task) && task.progress.status === "pending_review",
+                  ).length}
+                </span>
+              ) : null}
               <button className="ghost-button" onClick={() => setStudentTaskModalOpen(false)} type="button">
                 Закрыть
               </button>
@@ -3987,9 +4667,53 @@ export default function TrajectoryDetailPage() {
             <div className="modal-panel__body">
               <section className="card card--soft trajectory-student-topic-modal">
                 <p className="card__text">
-                  Система выбирает следующее задание по текущему уровню освоения элементов этой темы.
+                  {isTeacherReviewMode
+                    ? "Здесь можно просмотреть отправки студента по заданиям этой темы и вручную проверить задания уровня «Владеть»."
+                    : "Система выбирает следующее задание по текущему уровню освоения элементов этой темы."}
                 </p>
-                {selectedTopicRecommendedTask ? (
+                {isTeacherReviewMode ? (
+                  selectedTopicStudentTasks.length ? (
+                    <div className="student-task-list">
+                      {selectedTopicStudentTasks.map((task) => (
+                        <article className="student-task-card" key={task.id}>
+                          <div className="student-task-card__header">
+                            <div>
+                              <strong>{task.title || task.topic_name}</strong>
+                              <span>
+                                Ключевой элемент: {task.primary_element.name} ·{" "}
+                                {TASK_TYPE_LABELS[task.task_type]}
+                              </span>
+                            </div>
+                            <span className="hero__chip">Сложность {task.difficulty}</span>
+                          </div>
+                          <p>{task.prompt}</p>
+                          <div className="student-task-card__progress">
+                            <span>Статус: {studentTaskProgressLabel(task.progress.status)}</span>
+                            <span>Попыток: {task.progress.attempts_count}</span>
+                            <span>Последний балл: {task.progress.last_score ?? "еще нет"}</span>
+                            <span>Лучший балл: {task.progress.best_score ?? "еще нет"}</span>
+                            <span>Освоение элемента: {task.primary_element.mastery_value}</span>
+                          </div>
+                          {task.progress.last_feedback ? (
+                            <div className="student-task-card__feedback">
+                              {String(task.progress.last_feedback.message ?? "")}
+                            </div>
+                          ) : null}
+                          {isManualMasterTask(task)
+                            ? renderTeacherManualReview(task)
+                            : renderDetachedTextTaskAnswer(
+                                task,
+                                studentTaskAnswers[task.id] ?? buildStudentTaskAnswerDraft(task),
+                              )}
+                        </article>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="card__text">
+                      Для выбранной темы у студента пока нет заданий.
+                    </p>
+                  )
+                ) : selectedTopicRecommendedTask ? (
                   <div className="student-task-list">
                       <article className="student-task-card" key={selectedTopicRecommendedTask.id}>
                         <div className="student-task-card__header">

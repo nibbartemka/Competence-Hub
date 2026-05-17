@@ -191,6 +191,11 @@ export default function TeacherDashboardPage() {
     return trajectories.filter((trajectory) => trajectory.discipline_id === selectedDiscipline.id);
   }, [selectedDiscipline, trajectories]);
 
+  const reviewableTrajectories = useMemo(
+    () => selectedTrajectories.filter((trajectory) => trajectory.status === "active"),
+    [selectedTrajectories],
+  );
+
   if (!teacherId) {
     return null;
   }
@@ -526,6 +531,59 @@ export default function TeacherDashboardPage() {
               <p className="card__text">
                 История попыток и проблемные элементы будут агрегироваться по траекториям и студентам.
               </p>
+              {isAdminViewer ? (
+                <p className="role-muted-note">
+                  Кнопки проверки работ доступны только из профиля преподавателя.
+                </p>
+              ) : selectedStudents.length && reviewableTrajectories.length && selectedDiscipline ? (
+                <div className="role-card-grid">
+                  {selectedStudents.map((student) => {
+                    const studentTrajectories = reviewableTrajectories.filter((trajectory) => {
+                      if (trajectory.group_id !== student.group_id) {
+                        return false;
+                      }
+                      if (trajectory.subgroup_id && trajectory.subgroup_id !== student.subgroup_id) {
+                        return false;
+                      }
+                      return true;
+                    });
+
+                    return (
+                      <article className="role-feature-card" key={student.id}>
+                        <div>
+                          <strong>{student.name}</strong>
+                          <span>{student.login}</span>
+                          <span>
+                            Доступных траекторий для проверки: {studentTrajectories.length}
+                          </span>
+                        </div>
+                        {studentTrajectories.length ? (
+                          <div className="role-action-row role-action-row--wrap">
+                            {studentTrajectories.map((trajectory) => (
+                              <MotionLink
+                                key={`${student.id}:${trajectory.id}`}
+                                className="secondary-button"
+                                to={`/disciplines/${getDisciplinePath(selectedDiscipline, trajectory.discipline_id)}/trajectories/${trajectory.id}?student=${student.id}&review=master`}
+                                {...actionHoverMotion}
+                              >
+                                Проверить работы Владеть
+                              </MotionLink>
+                            ))}
+                          </div>
+                        ) : (
+                          <span className="role-muted-note">
+                            Для этого студента в выбранной дисциплине пока нет активной траектории.
+                          </span>
+                        )}
+                      </article>
+                    );
+                  })}
+                </div>
+              ) : (
+                <p className="role-muted-note">
+                  Для появления кнопок проверки нужна выбранная дисциплина, активная траектория и студент в назначенной группе.
+                </p>
+              )}
             </motion.section>
           </div>
         </main>

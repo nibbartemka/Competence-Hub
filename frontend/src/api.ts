@@ -50,6 +50,11 @@ type RequestOptions = {
   signal?: AbortSignal;
 };
 
+type FileResponsePayload = {
+  blob: Blob;
+  fileName: string;
+};
+
 export function isAbortError(error: unknown) {
   if (error instanceof DOMException) {
     return error.name === "AbortError";
@@ -108,6 +113,62 @@ async function request<T>(path: string, options: RequestOptions = {}): Promise<T
   }
 
   return JSON.parse(rawText) as T;
+}
+
+async function requestForm<T>(
+  path: string,
+  formData: FormData,
+  options: { method?: string } = {},
+): Promise<T> {
+  const response = await fetch(`${API_BASE}${path}`, {
+    method: options.method ?? "POST",
+    cache: "no-store",
+    headers: {
+      Accept: "application/json",
+      ...(readSession()?.sessionId ? { "X-Session-Id": readSession()?.sessionId ?? "" } : {}),
+    },
+    body: formData,
+  });
+
+  if (!response.ok) {
+    const contentType = response.headers.get("content-type") ?? "";
+    if (contentType.includes("application/json")) {
+      const payload = (await response.json()) as { detail?: string };
+      throw new Error(payload.detail || `HTTP ${response.status}`);
+    }
+    const message = await response.text();
+    throw new Error(message || `HTTP ${response.status}`);
+  }
+
+  const rawText = await response.text();
+  return rawText.trim() ? (JSON.parse(rawText) as T) : (undefined as T);
+}
+
+async function requestFile(path: string): Promise<FileResponsePayload> {
+  const response = await fetch(`${API_BASE}${path}`, {
+    method: "GET",
+    cache: "no-store",
+    headers: {
+      Accept: "*/*",
+      ...(readSession()?.sessionId ? { "X-Session-Id": readSession()?.sessionId ?? "" } : {}),
+    },
+  });
+
+  if (!response.ok) {
+    const contentType = response.headers.get("content-type") ?? "";
+    if (contentType.includes("application/json")) {
+      const payload = (await response.json()) as { detail?: string };
+      throw new Error(payload.detail || `HTTP ${response.status}`);
+    }
+    throw new Error((await response.text()) || `HTTP ${response.status}`);
+  }
+
+  const disposition = response.headers.get("content-disposition") ?? "";
+  const fileNameMatch = disposition.match(/filename="?([^"]+)"?/i);
+  return {
+    blob: await response.blob(),
+    fileName: fileNameMatch?.[1] ?? "submission",
+  };
 }
 
 export function fetchDisciplines(signal?: AbortSignal) {
@@ -758,12 +819,12 @@ export function fetchStudentTopicControl(
   trajectoryId: string,
   topicId: string,
   continuePractice = false,
-  skillPractice = false,
+  practiceStage: "know" | "can" | "master" = "know",
   signal?: AbortSignal,
 ) {
   const query = new URLSearchParams();
   if (continuePractice) query.set("continue_practice", "true");
-  if (skillPractice) query.set("skill_practice", "true");
+  if (practiceStage !== "know") query.set("practice_stage", practiceStage);
   const suffix = query.toString() ? `?${query.toString()}` : "";
   return request<StudentTopicControl>(
     `/students/${studentId}/trajectories/${trajectoryId}/control/${topicId}${suffix}`,
@@ -776,12 +837,12 @@ export function fetchStudentTopicControlByPosition(
   trajectoryId: string,
   topicPosition: number,
   continuePractice = false,
-  skillPractice = false,
+  practiceStage: "know" | "can" | "master" = "know",
   signal?: AbortSignal,
 ) {
   const query = new URLSearchParams();
   if (continuePractice) query.set("continue_practice", "true");
-  if (skillPractice) query.set("skill_practice", "true");
+  if (practiceStage !== "know") query.set("practice_stage", practiceStage);
   const suffix = query.toString() ? `?${query.toString()}` : "";
   return request<StudentTopicControl>(
     `/students/${studentId}/trajectories/${trajectoryId}/control/steps/${topicPosition}${suffix}`,
@@ -815,4 +876,49 @@ export function submitStudentTaskScore(
       duration_seconds: durationSeconds ?? null,
     },
   });
+}
+
+export function submitStudentTaskFileSubmission(
+  taskId: string,
+  studentId: string,
+  file: File,
+  taskInstanceId?: string | null,
+  durationSeconds?: number | null,
+) {
+  const formData = new FormData();
+  formData.append("file", file);
+  if (taskInstanceId) {
+    formData.append("task_instance_id", taskInstanceId);
+  }
+  if (durationSeconds !== undefined && durationSeconds !== null) {
+    formData.append("duration_seconds", String(durationSeconds));
+  }
+  return requestForm<StudentAssignedTask>(
+    `/learning-trajectory-tasks/${taskId}/students/${studentId}/file-submission`,
+    formData,
+  );
+}
+
+export function reviewStudentTaskSubmission(
+  taskId: string,
+  studentId: string,
+  payload: {
+    score: number;
+    review_comment: string;
+  },
+) {
+  return request<StudentAssignedTask>(
+    `/learning-trajectory-tasks/${taskId}/students/${studentId}/teacher-review`,
+    {
+      method: "PUT",
+      body: payload,
+    },
+  );
+}
+
+export function downloadStudentTaskSubmissionFile(
+  taskId: string,
+  studentId: string,
+) {
+  return requestFile(`/learning-trajectory-tasks/${taskId}/students/${studentId}/submission-file`);
 }

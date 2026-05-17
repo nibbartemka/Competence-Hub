@@ -539,6 +539,14 @@ export function GraphEditor({
     () => relationCatalog.find((relation) => relation.relation_type === "implements") ?? null,
     [relationCatalog],
   );
+  const automatesRelation = useMemo(
+    () => relationCatalog.find((relation) => relation.relation_type === "automates") ?? null,
+    [relationCatalog],
+  );
+  const reliesOnRelation = useMemo(
+    () => relationCatalog.find((relation) => relation.relation_type === "relies_on") ?? null,
+    [relationCatalog],
+  );
 
   const availableKnowledgeForNewSkillElement = useMemo(() => {
     if (!elementCreateTopicId) {
@@ -605,6 +613,20 @@ export function GraphEditor({
     topicKnowledgeElementsByTopicId,
   ]);
 
+  const availableKnowledgeForMaster = useMemo(() => {
+    if (!elementCreateTopicId) {
+      return [];
+    }
+
+    return (topicKnowledgeElementsByTopicId.get(elementCreateTopicId) ?? [])
+      .map((link) => elementById.get(link.element_id) ?? null)
+      .filter(
+        (element): element is KnowledgeElement =>
+          !!element && element.competence_type === "know",
+      )
+      .sort((left, right) => left.name.localeCompare(right.name, "ru"));
+  }, [elementById, elementCreateTopicId, topicKnowledgeElementsByTopicId]);
+
   const uncoveredKnowledgeForMaster = useMemo(() => {
     const coveredKnowledgeIds = new Set(
       elementMasterDomainObjects
@@ -615,6 +637,27 @@ export function GraphEditor({
       (element) => !coveredKnowledgeIds.has(element.id),
     );
   }, [elementMasterDomainObjects, requiredKnowledgeForMaster]);
+
+  const duplicateMasterDomainObjectMappings = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const item of elementMasterDomainObjects) {
+      const normalizedObjectName = item.objectName.trim().toLocaleLowerCase("ru");
+      if (!normalizedObjectName || !item.knowledgeElementId) {
+        continue;
+      }
+      const key = `${normalizedObjectName}::${item.knowledgeElementId}`;
+      counts.set(key, (counts.get(key) ?? 0) + 1);
+    }
+
+    return elementMasterDomainObjects.filter((item) => {
+      const normalizedObjectName = item.objectName.trim().toLocaleLowerCase("ru");
+      if (!normalizedObjectName || !item.knowledgeElementId) {
+        return false;
+      }
+      const key = `${normalizedObjectName}::${item.knowledgeElementId}`;
+      return (counts.get(key) ?? 0) > 1;
+    });
+  }, [elementMasterDomainObjects]);
 
   const relationElements = sortedAllElements;
   const relationElementOptions = useMemo(
@@ -943,13 +986,13 @@ export function GraphEditor({
       return;
     }
 
-    const allowedIds = new Set(requiredKnowledgeForMaster.map((element) => element.id));
+    const allowedIds = new Set(availableKnowledgeForMaster.map((element) => element.id));
     setElementMasterDomainObjects((current) => {
       const next = current.map((item) => ({
         ...item,
         knowledgeElementId: allowedIds.has(item.knowledgeElementId)
           ? item.knowledgeElementId
-          : (requiredKnowledgeForMaster[0]?.id ?? ""),
+          : (requiredKnowledgeForMaster[0]?.id ?? availableKnowledgeForMaster[0]?.id ?? ""),
       }));
 
       if (!next.length && requiredKnowledgeForMaster.length) {
@@ -958,7 +1001,7 @@ export function GraphEditor({
 
       return next;
     });
-  }, [elementCompetence, requiredKnowledgeForMaster]);
+  }, [availableKnowledgeForMaster, elementCompetence, requiredKnowledgeForMaster]);
 
   useEffect(() => {
     if (editElementCompetence !== "can" && editElementOperationRef) {
@@ -1207,7 +1250,8 @@ export function GraphEditor({
   }
 
   function addMasterDomainObjectDraft() {
-    const fallbackKnowledgeId = requiredKnowledgeForMaster[0]?.id ?? "";
+    const fallbackKnowledgeId =
+      requiredKnowledgeForMaster[0]?.id ?? availableKnowledgeForMaster[0]?.id ?? "";
     setElementMasterDomainObjects((current) => [
       ...current,
       createMasterDomainObjectDraft(fallbackKnowledgeId),
@@ -1244,6 +1288,45 @@ export function GraphEditor({
     setTopicNewElements((current) =>
       current.map((item) => (item.clientId === clientId ? { ...item, ...patch } : item)),
     );
+  }
+
+  async function ensureMasterRelationsAfterCreate(
+    masterElementId: string,
+    topicId: string,
+    skillElementId: string,
+    knowledgeElementIds: string[],
+  ) {
+    const uniqueKnowledgeElementIds = [...new Set(knowledgeElementIds.filter(Boolean))];
+
+    async function ensureRelation(
+      relationId: string | null | undefined,
+      targetElementId: string,
+    ) {
+      if (!relationId) {
+        return;
+      }
+
+      try {
+        await createKnowledgeElementRelation({
+          topic_id: topicId,
+          source_element_id: masterElementId,
+          target_element_id: targetElementId,
+          relation_id: relationId,
+          description: "",
+        });
+      } catch (error) {
+        const message = extractErrorMessage(error);
+        if (message === "Operation violates database constraints.") {
+          return;
+        }
+        throw error;
+      }
+    }
+
+    await ensureRelation(automatesRelation?.id, skillElementId);
+    for (const knowledgeElementId of uniqueKnowledgeElementIds) {
+      await ensureRelation(reliesOnRelation?.id, knowledgeElementId);
+    }
   }
   async function handleCreateTopic(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -1405,6 +1488,13 @@ export function GraphEditor({
         });
         return;
       }
+      if (duplicateMasterDomainObjectMappings.length) {
+        setFeedback({
+          kind: "error",
+          text: "Убери дублирующиеся сопоставления объекта предметной области с одним и тем же элементом «Знать».",
+        });
+        return;
+      }
 
       try {
         setBusyAction("element-create");
@@ -1422,6 +1512,12 @@ export function GraphEditor({
             knowledge_element_id: item.knowledgeElementId,
           })),
         });
+        await ensureMasterRelationsAfterCreate(
+          createdElement.id,
+          elementCreateTopicId,
+          elementAutomatedSkillId,
+          elementMasterDomainObjects.map((item) => item.knowledgeElementId),
+        );
 
         setElementName("");
         setElementDescription("");
@@ -2651,7 +2747,7 @@ export function GraphEditor({
                   </label>
 
                   <label className="field">
-                    <span>Связанный элемент уровня «Уметь»</span>
+                    <span>Элемент уровня «Уметь» для связи «Автоматизирует»</span>
                     <select
                       value={elementAutomatedSkillId}
                       onChange={(event) => setElementAutomatedSkillId(event.target.value)}
@@ -2665,8 +2761,9 @@ export function GraphEditor({
                       ))}
                     </select>
                     <small>
-                      Можно выбрать только элементы «Уметь» из этой темы, которые уже
-                      связаны с алгоритмом.
+                      После создания элемента «Владеть» автоматически появится связь
+                      «Автоматизирует» с выбранным элементом «Уметь». Выбрать можно только
+                      элементы этой темы, которые уже связаны с алгоритмом.
                     </small>
                   </label>
 
@@ -2682,11 +2779,13 @@ export function GraphEditor({
                       <div className="editor-subsection">
                         <div className="editor-subsection__header">
                           <div>
-                            <strong>Объекты предметной области</strong>
+                            <strong>Объекты предметной области и связи «Опирается на»</strong>
                             <p>
-                              Добавь объекты вручную и сопоставь каждый из них с
-                              элементом уровня «Знать». Нужно покрыть все знания,
-                              которые выбранный элемент «Уметь» реализует в этой теме.
+                              Стартовый набор знаний берется из связей выбранного элемента
+                              «Уметь» с элементами «Знать», но дополнительно здесь можно
+                              выбрать и любые другие элементы «Знать» этой же темы. Для
+                              каждого сопоставления будет автоматически создана связь
+                              «Опирается на». Обязательные знания нужно покрыть полностью.
                             </p>
                           </div>
 
@@ -2710,6 +2809,13 @@ export function GraphEditor({
                             </span>
                           ))}
                         </div>
+
+                        {duplicateMasterDomainObjectMappings.length ? (
+                          <p className="editor-empty">
+                            Найдены дублирующиеся сопоставления. Один и тот же объект нельзя
+                            дважды связать с одним и тем же элементом «Знать».
+                          </p>
+                        ) : null}
 
                         {elementMasterDomainObjects.length ? (
                           <div className="editor-domain-objects">
@@ -2753,7 +2859,7 @@ export function GraphEditor({
                                       }
                                     >
                                       <option value="">Выбери элемент «Знать»</option>
-                                      {requiredKnowledgeForMaster.map((element) => (
+                                      {availableKnowledgeForMaster.map((element) => (
                                         <option key={element.id} value={element.id}>
                                           {element.name}
                                         </option>
@@ -2795,6 +2901,7 @@ export function GraphEditor({
                     elementMasterDomainObjects.some(
                       (item) => !item.objectName.trim() || !item.knowledgeElementId,
                     ) ||
+                    !!duplicateMasterDomainObjectMappings.length ||
                     !!uncoveredKnowledgeForMaster.length)) ||
                 !!busyAction
               }

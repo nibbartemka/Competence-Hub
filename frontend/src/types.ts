@@ -370,6 +370,27 @@ export type LearningTrajectoryTaskContent = {
   contract_title?: string;
   input_schema?: Record<string, unknown>;
   output_schema?: Record<string, unknown>;
+  manual_review?: boolean;
+  submission_kind?: "file";
+  manual_review_context?: {
+    subject_area_description?: string;
+    skill_elements?: Array<{
+      element_id: string;
+      name: string;
+      description?: string | null;
+    }>;
+    knowledge_elements?: Array<{
+      element_id: string;
+      name: string;
+      description?: string | null;
+    }>;
+    domain_object_mappings?: Array<{
+      object_name: string;
+      knowledge_element_id: string;
+      knowledge_element_name: string;
+      knowledge_element_description?: string | null;
+    }>;
+  };
 };
 
 export type LearningTrajectoryTaskElement = {
@@ -407,7 +428,7 @@ export type LearningTrajectoryTask = {
 };
 
 export type StudentTaskProgress = {
-  status: "not_started" | "in_progress" | "completed";
+  status: "not_started" | "in_progress" | "pending_review" | "completed";
   attempts_count: number;
   last_score: number | null;
   best_score: number | null;
@@ -443,6 +464,9 @@ export type StudentTaskContent = {
   input_schema?: Record<string, unknown>;
   output_schema?: Record<string, unknown>;
   debug_solution?: Record<string, unknown>;
+  manual_review?: boolean;
+  submission_kind?: "file";
+  manual_review_context?: LearningTrajectoryTaskContent["manual_review_context"];
 };
 
 export type StudentAssignedTask = {
@@ -450,6 +474,7 @@ export type StudentAssignedTask = {
   task_instance_id: string | null;
   trajectory_id: string;
   trajectory_name: string;
+  teacher_name?: string | null;
   discipline_id: string;
   discipline_name: string;
   topic_id: string;
@@ -492,9 +517,11 @@ export type StudentTopicControl = {
   has_tasks: boolean;
   continue_practice_available: boolean;
   is_extra_practice: boolean;
-  practice_stage: "know" | "can";
+  practice_stage: "know" | "can" | "master";
   knowledge_threshold_passed: boolean;
+  skill_threshold_passed: boolean;
   skill_practice_available: boolean;
+  master_practice_available: boolean;
   show_next_topic_prompt: boolean;
   next_topic: StudentTopicControlNextTopic | null;
   elements: StudentTopicControlElement[];

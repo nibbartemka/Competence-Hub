@@ -5,6 +5,7 @@ import {
   fetchStudentTopicControl,
   fetchStudentTopicControlByPosition,
   isAbortError,
+  submitStudentTaskFileSubmission,
   submitStudentTaskScore,
 } from "./api";
 import {
@@ -66,6 +67,25 @@ function buildTopicControlPath(studentId: string, trajectoryId: string, topicId:
   return `/students/${studentId}/trajectories/${trajectoryId}/control/${topicId}`;
 }
 
+function isManualMasterTask(task: StudentAssignedTask) {
+  return (
+    task.task_type === "text" &&
+    task.content.manual_review === true &&
+    task.content.submission_kind === "file"
+  );
+}
+
+function extractSubmittedFileMeta(task: StudentAssignedTask) {
+  const payload = task.progress.last_answer_payload;
+  if (!payload || payload.submission_kind !== "file") {
+    return null;
+  }
+  return {
+    originalName: String(payload.original_name ?? ""),
+    uploadedAt: String(payload.uploaded_at ?? ""),
+  };
+}
+
 export default function StudentTopicControlPage() {
   const navigate = useNavigate();
   const {
@@ -87,9 +107,11 @@ export default function StudentTopicControlPage() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
+  const [notice, setNotice] = useState("");
   const [continuePractice, setContinuePractice] = useState(false);
-  const [skillPractice, setSkillPractice] = useState(false);
+  const [practiceStage, setPracticeStage] = useState<"know" | "can" | "master">("know");
   const [debugTask, setDebugTask] = useState<StudentAssignedTask | null>(null);
+  const [submissionFile, setSubmissionFile] = useState<File | null>(null);
 
   useEffect(() => {
     const activeSession = readSession();
@@ -101,7 +123,7 @@ export default function StudentTopicControlPage() {
   async function loadControl(
     signal?: AbortSignal,
     nextContinuePractice = continuePractice,
-    nextSkillPractice = skillPractice,
+    nextPracticeStage = practiceStage,
   ) {
     if (!studentId || !trajectoryId) {
       throw new Error("Не удалось определить студента или траекторию.");
@@ -119,7 +141,7 @@ export default function StudentTopicControlPage() {
         trajectoryId,
         topicId,
         nextContinuePractice,
-        nextSkillPractice,
+        nextPracticeStage,
         signal,
       );
     } else {
@@ -132,20 +154,21 @@ export default function StudentTopicControlPage() {
         trajectoryId,
         position,
         nextContinuePractice,
-        nextSkillPractice,
+        nextPracticeStage,
         signal,
       );
     }
 
     setControl(nextControl);
     setContinuePractice(nextControl.is_extra_practice);
-    setSkillPractice(nextControl.practice_stage === "can");
+    setPracticeStage(nextControl.practice_stage);
     setAnswer(nextControl.current_task ? emptyAnswer(nextControl.current_task) : {});
+    setSubmissionFile(null);
   }
 
   useEffect(() => {
     setContinuePractice(false);
-    setSkillPractice(false);
+    setPracticeStage("know");
   }, [studentId, trajectoryId, topicId, topicPosition]);
 
   useEffect(() => {
@@ -155,8 +178,9 @@ export default function StudentTopicControlPage() {
       try {
         setLoading(true);
         setError("");
+        setNotice("");
         setControl(null);
-        await loadControl(controller.signal, false, false);
+        await loadControl(controller.signal, false, "know");
       } catch (loadError) {
         if (!isAbortError(loadError)) {
           setError(extractErrorMessage(loadError));
@@ -222,6 +246,21 @@ export default function StudentTopicControlPage() {
     try {
       setSaving(true);
       setError("");
+      setNotice("");
+      if (isManualMasterTask(task)) {
+        if (!submissionFile) {
+          throw new Error("Сначала прикрепи файл с решением.");
+        }
+        await submitStudentTaskFileSubmission(task.id, studentId, submissionFile, task.task_instance_id);
+        await loadControl(undefined, continuePractice, practiceStage);
+        const teacherName = task.teacher_name?.trim();
+        setNotice(
+          teacherName
+            ? `Работа отправлена на проверку преподавателю: ${teacherName}.`
+            : "Работа отправлена на проверку вашему преподавателю.",
+        );
+        return;
+      }
       const nextAnswer =
         task.task_type === "text" && hasStructuredOperationContent(task.content)
           ? {
@@ -229,7 +268,7 @@ export default function StudentTopicControlPage() {
             }
           : answer;
       await submitStudentTaskScore(task.id, studentId, nextAnswer, task.task_instance_id);
-      await loadControl(undefined, continuePractice, skillPractice);
+      await loadControl(undefined, continuePractice, practiceStage);
     } catch (submitError) {
       setError(extractErrorMessage(submitError));
     } finally {
@@ -239,12 +278,13 @@ export default function StudentTopicControlPage() {
 
   async function reloadCurrentState(
     nextContinuePractice = continuePractice,
-    nextSkillPractice = skillPractice,
+    nextPracticeStage = practiceStage,
   ) {
     try {
       setLoading(true);
       setError("");
-      await loadControl(undefined, nextContinuePractice, nextSkillPractice);
+      setNotice("");
+      await loadControl(undefined, nextContinuePractice, nextPracticeStage);
     } catch (refreshError) {
       setError(extractErrorMessage(refreshError));
     } finally {
@@ -254,6 +294,36 @@ export default function StudentTopicControlPage() {
 
   function renderAnswer(task: StudentAssignedTask) {
     if (task.task_type === "text") {
+      if (isManualMasterTask(task)) {
+        const submittedFile = extractSubmittedFileMeta(task);
+        return (
+          <div className="student-task-answer">
+            <div className="teacher-review-checklist">
+              <div className="teacher-review-checklist__section">
+                <span className="card__eyebrow">Предметная область</span>
+                <p>{task.content.manual_review_context?.subject_area_description || "Не заполнена."}</p>
+              </div>
+            </div>
+            <label className="field">
+              <span>Файл решения</span>
+              <input
+                type="file"
+                disabled={saving || task.progress.status === "pending_review"}
+                onChange={(event) => setSubmissionFile(event.target.files?.[0] ?? null)}
+              />
+            </label>
+            {submissionFile ? (
+              <p className="card__text">Выбран файл: {submissionFile.name}</p>
+            ) : null}
+            {submittedFile?.originalName ? (
+              <p className="card__text">
+                Последняя отправка: {submittedFile.originalName}
+                {task.progress.status === "pending_review" ? " · ждёт проверки преподавателем" : ""}
+              </p>
+            ) : null}
+          </div>
+        );
+      }
       const hasStructuredContent = hasStructuredOperationContent(task.content);
       const answerText = buildStructuredOperationAnswerText(answer, task.content);
       return (
@@ -374,21 +444,35 @@ export default function StudentTopicControlPage() {
     if (!control || !control.is_unlocked) return null;
 
     const canStartSkills = control.practice_stage === "know" && control.skill_practice_available;
+    const canStartMaster = control.practice_stage === "can" && control.master_practice_available;
     const nextTopicUnlocked = Boolean(control.next_topic?.is_unlocked);
-    if (!canStartSkills && !control.show_next_topic_prompt && control.practice_stage !== "can") {
+    if (
+      !canStartSkills &&
+      !canStartMaster &&
+      !control.show_next_topic_prompt &&
+      control.practice_stage === "know"
+    ) {
       return null;
     }
 
     const title =
-      control.practice_stage === "can"
-        ? "Открыт этап Уметь"
+      control.practice_stage === "master"
+        ? "Открыт этап Владеть"
+        : control.practice_stage === "can" && canStartMaster
+          ? "Порог по Уметь пройден"
+          : control.practice_stage === "can"
+            ? "Открыт этап Уметь"
         : control.show_next_topic_prompt
           ? "Следующая тема уже открыта"
           : "Порог по Знать пройден";
 
     const message =
-      control.practice_stage === "can"
-        ? "Ты остался в текущей теме и сейчас получаешь задания уровня Уметь. Ошибка в таком задании может снизить освоение связанных элементов Знать."
+      control.practice_stage === "master"
+        ? "Ты остался в текущей теме и сейчас получаешь задания уровня Владеть. Решение отправляется файлом и проверяется преподавателем вручную."
+        : control.practice_stage === "can" && canStartMaster
+          ? "По элементам Уметь порог уже пройден. Можно остаться в текущей теме и перейти к заданиям уровня Владеть."
+        : control.practice_stage === "can"
+          ? "Ты остался в текущей теме и сейчас получаешь задания уровня Уметь. Ошибка в таком задании может снизить освоение связанных элементов Знать."
         : nextTopicUnlocked && control.next_topic
           ? `По формируемым элементам Знать порог пройден. Тема «${control.next_topic.topic_name}» уже доступна, но можно остаться здесь и перейти к заданиям уровня Уметь.`
           : "По элементам Знать порог уже пройден. Можно остаться в текущей теме и перейти к заданиям уровня Уметь.";
@@ -406,9 +490,19 @@ export default function StudentTopicControlPage() {
               className="primary-button"
               type="button"
               disabled={loading || saving}
-              onClick={() => void reloadCurrentState(false, true)}
+              onClick={() => void reloadCurrentState(false, "can")}
             >
               Остаться и перейти к Уметь
+            </button>
+          ) : null}
+          {control.practice_stage === "can" && control.master_practice_available ? (
+            <button
+              className="primary-button"
+              type="button"
+              disabled={loading || saving}
+              onClick={() => void reloadCurrentState(false, "master")}
+            >
+              Остаться и перейти к Владеть
             </button>
           ) : null}
           {control.next_topic?.is_unlocked ? (
@@ -429,7 +523,12 @@ export default function StudentTopicControlPage() {
   }
 
   const currentTask = control?.current_task ?? null;
-  const stageLabel = control?.practice_stage === "can" ? "Уметь" : "Знать";
+  const stageLabel =
+    control?.practice_stage === "master"
+      ? "Владеть"
+      : control?.practice_stage === "can"
+        ? "Уметь"
+        : "Знать";
 
   return (
     <div className="immersive-page">
@@ -467,6 +566,7 @@ export default function StudentTopicControlPage() {
             </p>
           ) : currentTask ? (
             <>
+              {notice ? <div className="student-task-card__feedback">{notice}</div> : null}
               <div className="card__header">
                 <div>
                   <p className="card__eyebrow">Текущее задание</p>
@@ -524,6 +624,8 @@ export default function StudentTopicControlPage() {
               <p>
                 {control?.practice_stage === "can"
                   ? "Для текущего уровня Уметь в этой теме сейчас нет доступных заданий."
+                  : control?.practice_stage === "master"
+                    ? "Для текущего уровня Владеть в этой теме сейчас нет доступных заданий."
                   : control?.is_extra_practice
                     ? "Для этой темы больше не осталось подходящих заданий даже в режиме дополнительной практики."
                     : control?.has_tasks
@@ -536,7 +638,7 @@ export default function StudentTopicControlPage() {
                     className="primary-button"
                     type="button"
                     disabled={loading}
-                    onClick={() => void reloadCurrentState(true, skillPractice)}
+                    onClick={() => void reloadCurrentState(true, practiceStage)}
                   >
                     Продолжить практику
                   </button>
@@ -546,9 +648,19 @@ export default function StudentTopicControlPage() {
                     className="ghost-button"
                     type="button"
                     disabled={loading}
-                    onClick={() => void reloadCurrentState(false, true)}
+                    onClick={() => void reloadCurrentState(false, "can")}
                   >
                     Перейти к Уметь
+                  </button>
+                ) : null}
+                {control?.practice_stage === "can" && control?.master_practice_available ? (
+                  <button
+                    className="ghost-button"
+                    type="button"
+                    disabled={loading}
+                    onClick={() => void reloadCurrentState(false, "master")}
+                  >
+                    Перейти к Владеть
                   </button>
                 ) : null}
               </div>

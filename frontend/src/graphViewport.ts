@@ -81,6 +81,29 @@ function buildSceneGraphData(
   };
 }
 
+function adaptLayoutForScene(
+  scene: ViewportScene,
+  layout: GraphLayoutPayload | undefined,
+) {
+  if (!layout) {
+    return undefined;
+  }
+
+  const positions = Object.fromEntries(
+    scene.nodes
+      .filter((node) => layout.positions[node.id])
+      .map((node) => [node.id, layout.positions[node.id]!]),
+  );
+  const hasUnpositionedNodes = scene.nodes.some((node) => !layout.positions[node.id]);
+
+  return {
+    positions,
+    offset_x: hasUnpositionedNodes ? 0 : layout.offset_x,
+    offset_y: hasUnpositionedNodes ? 0 : layout.offset_y,
+    zoom: hasUnpositionedNodes ? null : layout.zoom,
+  } satisfies GraphLayoutPayload;
+}
+
 function buildSceneStructureSignature(scene: ViewportScene) {
   const nodesSignature = scene.nodes
     .map((node) => {
@@ -268,7 +291,7 @@ export function usePersistedGraphViewport({
         ? persistedLayoutsRef.current.get(scene.key)
         : undefined);
 
-    restoreSceneLayout(graphComponent, scene, layout);
+    restoreSceneLayout(graphComponent, scene, adaptLayoutForScene(scene, layout));
     currentSceneKeyRef.current = scene.key;
     currentSceneStructureSignatureRef.current = nextSceneStructureSignature;
   }, [enabled, graphRef, layoutLoading, layoutVersion, scene, scopeId]);

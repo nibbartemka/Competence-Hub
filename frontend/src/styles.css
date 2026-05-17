@@ -3252,6 +3252,67 @@ body:has(.session-profile-header) .home-shell {
   font-weight: 800;
 }
 
+.teacher-review-card {
+  display: grid;
+  gap: 16px;
+  padding: 18px;
+  border-radius: 20px;
+  border: 1px solid rgba(31, 55, 84, 0.1);
+  background:
+    radial-gradient(circle at top right, rgba(83, 195, 150, 0.08), transparent 30%),
+    rgba(255, 255, 255, 0.84);
+}
+
+.teacher-review-card__header,
+.teacher-review-card__actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.teacher-review-checklist {
+  display: grid;
+  gap: 12px;
+}
+
+.teacher-review-checklist__section {
+  display: grid;
+  gap: 8px;
+  padding: 14px 16px;
+  border-radius: 16px;
+  background: rgba(239, 244, 252, 0.72);
+  border: 1px solid rgba(54, 90, 149, 0.1);
+}
+
+.teacher-review-checklist__section p {
+  margin: 0;
+  color: var(--ink-soft);
+}
+
+.teacher-review-checklist__item {
+  display: grid;
+  gap: 4px;
+  padding: 10px 12px;
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.86);
+  border: 1px solid rgba(31, 55, 84, 0.08);
+}
+
+.teacher-review-checklist__item strong {
+  color: var(--ink);
+}
+
+.teacher-review-checklist__item span {
+  color: var(--ink-soft);
+}
+
+.teacher-review-form {
+  display: grid;
+  gap: 12px;
+}
+
 .student-control-header {
   width: min(1180px, calc(100% - 48px));
   margin: 28px auto 18px;

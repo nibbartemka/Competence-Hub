@@ -29,6 +29,8 @@ type GraphLayoutNode = {
   y: number;
 };
 
+const GRAPH_NODE_RADIUS = 22;
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
@@ -76,7 +78,7 @@ function normalizeGraphPayload(payload?: Record<string, unknown>): GraphPayload 
 function buildGraphEdgeLabels(graph: GraphPayload) {
   return graph.edges.map((edge, index) => ({
     id: `edge-${index + 1}`,
-    label: graph.directed ? `${edge.source} -> ${edge.target}` : `${edge.source} - ${edge.target}`,
+    label: graph.directed ? `${edge.source}->${edge.target}` : `${edge.source}-${edge.target}`,
   }));
 }
 
@@ -103,6 +105,24 @@ function buildGraphLayout(vertices: string[]): Record<string, GraphLayoutNode> {
       ];
     }),
   );
+}
+
+function buildGraphSegment(
+  source: GraphLayoutNode,
+  target: GraphLayoutNode,
+  offsetFromTarget = 0,
+) {
+  const dx = target.x - source.x;
+  const dy = target.y - source.y;
+  const length = Math.hypot(dx, dy) || 1;
+  const unitX = dx / length;
+  const unitY = dy / length;
+  return {
+    x1: source.x + unitX * GRAPH_NODE_RADIUS,
+    y1: source.y + unitY * GRAPH_NODE_RADIUS,
+    x2: target.x - unitX * (GRAPH_NODE_RADIUS + offsetFromTarget),
+    y2: target.y - unitY * (GRAPH_NODE_RADIUS + offsetFromTarget),
+  };
 }
 
 function renderSignedTerm(value: number, powerLabel: string, isFirst: boolean) {
@@ -149,13 +169,14 @@ function GraphPreview({ graph }: { graph: GraphPayload }) {
             const source = layout[edge.source];
             const target = layout[edge.target];
             if (!source || !target) return null;
+            const segment = buildGraphSegment(source, target, graph.directed ? 10 : 0);
             return (
               <line
                 key={`${edge.source}-${edge.target}-${index}`}
-                x1={source.x}
-                y1={source.y}
-                x2={target.x}
-                y2={target.y}
+                x1={segment.x1}
+                y1={segment.y1}
+                x2={segment.x2}
+                y2={segment.y2}
                 className="operation-task-schema__graph-line"
                 markerEnd={graph.directed ? "url(#operation-task-arrow)" : undefined}
               />
@@ -168,7 +189,7 @@ function GraphPreview({ graph }: { graph: GraphPayload }) {
                 <circle
                   cx={node.x}
                   cy={node.y}
-                  r="22"
+                  r={GRAPH_NODE_RADIUS}
                   className="operation-task-schema__graph-node"
                 />
                 <text

@@ -65,12 +65,25 @@ export function isSupportedElementRelation(
     return relationType === "implements";
   }
 
-  if (sourceType === "can" && targetType === "master") {
+  if (sourceType === "master" && targetType === "can") {
     return relationType === "automates";
   }
 
   if (sourceType === "master" && targetType === "know") {
     return relationType === "relies_on";
+  }
+
+  if (sourceType === "master" && targetType === "master") {
+    return [
+      "requires",
+      "contains",
+      "part_of",
+      "refines",
+      "generalizes",
+      "similar",
+      "contrasts_with",
+      "used_with",
+    ].includes(relationType);
   }
 
   return false;
@@ -458,7 +471,7 @@ export function buildTopicScene(
         : "";
 
   return {
-    key: `topics:${graph.discipline.id}`,
+    key: `topics:${graph.discipline.id}:v${graph.discipline.knowledge_graph_version}`,
     title: graph.discipline.name,
     subtitle:
       "Граф знаний дисциплины включает 2 уровня: темы и элементы ЗУН.",
@@ -751,7 +764,7 @@ export function buildElementScene(
     preferredNodeId && detailsByNodeId[preferredNodeId] ? preferredNodeId : focusNodeId;
 
   return {
-    key: `elements:${graph.discipline.id}:${topic.id}`,
+    key: `elements:${graph.discipline.id}:${topic.id}:v${graph.discipline.knowledge_graph_version}`,
     title: `${graph.discipline.name} / ${topic.name}`,
     subtitle:
       "Здесь видно, какие элементы нужны до старта темы, а какие формируются в результате ее изучения.",
