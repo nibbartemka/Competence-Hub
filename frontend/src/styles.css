@@ -2532,17 +2532,68 @@ body:has(.session-profile-header) .home-shell {
 
 .trajectory-task-editor {
   display: grid;
-  gap: 14px;
+  gap: 18px;
   padding: 16px;
   border-radius: 22px;
   background: rgba(246, 250, 255, 0.82);
   border: 1px solid rgba(31, 55, 84, 0.08);
 }
 
+.trajectory-task-step {
+  display: grid;
+  gap: 12px;
+  padding: 16px;
+  border-radius: 20px;
+  border: 1px solid rgba(54, 94, 173, 0.12);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.9), rgba(242, 248, 255, 0.88)),
+    rgba(255, 255, 255, 0.88);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.78);
+}
+
+.trajectory-task-step__header {
+  display: grid;
+  gap: 6px;
+}
+
+.trajectory-task-step__header strong {
+  color: #233d63;
+  font-size: 1.06rem;
+}
+
+.trajectory-task-step__eyebrow {
+  color: #5a78a7;
+  font-size: 0.74rem;
+  font-weight: 900;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.trajectory-task-step__hint {
+  margin: 0;
+  color: #627e9f;
+  font-size: 0.95rem;
+  line-height: 1.45;
+}
+
 .trajectory-task-editor__grid {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 12px;
+}
+
+.trajectory-task-editor__grid--two {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.trajectory-task-editor__grid--single-two {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.trajectory-task-editor__field--template,
+.trajectory-task-editor__field--task-type,
+.trajectory-task-editor__field--difficulty-inline {
+  display: none;
 }
 
 .trajectory-task-editor__actions {

@@ -3287,7 +3287,13 @@ export default function TrajectoryDetailPage() {
                   ))}
                 </div>
 
-                <div className="trajectory-task-editor__grid">
+                <section className="trajectory-task-step">
+                  <div className="trajectory-task-step__header">
+                    <span className="trajectory-task-step__eyebrow">Шаг 1</span>
+                    <strong>Тема и ключевой элемент</strong>
+                    <p className="trajectory-task-step__hint">Сначала выбери тему, ключевой элемент и базовый шаблон задания.</p>
+                  </div>
+                <div className="trajectory-task-editor__grid trajectory-task-editor__grid--two">
                   <label className="field">
                     <span>Тема траектории</span>
                     <select value={taskTopicId} onChange={(event) => setTaskTopicId(event.target.value)} disabled={saving}>
@@ -3315,7 +3321,7 @@ export default function TrajectoryDetailPage() {
                     </select>
                   </label>
                   {taskCompetenceTab === "know" ? (
-                    <label className="field">
+                    <label className="field trajectory-task-editor__field--template">
                       <span>Шаблон задания</span>
                       <select
                         value={taskTemplateKind}
@@ -3333,10 +3339,17 @@ export default function TrajectoryDetailPage() {
                     </label>
                   ) : null}
                 </div>
+                </section>
 
+                <section className="trajectory-task-step">
+                  <div className="trajectory-task-step__header">
+                    <span className="trajectory-task-step__eyebrow">Шаг 2</span>
+                    <strong>Формулировка задания</strong>
+                    <p className="trajectory-task-step__hint">Заполни название и описание задания, чтобы студент сразу понимал, что от него требуется.</p>
+                  </div>
                 <div className="trajectory-task-editor__grid">
                   {taskCompetenceTab === "know" ? (
-                    <label className="field">
+                    <label className="field trajectory-task-editor__field--task-type">
                       <span>Тип задания</span>
                       {taskTemplateKind === "manual" ? (
                         <select
@@ -3368,7 +3381,7 @@ export default function TrajectoryDetailPage() {
                       disabled={saving}
                     />
                   </label>
-                  <label className="field">
+                  <label className="field trajectory-task-editor__field--difficulty-inline">
                     <span>Сложность</span>
                     <input
                       min={TASK_DIFFICULTY_MIN}
@@ -3393,6 +3406,55 @@ export default function TrajectoryDetailPage() {
                     disabled={saving}
                   />
                 </label>
+                </section>
+                <section className="trajectory-task-step">
+                  <div className="trajectory-task-step__header">
+                    <span className="trajectory-task-step__eyebrow">Шаг 3</span>
+                    <strong>Параметры по типу компетенции</strong>
+                    <p className="trajectory-task-step__hint">Настрой шаблон и специальные параметры, которые зависят от уровня компетенции и формата задания.</p>
+                  </div>
+                {taskCompetenceTab === "know" ? (
+                  <div className="trajectory-task-editor__grid trajectory-task-editor__grid--two">
+                    <label className="field">
+                      <span>Шаблон задания</span>
+                      <select
+                        value={taskTemplateKind}
+                        onChange={(event) =>
+                          handleTaskTemplateKindChange(event.target.value as LearningTrajectoryTaskTemplateKind)
+                        }
+                        disabled={saving}
+                      >
+                        {availableKnowTemplateKinds.map((value) => (
+                          <option key={value} value={value}>
+                            {TASK_TEMPLATE_LABELS[value]}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                    <label className="field">
+                      <span>Тип задания</span>
+                      {taskTemplateKind === "manual" ? (
+                        <select
+                          value={taskType}
+                          onChange={(event) => resetTaskTemplate(event.target.value as LearningTrajectoryTaskType)}
+                          disabled={saving}
+                        >
+                          {MANUAL_TASK_TYPE_OPTIONS.map((value) => (
+                            <option key={value} value={value}>
+                              {TASK_TYPE_LABELS[value]}
+                            </option>
+                          ))}
+                        </select>
+                      ) : (
+                        <input
+                          value={TASK_TYPE_LABELS[TASK_TEMPLATE_TYPE[taskTemplateKind]]}
+                          disabled
+                          readOnly
+                        />
+                      )}
+                    </label>
+                  </div>
+                ) : null}
                 {taskCompetenceTab === "can" ? (
                   <div className="trajectory-task-related">
                     <strong>Настройка задания уровня «Уметь»</strong>
@@ -3484,6 +3546,14 @@ export default function TrajectoryDetailPage() {
                     </div>
                   </div>
                 ) : null}
+                </section>
+
+                <section className="trajectory-task-step">
+                  <div className="trajectory-task-step__header">
+                    <span className="trajectory-task-step__eyebrow">Шаг 4</span>
+                    <strong>Связанные элементы и связи</strong>
+                    <p className="trajectory-task-step__hint">Выбери элементы и связи, которые реально участвуют в задании и должны учитываться при проверке.</p>
+                  </div>
                 {taskCompetenceTab === "know" ? (
                   <div className="trajectory-task-related">
                   <strong>Релевантные связанные элементы</strong>
@@ -3715,6 +3785,30 @@ export default function TrajectoryDetailPage() {
                     )}
                   </div>
                 ) : null}
+                </section>
+                <section className="trajectory-task-step">
+                  <div className="trajectory-task-step__header">
+                    <span className="trajectory-task-step__eyebrow">Шаг 5</span>
+                    <strong>Сложность</strong>
+                    <p className="trajectory-task-step__hint">Последним шагом задай числовую сложность задания.</p>
+                  </div>
+                  <div className="trajectory-task-editor__grid trajectory-task-editor__grid--single-two">
+                    <label className="field">
+                      <span>РЎР»РѕР¶РЅРѕСЃС‚СЊ</span>
+                      <input
+                        min={TASK_DIFFICULTY_MIN}
+                        max={TASK_DIFFICULTY_MAX}
+                        step={1}
+                        type="number"
+                        value={taskDifficulty}
+                        onChange={(event) =>
+                          setTaskDifficulty(clampTaskDifficulty(Number(event.target.value)))
+                        }
+                        disabled={saving}
+                      />
+                    </label>
+                  </div>
+                </section>
                 <div className="trajectory-task-editor__actions">
                   <button
                     className="ghost-button"
