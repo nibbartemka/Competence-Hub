@@ -3946,18 +3946,18 @@ body:has(.session-profile-header) .home-shell {
       radial-gradient(circle at 10% 8%, rgba(19, 117, 91, 0.12), transparent 28%),
       radial-gradient(circle at 92% 18%, rgba(45, 87, 191, 0.12), transparent 30%),
       var(--page-bg);
-  --page-side-gutter: clamp(12px, 2vw, 34px);
-  --page-max-width: 1960px;
+  --page-side-gutter: 24px;
+  --page-max-width: 1880px;
 }
 
 .trajectory-detail-page {
-  --page-side-gutter: clamp(14px, 2.6vw, 56px);
-  --page-max-width: 2160px;
+  --page-side-gutter: 24px;
+  --page-max-width: 1880px;
 }
 
 .trajectory-detail-page .immersive-page__hero,
 .trajectory-detail-page .immersive-page__grid {
-  width: min(var(--page-max-width), calc(100vw - 28px));
+  width: var(--page-content-width);
 }
 
 .trajectory-hero .hero__subtitle {
@@ -4372,11 +4372,86 @@ body:has(.session-profile-header) .home-shell {
 .trajectory-detail-layout {
   display: grid;
   gap: 18px;
-  margin-top: 22px;
+  margin-top: 0;
+  min-width: 0;
 }
 
 .trajectory-detail-page .trajectory-graph-stage {
   min-height: 720px;
+}
+
+.trajectory-detail-shell {
+  width: min(var(--page-max-width), calc(100vw - 28px));
+  margin: 0 auto;
+  display: grid;
+  grid-template-columns: minmax(280px, 320px) minmax(0, 1fr);
+  gap: 22px;
+  align-items: start;
+}
+
+.trajectory-detail-sidebar-nav {
+  position: sticky;
+  top: calc(var(--session-profile-safe-top) + 12px);
+  align-self: start;
+  width: 100%;
+  max-width: 320px;
+  display: grid;
+  gap: 18px;
+  max-height: calc(100vh - var(--session-profile-safe-top) - 24px);
+  overflow: auto;
+  padding: 22px;
+  margin: 0;
+  justify-self: start;
+}
+
+.trajectory-detail-sidebar-nav h1 {
+  margin: 0;
+  font-size: clamp(2rem, 2.4vw, 3rem);
+  line-height: 1.02;
+}
+
+.trajectory-detail-sidebar-nav .hero__eyebrow {
+  margin-bottom: 8px;
+}
+
+.trajectory-detail-sidebar-nav h1,
+.trajectory-detail-sidebar-nav .hero__subtitle {
+  display: none;
+}
+
+.trajectory-detail-sidebar-nav .trajectory-detail-hero-actions {
+  display: grid;
+  gap: 10px;
+  align-items: stretch;
+}
+
+.trajectory-detail-sidebar-nav .ghost-button,
+.trajectory-detail-sidebar-nav .primary-button,
+.trajectory-detail-sidebar-nav .hero__chip {
+  width: 100%;
+}
+
+.trajectory-detail-sidebar-nav .ghost-button {
+  justify-content: flex-start;
+  min-height: 44px;
+  padding: 0 14px;
+  border-radius: 14px;
+  border: 1px solid rgba(31, 55, 84, 0.08);
+  background: rgba(240, 245, 255, 0.82);
+  color: var(--ink);
+  font-weight: 700;
+  box-shadow: none;
+}
+
+.trajectory-detail-sidebar-nav .ghost-button:hover {
+  transform: translateX(4px);
+  background: rgba(225, 236, 255, 0.94);
+  box-shadow: 0 12px 24px rgba(31, 55, 84, 0.08);
+}
+
+.trajectory-detail-sidebar-nav .primary-button {
+  justify-content: center;
+  white-space: nowrap;
 }
 
 .trajectory-detail-page .hero {
@@ -5774,6 +5849,16 @@ body:has(.session-profile-header) .home-shell {
     position: static;
     left: auto;
     width: auto;
+    max-height: none;
+    overflow: visible;
+  }
+
+  .trajectory-detail-shell {
+    grid-template-columns: 1fr;
+  }
+
+  .trajectory-detail-sidebar-nav {
+    position: static;
     max-height: none;
     overflow: visible;
   }

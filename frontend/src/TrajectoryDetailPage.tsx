@@ -376,6 +376,62 @@ function buildAutoMultipleChoiceBuckets(
   };
 }
 
+function getAvailableKnowTemplateKinds(
+  graph: DisciplineKnowledgeGraph | null,
+  primaryElementId: string,
+  availableElements: KnowledgeElement[],
+): LearningTrajectoryTaskTemplateKind[] {
+  const availableElementIds = availableElements.map((element) => element.id);
+  const hasExtraElements = availableElementIds.length > 0;
+  const hasEnoughElementsForMultiple = availableElementIds.length >= 2;
+
+  const propertyBuckets = hasEnoughElementsForMultiple
+    ? buildAutoMultipleChoiceBuckets(
+        graph,
+        "property_multiple",
+        primaryElementId,
+        availableElementIds,
+      )
+    : { correctIds: [], distractorIds: [] as string[] };
+
+  const containsBuckets = hasEnoughElementsForMultiple
+    ? buildAutoMultipleChoiceBuckets(
+        graph,
+        "contains_multiple",
+        primaryElementId,
+        availableElementIds,
+      )
+    : { correctIds: [], distractorIds: [] as string[] };
+
+  const availableTemplateKinds: LearningTrajectoryTaskTemplateKind[] = VISIBLE_TASK_TEMPLATE_KINDS.filter((templateKind) => {
+    if (
+      templateKind === "definition_choice" ||
+      templateKind === "term_choice" ||
+      templateKind === "matching_definition"
+    ) {
+      return hasExtraElements;
+    }
+
+    if (templateKind === "property_multiple") {
+      return (
+        propertyBuckets.correctIds.length > 0 &&
+        propertyBuckets.distractorIds.length > 0
+      );
+    }
+
+    if (templateKind === "contains_multiple") {
+      return (
+        containsBuckets.correctIds.length > 0 &&
+        containsBuckets.distractorIds.length > 0
+      );
+    }
+
+    return false;
+  });
+
+  return availableTemplateKinds.length ? availableTemplateKinds : ["manual"];
+}
+
 function statusLabel(status: LearningTrajectory["status"]) {
   if (status === "active") return "Активна";
   if (status === "archived") return "Архив";
@@ -1597,6 +1653,11 @@ export default function TrajectoryDetailPage() {
       ),
     [availableTaskElements, graph, taskPrimaryElementId],
   );
+  const availableKnowTemplateKinds = useMemo(
+    () =>
+      getAvailableKnowTemplateKinds(graph, taskPrimaryElementId, availableTaskElements),
+    [availableTaskElements, graph, taskPrimaryElementId],
+  );
   const selectedTaskElementIds = useMemo(() => {
     return new Set([taskPrimaryElementId, ...taskRelatedElementIds].filter(Boolean));
   }, [
@@ -1981,6 +2042,21 @@ export default function TrajectoryDetailPage() {
   }, [availableCheckedRelations]);
 
   useEffect(() => {
+    if (taskCompetenceTab !== "know") {
+      return;
+    }
+    if (availableKnowTemplateKinds.includes(taskTemplateKind)) {
+      return;
+    }
+
+    const nextTemplateKind = availableKnowTemplateKinds[0] ?? "manual";
+    setTaskTemplateKind(nextTemplateKind);
+    setTaskPreviewOpen(false);
+    resetTaskTemplate(TASK_TEMPLATE_TYPE[nextTemplateKind]);
+    setTaskMultipleCorrectRelatedElementIds([]);
+  }, [availableKnowTemplateKinds, taskCompetenceTab, taskTemplateKind]);
+
+  useEffect(() => {
     const allowedIds = new Set([taskPrimaryElementId, ...taskRelatedElementIds]);
     if (!allowedIds.has(taskSingleCorrectElementId)) {
       setTaskSingleCorrectElementId(taskPrimaryElementId);
@@ -2292,8 +2368,9 @@ export default function TrajectoryDetailPage() {
     }
 
     if (nextTab === "know") {
-      setTaskTemplateKind("definition_choice");
-      resetTaskTemplate("single_choice");
+      const nextTemplateKind = availableKnowTemplateKinds[0] ?? "manual";
+      setTaskTemplateKind(nextTemplateKind);
+      resetTaskTemplate(TASK_TEMPLATE_TYPE[nextTemplateKind]);
       return;
     }
 
@@ -3247,7 +3324,7 @@ export default function TrajectoryDetailPage() {
                         }
                         disabled={saving}
                       >
-                        {[...new Set([...VISIBLE_TASK_TEMPLATE_KINDS, taskTemplateKind])].map((value) => (
+                        {availableKnowTemplateKinds.map((value) => (
                           <option key={value} value={value}>
                             {TASK_TEMPLATE_LABELS[value]}
                           </option>
@@ -3763,9 +3840,10 @@ export default function TrajectoryDetailPage() {
 
   return (
     <div className="page-shell trajectory-page trajectory-detail-page immersive-page immersive-page--trajectory">
-      <header className="hero trajectory-hero immersive-page__hero">
+      <div className="trajectory-detail-shell immersive-page__grid immersive-page__grid--wide">
+        <aside className="card card--soft trajectory-detail-sidebar-nav">
         <div>
-          <p className="hero__eyebrow">Learning path</p>
+          <p className="hero__eyebrow">Навигация</p>
           <h1>{trajectory?.name ?? "Траектория изучения"}</h1>
           <p className="hero__subtitle">
             {isTeacherReviewMode
@@ -3865,9 +3943,9 @@ export default function TrajectoryDetailPage() {
             </>
           )}
         </div>
-      </header>
+        </aside>
 
-      <main className="trajectory-detail-layout immersive-page__grid immersive-page__grid--wide">
+        <main className="trajectory-detail-layout">
         <section className="graph-stage trajectory-graph-stage">
           <div className="graph-toolbar">
             <div>
@@ -4639,7 +4717,8 @@ export default function TrajectoryDetailPage() {
             )}
           </div>
         </section>
-      </main>
+        </main>
+      </div>
 
       {!isStudentMode && topicOrderModalOpen ? (
         <div className="modal-backdrop" onClick={() => setTopicOrderModalOpen(false)}>
