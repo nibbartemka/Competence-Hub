@@ -18,6 +18,7 @@ import { SessionProfileHeader } from "./SessionProfileHeader";
 import StudentDashboardPage from "./StudentDashboardPage";
 import StudentTopicControlPage from "./StudentTopicControlPage";
 import TeacherDashboardPage from "./TeacherDashboardPage";
+import TeacherReviewPage from "./TeacherReviewPage";
 import TrajectoryGraphBuilder from "./TrajectoryGraphBuilder";
 import TrajectoryDetailPage from "./TrajectoryDetailPage";
 import "./styles.css";
@@ -60,6 +61,7 @@ const router = createBrowserRouter([
         element: <TrajectoryDetailPage />,
       },
       { path: "/teachers/:teacherId", element: <TeacherDashboardPage /> },
+      { path: "/teachers/:teacherId/reviews", element: <TeacherReviewPage /> },
       { path: "/students/:studentId", element: <StudentDashboardPage /> },
       { path: "/admin/users/:role/:userId", element: <AdminUserProfilePage /> },
       {
