@@ -114,6 +114,13 @@ type TrajectoryDraftSnapshot = {
 
 type OverviewPanelKey = "settings" | "validation" | "detail" | "saved";
 
+const SIDEBAR_PANEL_LABELS: Record<OverviewPanelKey, string> = {
+  settings: "Настройки",
+  validation: "Проверка",
+  detail: "Вершина",
+  saved: "Траектории",
+};
+
 type ElementSelectionState = {
   isFormed: boolean;
   missingDependencies: string[];
@@ -312,6 +319,7 @@ export default function TrajectoryGraphBuilder() {
   const [draggedTopicId, setDraggedTopicId] = useState("");
   const [dragOverTopicId, setDragOverTopicId] = useState("");
   const [selectedTopicsModalOpen, setSelectedTopicsModalOpen] = useState(false);
+  const [activeSidebarPanel, setActiveSidebarPanel] = useState<OverviewPanelKey>("settings");
   const [expandedPanels, setExpandedPanels] = useState<Record<OverviewPanelKey, boolean>>({
     settings: false,
     validation: false,
@@ -1908,6 +1916,19 @@ export default function TrajectoryGraphBuilder() {
     );
   }
 
+  function renderActiveSidebarPanelContent() {
+    if (activeSidebarPanel === "settings") {
+      return renderSettingsPanelContent();
+    }
+    if (activeSidebarPanel === "validation") {
+      return renderValidationPanelContent();
+    }
+    if (activeSidebarPanel === "detail") {
+      return renderDetailPanelContent();
+    }
+    return renderSavedTrajectoriesPanelContent();
+  }
+
   if (!disciplineId) {
     return null;
   }
@@ -2033,8 +2054,38 @@ export default function TrajectoryGraphBuilder() {
         />
       ) : null}
       <div className="trajectory-workspace trajectory-workspace--single-column">
-        <aside className="trajectory-sidebar trajectory-sidebar--hidden" aria-hidden="true">
-          <section className="card card--soft">
+        <aside className="card card--soft trajectory-sidebar" data-active-panel={activeSidebarPanel}>
+          <div className="trajectory-sidebar__head">
+            <p className="card__eyebrow">Навигация</p>
+            <h2>Конструктор</h2>
+          </div>
+
+          <div className="trajectory-sidebar__meta">
+            <span>{activeDiscipline?.name ?? "Дисциплина"}</span>
+          </div>
+
+          <nav className="trajectory-sidebar__nav">
+            {(Object.keys(SIDEBAR_PANEL_LABELS) as OverviewPanelKey[]).map((panelKey) => (
+              <button
+                className={activeSidebarPanel === panelKey ? "is-active" : ""}
+                key={panelKey}
+                onClick={() => setActiveSidebarPanel(panelKey)}
+                type="button"
+              >
+                {SIDEBAR_PANEL_LABELS[panelKey]}
+              </button>
+            ))}
+          </nav>
+
+          <button
+            className="ghost-button trajectory-sidebar__home"
+            onClick={() => navigate(getSessionHomePath(activeSession))}
+            type="button"
+          >
+            Личный кабинет
+          </button>
+
+          <section className="trajectory-sidebar__panel trajectory-sidebar__panel--settings">
             <p className="card__eyebrow">Настройки</p>
             <h2>{activeDiscipline?.name ?? "Дисциплина"}</h2>
             <p className="draft-autosave-note">Черновик автосохраняется в этом браузере.</p>
@@ -2110,7 +2161,7 @@ export default function TrajectoryGraphBuilder() {
             </div>
           </section>
 
-          <section className="card card--soft">
+          <section className="trajectory-sidebar__panel trajectory-sidebar__panel--validation">
             <p className="card__eyebrow">Проверка</p>
             {validationErrors.length ? <p className="trajectory-errors-title">Ошибки</p> : null}
             <div className="trajectory-validation trajectory-validation--compact">
@@ -2139,7 +2190,7 @@ export default function TrajectoryGraphBuilder() {
             </button>
           </section>
 
-          <section className="card card--soft">
+          <section className="trajectory-sidebar__panel trajectory-sidebar__panel--detail">
             <p className="card__eyebrow">Выбранная вершина</p>
             {detail ? (
               <>
@@ -2193,7 +2244,7 @@ export default function TrajectoryGraphBuilder() {
             )}
           </section>
 
-          <section className="card card--soft">
+          <section className="trajectory-sidebar__panel trajectory-sidebar__panel--saved">
             <p className="card__eyebrow">Сохраненные</p>
             {trajectories.length ? (
               <div className="trajectory-saved-list">
