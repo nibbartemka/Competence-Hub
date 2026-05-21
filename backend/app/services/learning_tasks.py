@@ -366,8 +366,6 @@ def _build_multiple_choice_relation_content(
 
     if not correct_related_ids:
         raise bad_request("Для выбранного шаблона не найдено ни одного правильного варианта среди выбранных элементов темы.")
-    if not distractor_ids:
-        raise bad_request("Для выбранного шаблона нужен минимум один дополнительный элемент-дистрактор.")
 
     element_by_id = {str(element.id): element for element in related_elements}
     option_ids = [*correct_related_ids, *distractor_ids]
@@ -507,8 +505,6 @@ def build_content_from_template(
             str(element_id)
             for element_id in content.get("distractor_element_ids", [])
         }
-        if not distractor_ids:
-            raise bad_request("Для задания с несколькими вариантами нужен минимум один дистрактор.")
         if correct_related_ids & distractor_ids:
             raise bad_request("Один элемент не может быть одновременно правильным вариантом и дистрактором.")
         unknown_ids = (correct_related_ids | distractor_ids) - element_by_id.keys()

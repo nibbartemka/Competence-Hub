@@ -414,15 +414,13 @@ function getAvailableKnowTemplateKinds(
 
     if (templateKind === "property_multiple") {
       return (
-        propertyBuckets.correctIds.length > 0 &&
-        propertyBuckets.distractorIds.length > 0
+        propertyBuckets.correctIds.length > 0
       );
     }
 
     if (templateKind === "contains_multiple") {
       return (
-        containsBuckets.correctIds.length > 0 &&
-        containsBuckets.distractorIds.length > 0
+        containsBuckets.correctIds.length > 0
       );
     }
 
@@ -1965,9 +1963,6 @@ export default function TrajectoryDetailPage() {
       if (!autoMultipleChoiceBuckets.correctIds.length) {
         return "Среди выбранных элементов нет ни одного подходящего правильного варианта по связям графа.";
       }
-      if (!autoMultipleChoiceBuckets.distractorIds.length) {
-        return "Добавь хотя бы один элемент, который станет дистрактором.";
-      }
       return "";
     }
 
@@ -1988,9 +1983,6 @@ export default function TrajectoryDetailPage() {
       }
       if (!taskMultipleCorrectRelatedElementIds.length) {
         return "Нужно отметить хотя бы один правильный вариант.";
-      }
-      if (taskMultipleCorrectRelatedElementIds.length === taskRelatedElementIds.length) {
-        return "Нужен хотя бы один дистрактор среди выбранных элементов.";
       }
       return "";
     }
@@ -3636,7 +3628,7 @@ export default function TrajectoryDetailPage() {
                   <div className="trajectory-task-related">
                     <strong>Правильные варианты</strong>
                     <p className="card__text">
-                      Отметь, какие из выбранных элементов должны считаться правильными. Остальные выбранные элементы станут дистракторами.
+                      Отметь, какие из выбранных элементов должны считаться правильными. Неотмеченные элементы станут дистракторами, но при необходимости можно отметить все выбранные варианты как правильные.
                     </p>
                     <div className="trajectory-task-related__list">
                       {taskRelatedElementIds.length ? (

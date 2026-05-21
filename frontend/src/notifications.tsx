@@ -8,6 +8,8 @@ import {
   useState,
 } from "react";
 
+import { readSession, subscribeToSessionChanges } from "./session";
+
 export type AppNotificationKind = "error" | "success";
 const TOAST_DURATION_MS = 5000;
 
@@ -39,10 +41,16 @@ type NotificationsContextValue = {
 
 const NotificationsContext = createContext<NotificationsContextValue | null>(null);
 
+function sessionScopeKey() {
+  const session = readSession();
+  return session ? `${session.role}:${session.userId}:${session.sessionId}` : "";
+}
+
 export function NotificationsProvider({ children }: PropsWithChildren) {
   const [notifications, setNotifications] = useState<AppNotification[]>([]);
   const [visibleToasts, setVisibleToasts] = useState<AppToast[]>([]);
   const toastTimeoutsRef = useRef(new Map<string, number>());
+  const sessionScopeRef = useRef(sessionScopeKey());
 
   function clearToastTimeout(toastId: string) {
     const timeoutId = toastTimeoutsRef.current.get(toastId);
@@ -59,6 +67,15 @@ export function NotificationsProvider({ children }: PropsWithChildren) {
     setVisibleToasts((current) => current.filter((toast) => toast.id !== id));
   }
 
+  function resetNotificationsState() {
+    for (const timeoutId of toastTimeoutsRef.current.values()) {
+      window.clearTimeout(timeoutId);
+    }
+    toastTimeoutsRef.current.clear();
+    setVisibleToasts([]);
+    setNotifications([]);
+  }
+
   useEffect(() => {
     return () => {
       for (const timeoutId of toastTimeoutsRef.current.values()) {
@@ -66,6 +83,18 @@ export function NotificationsProvider({ children }: PropsWithChildren) {
       }
       toastTimeoutsRef.current.clear();
     };
+  }, []);
+
+  useEffect(() => {
+    return subscribeToSessionChanges(() => {
+      const nextSessionScope = sessionScopeKey();
+      if (nextSessionScope === sessionScopeRef.current) {
+        return;
+      }
+
+      sessionScopeRef.current = nextSessionScope;
+      resetNotificationsState();
+    });
   }, []);
 
   const value = useMemo<NotificationsContextValue>(() => {

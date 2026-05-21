@@ -85,12 +85,7 @@ export function saveSession(
 
 export function readSession(): ActiveSession | null {
   const stored = readSessionWithSource();
-  if (stored) {
-    return stored.session;
-  }
-
-  clearSession();
-  return null;
+  return stored ? stored.session : null;
 }
 
 export function clearSession() {
