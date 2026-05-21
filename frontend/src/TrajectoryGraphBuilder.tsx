@@ -1821,14 +1821,6 @@ export default function TrajectoryGraphBuilder() {
         )}
 
         <button
-          className="secondary-button"
-          onClick={() => setSelectedTopicsModalOpen(true)}
-          type="button"
-        >
-          Выбранные темы
-        </button>
-
-        <button
           className="primary-button trajectory-save-button"
           disabled={saving}
           onClick={() => void handleCreateTrajectory()}
@@ -2075,6 +2067,12 @@ export default function TrajectoryGraphBuilder() {
                 {SIDEBAR_PANEL_LABELS[panelKey]}
               </button>
             ))}
+            <button
+              onClick={() => setSelectedTopicsModalOpen(true)}
+              type="button"
+            >
+              Выбранные темы
+            </button>
           </nav>
 
           <button
@@ -2171,14 +2169,6 @@ export default function TrajectoryGraphBuilder() {
                 <strong>Траектория готова к сохранению.</strong>
               )}
             </div>
-
-            <button
-              className="secondary-button"
-              onClick={() => setSelectedTopicsModalOpen(true)}
-              type="button"
-            >
-              Выбранные темы
-            </button>
 
             <button
               className="primary-button trajectory-save-button"
