@@ -3794,7 +3794,7 @@ export default function TrajectoryDetailPage() {
                   </div>
                   <div className="trajectory-task-editor__grid trajectory-task-editor__grid--single-two">
                     <label className="field">
-                      <span>РЎР»РѕР¶РЅРѕСЃС‚СЊ</span>
+                      <span>Диапазон сложности от 0 до 100</span>
                       <input
                         min={TASK_DIFFICULTY_MIN}
                         max={TASK_DIFFICULTY_MAX}
