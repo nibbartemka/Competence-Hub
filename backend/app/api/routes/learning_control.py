@@ -2,7 +2,7 @@ from uuid import UUID
 
 from fastapi import APIRouter, HTTPException, Query, status
 from sqlalchemy import select
-from sqlalchemy.orm import lazyload, selectinload
+from sqlalchemy.orm import lazyload, load_only, selectinload
 
 from app.api.crud import commit_or_409, not_found
 from app.api.deps import DbSession
@@ -45,6 +45,7 @@ from app.services.learning_tasks import (
 )
 
 from .learning_trajectory_tasks import (
+    _get_task_for_read,
     _get_or_create_task_instance,
     _trajectory_topic_knowledge_complete,
     _trajectory_topic_is_unlocked,
@@ -69,30 +70,19 @@ def _student_can_access_trajectory(student: Student, trajectory: LearningTraject
 def _control_task_options():
     return (
         lazyload("*"),
-        selectinload(LearningTrajectoryTask.trajectory).selectinload(
-            LearningTrajectory.teacher
-        ),
         selectinload(LearningTrajectoryTask.trajectory_topic).selectinload(
             LearningTrajectoryTopic.topic
         ),
-        selectinload(LearningTrajectoryTask.trajectory_topic).selectinload(
-            LearningTrajectoryTopic.elements
-        ).selectinload(LearningTrajectoryElement.element),
-        selectinload(LearningTrajectoryTask.primary_element).selectinload(
-            KnowledgeElement.master_domain_objects
-        ).selectinload(MasterElementDomainObject.knowledge_element),
-        selectinload(LearningTrajectoryTask.related_elements).selectinload(
-            LearningTrajectoryTaskElement.element
+        selectinload(LearningTrajectoryTask.trajectory_topic)
+        .selectinload(LearningTrajectoryTopic.elements)
+        .selectinload(LearningTrajectoryElement.element),
+        selectinload(LearningTrajectoryTask.primary_element).options(
+            lazyload("*"),
+            load_only(
+                KnowledgeElement.id,
+                KnowledgeElement.competence_type,
+            ),
         ),
-        selectinload(LearningTrajectoryTask.checked_relations)
-        .selectinload(LearningTrajectoryTaskRelation.relation)
-        .selectinload(KnowledgeElementRelation.relation),
-        selectinload(LearningTrajectoryTask.checked_relations)
-        .selectinload(LearningTrajectoryTaskRelation.relation)
-        .selectinload(KnowledgeElementRelation.source_element),
-        selectinload(LearningTrajectoryTask.checked_relations)
-        .selectinload(LearningTrajectoryTaskRelation.relation)
-        .selectinload(KnowledgeElementRelation.target_element),
     )
 
 
@@ -248,11 +238,6 @@ async def _build_student_topic_control(
         trajectory.discipline_id,
         session,
     )
-    outgoing_by_source, degree_by_element_id = await _load_control_relation_map(
-        trajectory.discipline_id,
-        session,
-    )
-
     elements = [
         StudentTopicControlElementRead(
             element_id=trajectory_element.element_id,
@@ -372,7 +357,15 @@ async def _build_student_topic_control(
             )
         return candidate_pool
 
-    candidate_pool = _build_pool(ignore_target_mastery=continue_practice)
+    outgoing_by_source: dict[UUID, list[KnowledgeElementRelation]] = {}
+    degree_by_element_id: dict[UUID, int] = {}
+    candidate_pool: list[tuple[LearningTrajectoryTask, StudentTaskProgress | None]] = []
+    if has_tasks:
+        outgoing_by_source, degree_by_element_id = await _load_control_relation_map(
+            trajectory.discipline_id,
+            session,
+        )
+        candidate_pool = _build_pool(ignore_target_mastery=continue_practice)
     continue_practice_available = False
     if not continue_practice and has_tasks and not candidate_pool:
         continue_practice_available = bool(_build_pool(ignore_target_mastery=True))
@@ -390,8 +383,9 @@ async def _build_student_topic_control(
         task, progress, recommendation_score = selected
         instance = await _get_or_create_task_instance(student, task, session)
         await commit_or_409(session)
+        full_task = await _get_task_for_read(task.id, session)
         current_task = build_student_task_read(
-            task=task,
+            task=full_task,
             discipline_name=trajectory.discipline.name,
             mastery_by_element_id=mastery_by_element_id,
             progress=progress,
