@@ -1310,7 +1310,7 @@ def _score_single_choice(
 ) -> tuple[int, dict[str, Any]]:
     selected_ids = answer_payload.get("selected_option_ids")
     if not isinstance(selected_ids, list):
-        raise bad_request("Ответ на задание с одним выбором должен содержать selected_option_ids.")
+        raise bad_request("Ответ на задание с одним выбором должен содержать список выбранных вариантов.")
     selected_set = {str(item).strip() for item in selected_ids if str(item).strip()}
     if len(selected_set) != 1:
         return 0, {
@@ -1343,7 +1343,7 @@ def _score_multiple_choice(
 ) -> tuple[int, dict[str, Any]]:
     selected_ids = answer_payload.get("selected_option_ids")
     if not isinstance(selected_ids, list):
-        raise bad_request("Ответ на задание с несколькими вариантами должен содержать selected_option_ids.")
+        raise bad_request("Ответ на задание с несколькими вариантами должен содержать список выбранных вариантов.")
 
     selected_set = {str(item).strip() for item in selected_ids if str(item).strip()}
     correct_set = {
@@ -1384,7 +1384,7 @@ def _score_matching(
 ) -> tuple[int, dict[str, Any]]:
     pairings = answer_payload.get("pairings")
     if not isinstance(pairings, list):
-        raise bad_request("Ответ на сопоставление должен содержать pairings.")
+        raise bad_request("Ответ на сопоставление должен содержать список сопоставлений.")
 
     submitted_mapping: dict[str, str] = {}
     for pairing in pairings:
@@ -1428,7 +1428,7 @@ def _score_ordering(
 ) -> tuple[int, dict[str, Any]]:
     submitted_order = answer_payload.get("ordered_item_ids")
     if not isinstance(submitted_order, list):
-        raise bad_request("Ответ на порядок должен содержать ordered_item_ids.")
+        raise bad_request("Ответ на порядок должен содержать список элементов в выбранном порядке.")
 
     normalized_order = [str(item).strip() for item in submitted_order if str(item).strip()]
     correct_order = [

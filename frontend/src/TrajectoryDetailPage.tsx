@@ -4096,7 +4096,7 @@ export default function TrajectoryDetailPage() {
                     <p>{task.prompt}</p>
 
                     <div className="student-task-card__progress">
-                      <span>Статус: {task.progress.status}</span>
+                      <span>Статус: {studentTaskProgressLabel(task.progress.status)}</span>
                       <span>Попыток: {task.progress.attempts_count}</span>
                       <span>Последний балл: {task.progress.last_score ?? "еще нет"}</span>
                       <span>Лучший балл: {task.progress.best_score ?? "еще нет"}</span>
@@ -4823,7 +4823,7 @@ export default function TrajectoryDetailPage() {
                         </div>
                         <p>{selectedTopicRecommendedTask.prompt}</p>
                         <div className="student-task-card__progress">
-                          <span>Статус: {selectedTopicRecommendedTask.progress.status}</span>
+                          <span>Статус: {studentTaskProgressLabel(selectedTopicRecommendedTask.progress.status)}</span>
                           <span>Попыток: {selectedTopicRecommendedTask.progress.attempts_count}</span>
                           <span>Последний балл: {selectedTopicRecommendedTask.progress.last_score ?? "еще нет"}</span>
                           <span>Лучший балл: {selectedTopicRecommendedTask.progress.best_score ?? "еще нет"}</span>
