@@ -791,9 +791,6 @@ export function KnowledgeGraphView({ disciplineId }: KnowledgeGraphViewProps) {
                         </div>
 
                         <h2>{scene?.title ?? resolvedDiscipline?.name ?? "Граф дисциплины"}</h2>
-                        <p className="card__text">
-                            {scene?.subtitle ?? "Выбери дисциплину, а затем кликни по теме, чтобы раскрыть ее элементы."}
-                        </p>
                     </motion.section>
 
                     <motion.section className="card card--soft inspector-card inspector-card--validation" {...cardHoverMotion}>
@@ -852,11 +849,7 @@ export function KnowledgeGraphView({ disciplineId }: KnowledgeGraphViewProps) {
                                     );
                                 })}
                             </div>
-                        ) : (
-                            <p className="card__text">
-                                Проверка запускается вручную и покажет, какие требования выполнены.
-                            </p>
-                        )}
+                        ) : null}
                     </motion.section>
 
                     <motion.section className="card inspector-card inspector-card--detail" {...cardHoverMotion}>
@@ -896,11 +889,7 @@ export function KnowledgeGraphView({ disciplineId }: KnowledgeGraphViewProps) {
 
                                 {detail.footnote && <p className="card__footnote">{detail.footnote}</p>}
                             </>
-                        ) : (
-                            <p className="card__text">
-                                Кликни по вершине графа, чтобы увидеть детали и перейти между уровнями.
-                            </p>
-                        )}
+                        ) : null}
                     </motion.section>
                 </motion.aside>
 
@@ -945,11 +934,6 @@ export function KnowledgeGraphView({ disciplineId }: KnowledgeGraphViewProps) {
                                         {relationshipFocusEnabled ? "Скрыть связи" : "Показать связи"}
                                     </button>
                                 ) : null}
-                                <p className="graph-toolbar__hint">
-                                    {view.level === "topics"
-                                        ? "Кнопка внутри карточки темы открывает ее внутренний граф элементов."
-                                        : "Кнопка в центральной теме возвращает на уровень тем."}
-                                </p>
                             </div>
                         </motion.div>
 
@@ -971,9 +955,6 @@ export function KnowledgeGraphView({ disciplineId }: KnowledgeGraphViewProps) {
                             ) : !scene ? (
                                 <div className="status-view">
                                     <h3>Нет данных для визуализации</h3>
-                                    <p>Добавь дисциплины и темы, затем страница покажет их граф.</p>
-                                    <p>debug: disciplines={disciplines.length}, disciplineId={disciplineId || "empty"}</p>
-                                    <p>fetch-debug: {graphFetchDebug || "empty"}</p>
                                 </div>
                             ) : (
                                 <>
@@ -1014,7 +995,6 @@ export function KnowledgeGraphView({ disciplineId }: KnowledgeGraphViewProps) {
                                                             <span className={`graph-legend-overlay__marker ${item.markerClass}`} />
                                                             <div>
                                                                 <strong>{item.label}</strong>
-                                                                <p>{item.hint}</p>
                                                             </div>
                                                         </div>
                                                     ))}

@@ -900,10 +900,6 @@ export function OperationOutputPreview({ content }: { content: StudentTaskConten
           </div>
           <span className="hero__chip">{type}</span>
         </div>
-        <div className="operation-task-schema__hint-list">
-          <span>Вершины: {graph.vertices.join(", ") || "—"}</span>
-          <span>{graph.directed ? "Укажи deg-, deg+ и общую степень." : "Укажи степень каждой вершины."}</span>
-        </div>
       </section>
     );
   }
