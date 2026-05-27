@@ -3256,12 +3256,17 @@ body:has(.session-profile-header) .home-shell {
 
 .student-task-answer__option {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   gap: 10px;
-  padding: 10px 12px;
+  padding: 14px 16px;
   border-radius: 14px;
   border: 1px solid rgba(31, 55, 84, 0.08);
   background: rgba(255, 255, 255, 0.72);
+}
+
+.student-task-answer__option span {
+  font-size: 1rem;
+  line-height: 1.45;
 }
 
 .trajectory-task-card__chips,
@@ -3411,6 +3416,20 @@ body:has(.session-profile-header) .home-shell {
   min-height: 420px;
 }
 
+.student-control-task__task-topline {
+  display: flex;
+  justify-content: flex-end;
+  margin-bottom: 8px;
+}
+
+.student-control-task__prompt {
+  margin: 0;
+  color: #2c59ba;
+  font-size: clamp(1.28rem, 1.75vw, 1.68rem);
+  font-weight: 900;
+  line-height: 1.38;
+}
+
 .student-control-notice {
   display: grid;
   gap: 14px;
@@ -3439,6 +3458,38 @@ body:has(.session-profile-header) .home-shell {
 .student-control-panel {
   position: sticky;
   top: 20px;
+}
+
+.student-control-panel__header {
+  display: flex;
+  align-items: start;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 10px;
+}
+
+.student-control-panel__header h3 {
+  margin: 6px 0 0;
+  color: #1f3550;
+  font-size: 1.18rem;
+}
+
+.student-control-panel__toggle {
+  min-height: 40px;
+  white-space: nowrap;
+}
+
+.student-control-panel__summary {
+  margin: 0 0 8px;
+  color: #59708f;
+  font-size: 0.92rem;
+  line-height: 1.4;
+}
+
+.student-control-panel__summary--muted {
+  margin-top: 12px;
+  margin-bottom: 0;
+  color: #7487a2;
 }
 
 .mastery-row {
@@ -4505,6 +4556,29 @@ body:has(.session-profile-header) .home-shell {
   white-space: nowrap;
 }
 
+.trajectory-sidebar-detail {
+  display: grid;
+  gap: 14px;
+  padding: 18px;
+  border-radius: 20px;
+  border: 1px solid rgba(31, 55, 84, 0.08);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.9), rgba(238, 245, 252, 0.82)),
+    rgba(255, 255, 255, 0.82);
+}
+
+.trajectory-sidebar-detail__header {
+  display: grid;
+  gap: 6px;
+}
+
+.trajectory-sidebar-detail__header h2 {
+  margin: 0;
+  color: #1f3550;
+  font-size: 1.45rem;
+  line-height: 1.15;
+}
+
 .trajectory-detail-page .hero {
   display: grid;
   gap: 18px;
@@ -4691,8 +4765,8 @@ body:has(.session-profile-header) .home-shell {
 }
 
 .trajectory-page .graph-node {
-  padding: 16px 18px 28px;
-  gap: 9px;
+  padding: 18px 20px 26px;
+  gap: 10px;
 }
 
 .trajectory-page .graph-node__header {
@@ -4711,8 +4785,8 @@ body:has(.session-profile-header) .home-shell {
 }
 
 .trajectory-page .graph-node__title {
-  font-size: 1rem;
-  line-height: 1.2;
+  font-size: 1.06rem;
+  line-height: 1.24;
   overflow-wrap: anywhere;
 }
 
@@ -4722,8 +4796,8 @@ body:has(.session-profile-header) .home-shell {
 }
 
 .trajectory-page .graph-node__description {
-  font-size: 0.86rem;
-  line-height: 1.32;
+  font-size: 0.9rem;
+  line-height: 1.4;
 }
 
 .trajectory-page .graph-node__metrics {

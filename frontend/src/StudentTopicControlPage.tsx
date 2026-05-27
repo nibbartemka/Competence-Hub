@@ -112,6 +112,7 @@ export default function StudentTopicControlPage() {
   const [practiceStage, setPracticeStage] = useState<"know" | "can" | "master">("know");
   const [debugTask, setDebugTask] = useState<StudentAssignedTask | null>(null);
   const [submissionFile, setSubmissionFile] = useState<File | null>(null);
+  const [elementsExpanded, setElementsExpanded] = useState(false);
 
   useEffect(() => {
     const activeSession = readSession();
@@ -195,6 +196,10 @@ export default function StudentTopicControlPage() {
     void load();
     return () => controller.abort();
   }, [studentId, trajectoryId, topicId, topicPosition]);
+
+  useEffect(() => {
+    setElementsExpanded(false);
+  }, [control?.topic_id]);
 
   function toggleChoice(task: StudentAssignedTask, optionId: string, checked: boolean) {
     const currentIds = Array.isArray(answer.selected_option_ids)
@@ -523,6 +528,9 @@ export default function StudentTopicControlPage() {
   }
 
   const currentTask = control?.current_task ?? null;
+  const topicElements = control?.elements ?? [];
+  const canToggleElements = topicElements.length > 6;
+  const visibleElements = elementsExpanded ? topicElements : topicElements.slice(0, 6);
   const stageLabel =
     control?.practice_stage === "master"
       ? "Владеть"
@@ -567,24 +575,10 @@ export default function StudentTopicControlPage() {
           ) : currentTask ? (
             <>
               {notice ? <div className="student-task-card__feedback">{notice}</div> : null}
-              <div className="card__header">
-                <div>
-                  <p className="card__eyebrow">Текущее задание</p>
-                  <h2>{currentTask.title || currentTask.topic_name}</h2>
-                </div>
+              <div className="student-control-task__task-topline">
                 <span className="hero__chip">{TASK_TYPE_LABELS[currentTask.task_type]}</span>
               </div>
-              <p className="card__lead">{currentTask.prompt}</p>
-              <div className="student-task-card__progress">
-                <span>Проверяем: {currentTask.primary_element.name}</span>
-                <span>Освоение: {currentTask.primary_element.mastery_value}</span>
-                <span>Сложность: {currentTask.difficulty}</span>
-              </div>
-              {control.is_extra_practice ? (
-                <p className="card__text">
-                  Включен режим дополнительной практики. Здесь можно улучшать результат выше минимального порога темы.
-                </p>
-              ) : null}
+              <p className="student-control-task__prompt">{currentTask.prompt}</p>
               {currentTask.progress.last_feedback ? (
                 <div className="student-task-card__feedback">
                   {String(currentTask.progress.last_feedback.message ?? "")}
@@ -607,14 +601,6 @@ export default function StudentTopicControlPage() {
                   onClick={() => setDebugTask(currentTask)}
                 >
                   Показать эталон
-                </button>
-                <button
-                  className="ghost-button"
-                  type="button"
-                  disabled={saving}
-                  onClick={() => void reloadCurrentState()}
-                >
-                  Обновить тему
                 </button>
               </div>
             </>
@@ -669,11 +655,23 @@ export default function StudentTopicControlPage() {
         </section>
 
         <aside className="card card--soft student-control-panel">
-          <p className="card__eyebrow">Освоение элементов</p>
+          <div className="student-control-panel__header">
+            <h3>Элементы темы</h3>
+            {canToggleElements ? (
+              <button
+                className="ghost-button student-control-panel__toggle"
+                type="button"
+                onClick={() => setElementsExpanded((current) => !current)}
+              >
+                {elementsExpanded ? "Свернуть" : "Развернуть"}
+              </button>
+            ) : null}
+          </div>
+          <p className="student-control-panel__summary">Всего элементов: {topicElements.length}</p>
           {loading && !control ? (
             <p className="card__text">Загружаю элементы темы...</p>
           ) : (
-            (control?.elements ?? []).map((element) => (
+            visibleElements.map((element) => (
               <div className="mastery-row" key={element.element_id}>
                 <div>
                   <strong>{element.name}</strong>
@@ -683,6 +681,13 @@ export default function StudentTopicControlPage() {
               </div>
             ))
           )}
+          {canToggleElements ? (
+            <p className="student-control-panel__summary student-control-panel__summary--muted">
+              {elementsExpanded
+                ? "Список открыт полностью."
+                : `Показаны первые ${visibleElements.length} из ${topicElements.length}.`}
+            </p>
+          ) : null}
         </aside>
       </main>
 

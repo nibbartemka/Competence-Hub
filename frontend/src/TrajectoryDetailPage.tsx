@@ -263,7 +263,7 @@ function clampTaskDifficulty(value: number) {
 
 function estimateTrajectoryNodeHeight(topic: Topic) {
   const text = topic.description?.trim() || "Описание темы пока не добавлено.";
-  return Math.min(360, 196 + Math.ceil(text.length / 30) * 16);
+  return Math.min(420, 230 + Math.ceil(text.length / 26) * 18);
 }
 
 function estimateTrajectoryElementNodeHeight(element: KnowledgeElement) {
@@ -283,7 +283,8 @@ function buildDetailValueKey(label: string, value: string) {
 
 function trajectoryTopicColumnCount(totalTopics: number) {
   if (totalTopics <= 3) return totalTopics || 1;
-  if (totalTopics <= 8) return 4;
+  if (totalTopics <= 6) return 3;
+  if (totalTopics <= 10) return 4;
   return 5;
 }
 
@@ -599,9 +600,9 @@ function buildTrajectoryScene(
     nodes.push({
       id: nodeId,
       text: topic.name,
-      x: 120 + col * 300,
+      x: 120 + col * 320,
       y: 160 + row * 312,
-      width: 270,
+      width: 292,
       height: estimateTrajectoryNodeHeight(topic),
       nodeShape: 1,
       data,
@@ -611,9 +612,7 @@ function buildTrajectoryScene(
       title: topic.name,
       subtitle: `Шаг ${index + 1} в траектории`,
       description: topic.description ?? "Описание темы пока не добавлено.",
-      chips: [
-        { label: `Элементов: ${selectedElementsCount}`, tone: "formed" },
-      ],
+      chips: [],
       stats: [
         { label: "Требуется ЗУН", value: String(requiredCount) },
         { label: "Формируется ЗУН", value: String(formedCount) },
@@ -715,7 +714,7 @@ function buildStudentTrajectoryTopicsScene(
       title: topic.name,
       subtitle: `Шаг ${index + 1}`,
       description: topic.description ?? "Описание темы пока не добавлено.",
-      metrics: [`${topicElements.length} элементов`, `Балл ${topicMastery}`],
+      metrics: [],
       progressValue: topicMastery,
       progressLabel: "Прогресс темы",
       hint: isUnlocked ? "Открыть тему" : "Тема закрыта",
@@ -729,9 +728,9 @@ function buildStudentTrajectoryTopicsScene(
     nodes.push({
       id: nodeId,
       text: topic.name,
-      x: 120 + col * 300,
+      x: 120 + col * 320,
       y: 160 + row * 312,
-      width: 270,
+      width: 292,
       height: estimateTrajectoryNodeHeight(topic),
       nodeShape: 1,
       data,
@@ -3977,6 +3976,41 @@ export default function TrajectoryDetailPage() {
             </>
           )}
         </div>
+        {showStudentView ? (
+          <section className="trajectory-sidebar-detail">
+            {detail ? (
+              <>
+                <div className="trajectory-sidebar-detail__header">
+                  <span className="card__eyebrow">Текущая тема</span>
+                  <h2>{detail.title}</h2>
+                </div>
+                {detail.subtitle ? <p className="card__lead">{detail.subtitle}</p> : null}
+                {detail.description ? <p className="card__text">{detail.description}</p> : null}
+
+                <div className="stat-grid">
+                  {(detail.stats ?? []).map((stat) => (
+                    <div className="stat" key={stat.label}>
+                      <span>{stat.label}</span>
+                      {Array.isArray(stat.value) ? (
+                        <ul className="stat__value-list">
+                          {stat.value.map((value) => (
+                            <li key={buildDetailValueKey(stat.label, value)}>{value}</li>
+                          ))}
+                        </ul>
+                      ) : (
+                        <strong>{stat.value}</strong>
+                      )}
+                    </div>
+                  ))}
+                </div>
+
+                {detail.footnote ? <p className="card__footnote">{detail.footnote}</p> : null}
+              </>
+            ) : (
+              <p className="card__text">Выбери тему на графе, чтобы увидеть детали этого шага.</p>
+            )}
+          </section>
+        ) : null}
         </aside>
 
         <main className="trajectory-detail-layout">
@@ -4028,6 +4062,7 @@ export default function TrajectoryDetailPage() {
           </div>
         </section>
 
+        {!showStudentView ? (
         <aside className="inspector">
           <section className="card card--soft">
             <div className="card__header">
@@ -4069,6 +4104,7 @@ export default function TrajectoryDetailPage() {
             ) : null}
           </section>
         </aside>
+        ) : null}
 
         {studentPreviewOpen && studentIdFromQuery && false ? (
           <section className="card card--soft trajectory-student-topic-panel">
