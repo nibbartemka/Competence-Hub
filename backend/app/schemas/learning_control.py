@@ -19,6 +19,16 @@ class StudentTopicControlNextTopicRead(BaseModel):
     is_unlocked: bool
 
 
+class StudentAdaptiveStatusRead(BaseModel):
+    mode: str = "regular"
+    title: str
+    summary: str
+    signal_kind: str | None = None
+    recommendation_score: float | None = None
+    last_duration_seconds: int | None = None
+    expected_duration_seconds: int | None = None
+
+
 class StudentTopicControlRead(BaseModel):
     student_id: UUID
     trajectory_id: UUID
@@ -37,6 +47,7 @@ class StudentTopicControlRead(BaseModel):
     master_practice_available: bool = False
     show_next_topic_prompt: bool = False
     next_topic: StudentTopicControlNextTopicRead | None = None
+    adaptive_status: StudentAdaptiveStatusRead | None = None
     elements: list[StudentTopicControlElementRead] = Field(default_factory=list)
     current_task: StudentAssignedTaskRead | None = None
 

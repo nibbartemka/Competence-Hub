@@ -3,7 +3,12 @@ from datetime import UTC, datetime, timedelta
 from types import SimpleNamespace
 from uuid import uuid4
 
-from app.models.enums import KnowledgeElementRelationType, LearningTrajectoryTaskType, StudentTaskProgressStatus
+from app.models.enums import (
+    CompetenceType,
+    KnowledgeElementRelationType,
+    LearningTrajectoryTaskType,
+    StudentTaskProgressStatus,
+)
 from app.services import learning_tasks
 
 
@@ -13,6 +18,7 @@ def _make_task(
     difficulty: int = 30,
     threshold: int = 70,
     task_type: LearningTrajectoryTaskType = LearningTrajectoryTaskType.SINGLE_CHOICE,
+    competence_type: CompetenceType = CompetenceType.KNOW,
     related_element_ids: list | None = None,
     checked_relation_pairs: list[tuple[object, object]] | None = None,
 ):
@@ -31,6 +37,10 @@ def _make_task(
             ]
         ),
         trajectory=SimpleNamespace(topics=[]),
+        primary_element=SimpleNamespace(
+            id=primary_element_id,
+            competence_type=competence_type,
+        ),
         related_elements=[
             SimpleNamespace(element_id=element_id)
             for element_id in (related_element_ids or [])
@@ -389,9 +399,77 @@ def test_select_next_task_uses_most_recent_failed_element_when_multiple_failed()
     assert selected[0].primary_element_id == recent_failed_element_id
 
 
+def test_task_matches_focus_elements_skips_unloaded_relationships(monkeypatch):
+    class GuardedTask:
+        primary_element_id = uuid4()
+
+        @property
+        def related_elements(self):
+            raise AssertionError("related_elements should not be lazily accessed")
+
+        @property
+        def checked_relations(self):
+            raise AssertionError("checked_relations should not be lazily accessed")
+
+    class FakeInspection:
+        unloaded = {"related_elements", "checked_relations"}
+
+    monkeypatch.setattr(learning_tasks, "sa_inspect", lambda _task: FakeInspection())
+
+    assert (
+        learning_tasks._task_matches_focus_elements(GuardedTask(), {str(uuid4())})
+        is False
+    )
+
+
 def test_is_fragile_success_detects_slow_but_correct_answer():
     task = _make_task(primary_element_id=uuid4(), difficulty=20)
 
     assert learning_tasks.is_fragile_success(task, score=100, duration_seconds=80) is True
     assert learning_tasks.is_fragile_success(task, score=100, duration_seconds=20) is False
     assert learning_tasks.is_fragile_success(task, score=80, duration_seconds=80) is False
+
+
+def test_expected_duration_seconds_is_longer_for_can_stage():
+    know_task = _make_task(
+        primary_element_id=uuid4(),
+        difficulty=30,
+        competence_type=CompetenceType.KNOW,
+    )
+    can_task = _make_task(
+        primary_element_id=uuid4(),
+        difficulty=30,
+        competence_type=CompetenceType.CAN,
+    )
+
+    know_duration = learning_tasks.expected_duration_seconds(know_task)
+    can_duration = learning_tasks.expected_duration_seconds(can_task)
+
+    assert know_duration is not None
+    assert can_duration is not None
+    assert can_duration > know_duration
+    assert can_duration >= 60
+
+
+def test_master_stage_disables_duration_tracking_and_fragile_success():
+    master_task = _make_task(
+        primary_element_id=uuid4(),
+        difficulty=30,
+        competence_type=CompetenceType.MASTER,
+        task_type=LearningTrajectoryTaskType.TEXT,
+    )
+
+    assert learning_tasks.duration_tracking_enabled(master_task) is False
+    assert learning_tasks.expected_duration_seconds(master_task) is None
+    assert learning_tasks.is_fragile_success(master_task, score=100, duration_seconds=999) is False
+
+    feedback = learning_tasks.enrich_feedback_for_adaptive_control(
+        master_task,
+        answer_payload={"text": "answer"},
+        feedback={"is_correct": True, "message": "ok"},
+        score=100,
+        duration_seconds=999,
+    )
+
+    assert "duration_seconds" not in feedback
+    assert "adaptive_signal" not in feedback

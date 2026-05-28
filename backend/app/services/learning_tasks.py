@@ -7,6 +7,8 @@ from typing import Any
 from uuid import UUID
 
 from fastapi import HTTPException, status
+from sqlalchemy.exc import NoInspectionAvailable
+from sqlalchemy.inspection import inspect as sa_inspect
 
 from app.algorithm_library import get_operation_contract
 from app.models import (
@@ -91,6 +93,22 @@ ADVANCED_UNLOCK_MASTERY = 55
 MASTERY_UPDATE_FACTOR = 0.45
 SUCCESS_SCORE_THRESHOLD = 60
 FULL_SUCCESS_SCORE = 100
+
+KNOW_STAGE_BASE_DURATION_BY_TYPE = {
+    LearningTrajectoryTaskType.SINGLE_CHOICE: 20,
+    LearningTrajectoryTaskType.MULTIPLE_CHOICE: 35,
+    LearningTrajectoryTaskType.MATCHING: 50,
+    LearningTrajectoryTaskType.ORDERING: 65,
+    LearningTrajectoryTaskType.TEXT: 120,
+}
+
+CAN_STAGE_BASE_DURATION_BY_TYPE = {
+    LearningTrajectoryTaskType.SINGLE_CHOICE: 45,
+    LearningTrajectoryTaskType.MULTIPLE_CHOICE: 70,
+    LearningTrajectoryTaskType.MATCHING: 95,
+    LearningTrajectoryTaskType.ORDERING: 120,
+    LearningTrajectoryTaskType.TEXT: 180,
+}
 
 
 def bad_request(detail: str) -> HTTPException:
@@ -848,16 +866,24 @@ def derive_adaptive_error_details(
     return None
 
 
-def expected_duration_seconds(task: LearningTrajectoryTask) -> int:
-    base_by_type = {
-        LearningTrajectoryTaskType.SINGLE_CHOICE: 20,
-        LearningTrajectoryTaskType.MULTIPLE_CHOICE: 35,
-        LearningTrajectoryTaskType.MATCHING: 50,
-        LearningTrajectoryTaskType.ORDERING: 65,
-        LearningTrajectoryTaskType.TEXT: 120,
-    }
-    base_duration = base_by_type.get(task.task_type, 30)
-    return max(15, ceil(base_duration + task.difficulty * 0.8))
+def duration_tracking_enabled(task: LearningTrajectoryTask) -> bool:
+    competence_type = getattr(getattr(task, "primary_element", None), "competence_type", None)
+    return competence_type != CompetenceType.MASTER
+
+
+def expected_duration_seconds(task: LearningTrajectoryTask) -> int | None:
+    competence_type = getattr(getattr(task, "primary_element", None), "competence_type", None)
+    if competence_type == CompetenceType.MASTER:
+        return None
+
+    if competence_type == CompetenceType.CAN:
+        base_duration = CAN_STAGE_BASE_DURATION_BY_TYPE.get(task.task_type, 60)
+        difficulty_factor = 1.2
+    else:
+        base_duration = KNOW_STAGE_BASE_DURATION_BY_TYPE.get(task.task_type, 30)
+        difficulty_factor = 0.8
+
+    return max(15, ceil(base_duration + task.difficulty * difficulty_factor))
 
 
 def is_fragile_success(
@@ -867,7 +893,10 @@ def is_fragile_success(
 ) -> bool:
     if duration_seconds is None or score < FULL_SUCCESS_SCORE:
         return False
-    return duration_seconds > ceil(expected_duration_seconds(task) * 1.6)
+    expected_duration = expected_duration_seconds(task)
+    if expected_duration is None:
+        return False
+    return duration_seconds > ceil(expected_duration * 1.6)
 
 
 def enrich_feedback_for_adaptive_control(
@@ -879,7 +908,7 @@ def enrich_feedback_for_adaptive_control(
     duration_seconds: int | None,
 ) -> dict[str, Any]:
     enriched_feedback = dict(feedback)
-    if duration_seconds is not None:
+    if duration_seconds is not None and duration_tracking_enabled(task):
         enriched_feedback["duration_seconds"] = duration_seconds
 
     has_error = score < FULL_SUCCESS_SCORE or not bool(feedback.get("is_correct", False))
@@ -896,10 +925,11 @@ def enrich_feedback_for_adaptive_control(
         return enriched_feedback
 
     if is_fragile_success(task, score, duration_seconds):
+        expected_duration = expected_duration_seconds(task)
         enriched_feedback["adaptive_signal"] = {
             "kind": "fragile_success",
             "duration_seconds": duration_seconds,
-            "expected_duration_seconds": expected_duration_seconds(task),
+            "expected_duration_seconds": expected_duration,
         }
     return enriched_feedback
 
@@ -1307,6 +1337,20 @@ def _progress_signal(progress: StudentTaskProgress | None) -> dict[str, Any] | N
     return adaptive_signal
 
 
+def _loaded_relationship_items(task: LearningTrajectoryTask, attribute: str) -> list[Any]:
+    try:
+        inspection = sa_inspect(task)
+    except NoInspectionAvailable:
+        value = getattr(task, attribute, ())
+        return list(value or ())
+
+    if attribute in inspection.unloaded:
+        return []
+
+    value = getattr(task, attribute, ())
+    return list(value or ())
+
+
 def _task_matches_focus_elements(
     task: LearningTrajectoryTask,
     focus_element_ids: set[str],
@@ -1315,9 +1359,10 @@ def _task_matches_focus_elements(
         return False
     if str(task.primary_element_id) in focus_element_ids:
         return True
-    if any(str(link.element_id) in focus_element_ids for link in task.related_elements):
+    related_elements = _loaded_relationship_items(task, "related_elements")
+    if any(str(link.element_id) in focus_element_ids for link in related_elements):
         return True
-    for link in task.checked_relations:
+    for link in _loaded_relationship_items(task, "checked_relations"):
         relation = link.relation
         if (
             str(relation.source_element_id) in focus_element_ids

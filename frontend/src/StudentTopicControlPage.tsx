@@ -21,6 +21,44 @@ import type { StudentAssignedTask, StudentTopicControl } from "./types";
 
 const LAST_STUDENT_STORAGE_KEY = "competence-hub:last-student-id";
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null;
+}
+
+function formatDuration(totalSeconds: number) {
+  const safeSeconds = Math.max(0, totalSeconds);
+  const minutes = Math.floor(safeSeconds / 60);
+  const seconds = safeSeconds % 60;
+  return `${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
+}
+
+function estimateExpectedDurationSeconds(
+  task: StudentAssignedTask,
+  practiceStage: "know" | "can" | "master",
+) {
+  if (practiceStage === "master") {
+    return null;
+  }
+  const baseByType =
+    practiceStage === "can"
+      ? {
+          single_choice: 45,
+          multiple_choice: 70,
+          matching: 95,
+          ordering: 120,
+          text: 180,
+        }
+      : {
+          single_choice: 20,
+          multiple_choice: 35,
+          matching: 50,
+          ordering: 65,
+          text: 120,
+        };
+  const difficultyFactor = practiceStage === "can" ? 1.2 : 0.8;
+  return Math.max(15, Math.ceil((baseByType[task.task_type] ?? 30) + task.difficulty * difficultyFactor));
+}
+
 const TASK_TYPE_LABELS: Record<StudentAssignedTask["task_type"], string> = {
   single_choice: "Один выбор",
   multiple_choice: "Несколько вариантов",
@@ -113,6 +151,9 @@ export default function StudentTopicControlPage() {
   const [debugTask, setDebugTask] = useState<StudentAssignedTask | null>(null);
   const [submissionFile, setSubmissionFile] = useState<File | null>(null);
   const [elementsExpanded, setElementsExpanded] = useState(false);
+  const [taskStartedAt, setTaskStartedAt] = useState<number | null>(null);
+  const [elapsedSeconds, setElapsedSeconds] = useState(0);
+  const currentTask = control?.current_task ?? null;
 
   useEffect(() => {
     const activeSession = readSession();
@@ -201,6 +242,27 @@ export default function StudentTopicControlPage() {
     setElementsExpanded(false);
   }, [control?.topic_id]);
 
+  useEffect(() => {
+    if (!currentTask?.task_instance_id) {
+      setTaskStartedAt(null);
+      setElapsedSeconds(0);
+      return;
+    }
+    const startedAt = Date.now();
+    setTaskStartedAt(startedAt);
+    setElapsedSeconds(0);
+  }, [currentTask?.task_instance_id]);
+
+  useEffect(() => {
+    if (!taskStartedAt || !currentTask) {
+      return;
+    }
+    const intervalId = window.setInterval(() => {
+      setElapsedSeconds(Math.max(0, Math.round((Date.now() - taskStartedAt) / 1000)));
+    }, 1000);
+    return () => window.clearInterval(intervalId);
+  }, [taskStartedAt, currentTask]);
+
   function toggleChoice(task: StudentAssignedTask, optionId: string, checked: boolean) {
     const currentIds = Array.isArray(answer.selected_option_ids)
       ? (answer.selected_option_ids as string[])
@@ -248,6 +310,10 @@ export default function StudentTopicControlPage() {
       return;
     }
 
+    const durationSeconds =
+      practiceStage !== "master" && taskStartedAt !== null
+        ? Math.max(1, Math.round((Date.now() - taskStartedAt) / 1000))
+        : null;
     try {
       setSaving(true);
       setError("");
@@ -256,7 +322,13 @@ export default function StudentTopicControlPage() {
         if (!submissionFile) {
           throw new Error("Сначала прикрепи файл с решением.");
         }
-        await submitStudentTaskFileSubmission(task.id, studentId, submissionFile, task.task_instance_id);
+        await submitStudentTaskFileSubmission(
+          task.id,
+          studentId,
+          submissionFile,
+          task.task_instance_id,
+          durationSeconds,
+        );
         await loadControl(undefined, continuePractice, practiceStage);
         const teacherName = task.teacher_name?.trim();
         setNotice(
@@ -272,7 +344,13 @@ export default function StudentTopicControlPage() {
               text: buildStructuredOperationAnswerText(answer, task.content),
             }
           : answer;
-      await submitStudentTaskScore(task.id, studentId, nextAnswer, task.task_instance_id);
+      await submitStudentTaskScore(
+        task.id,
+        studentId,
+        nextAnswer,
+        task.task_instance_id,
+        durationSeconds,
+      );
       await loadControl(undefined, continuePractice, practiceStage);
     } catch (submitError) {
       setError(extractErrorMessage(submitError));
@@ -527,10 +605,66 @@ export default function StudentTopicControlPage() {
     );
   }
 
-  const currentTask = control?.current_task ?? null;
   const topicElements = control?.elements ?? [];
   const canToggleElements = topicElements.length > 6;
   const visibleElements = elementsExpanded ? topicElements : topicElements.slice(0, 6);
+  const adaptiveStatus = control?.adaptive_status ?? null;
+  const expectedDurationSeconds =
+    adaptiveStatus?.expected_duration_seconds ??
+    (currentTask ? estimateExpectedDurationSeconds(currentTask, control?.practice_stage ?? "know") : null);
+  const durationSignalsEnabled = (control?.practice_stage ?? "know") !== "master";
+  const currentDurationLimitSeconds =
+    durationSignalsEnabled && expectedDurationSeconds !== null
+      ? Math.max(expectedDurationSeconds, Math.round(expectedDurationSeconds * 1.6))
+      : null;
+  const durationProgressPercent =
+    currentDurationLimitSeconds && currentDurationLimitSeconds > 0
+      ? Math.min(100, Math.round((elapsedSeconds / currentDurationLimitSeconds) * 100))
+      : 0;
+  const durationTone =
+    expectedDurationSeconds === null
+      ? "steady"
+      : elapsedSeconds <= expectedDurationSeconds
+        ? "steady"
+        : elapsedSeconds <= Math.round(expectedDurationSeconds * 1.6)
+          ? "warning"
+          : "critical";
+  const feedbackRecord = isRecord(currentTask?.progress.last_feedback)
+    ? currentTask.progress.last_feedback
+    : null;
+  const feedbackMessage = feedbackRecord
+    ? String(feedbackRecord.message ?? feedbackRecord.summary ?? "")
+    : "";
+  const feedbackAdaptiveSignal = feedbackRecord && isRecord(feedbackRecord.adaptive_signal)
+    ? feedbackRecord.adaptive_signal
+    : null;
+  const signalKind =
+    typeof adaptiveStatus?.signal_kind === "string"
+      ? adaptiveStatus.signal_kind
+      : typeof feedbackAdaptiveSignal?.kind === "string"
+        ? feedbackAdaptiveSignal.kind
+        : null;
+  const routeSignalLabel =
+    signalKind === "error"
+      ? "После ошибки"
+      : signalKind === "fragile_success"
+        ? "Медленный верный ответ"
+        : control?.is_extra_practice
+          ? "Доп. практика"
+          : "Стандартный отбор";
+  const adaptiveTitleText =
+    signalKind === "error"
+      ? "Маршрут изменен после ошибки"
+      : signalKind === "fragile_success"
+        ? "Маршрут изменен после медленного ответа"
+        : adaptiveStatus?.title ?? "Маршрут контроля формируется";
+  const adaptiveSummaryText =
+    signalKind === "error"
+      ? "После неверного ответа система изменила маршрут и дала следующий шаг глубже по этой же зоне, чтобы понять, была ли ошибка случайной или это реальный пробел в знании."
+      : signalKind === "fragile_success"
+        ? "Прошлый ответ был верным, но слишком медленным, поэтому система добавила подтверждающий шаг, чтобы проверить устойчивость знания."
+        : adaptiveStatus?.summary ??
+          "Система анализирует текущий прогресс, историю ответов и выбирает следующий шаг контроля.";
   const stageLabel =
     control?.practice_stage === "master"
       ? "Владеть"
@@ -579,11 +713,7 @@ export default function StudentTopicControlPage() {
                 <span className="hero__chip">{TASK_TYPE_LABELS[currentTask.task_type]}</span>
               </div>
               <p className="student-control-task__prompt">{currentTask.prompt}</p>
-              {currentTask.progress.last_feedback ? (
-                <div className="student-task-card__feedback">
-                  {String(currentTask.progress.last_feedback.message ?? "")}
-                </div>
-              ) : null}
+              {feedbackMessage ? <div className="student-task-card__feedback">{feedbackMessage}</div> : null}
               {renderAnswer(currentTask)}
               <div className="student-task-card__actions">
                 <button
@@ -652,9 +782,149 @@ export default function StudentTopicControlPage() {
               </div>
             </div>
           )}
+          <div className="student-control-adaptive-panel student-control-adaptive-panel--horizontal">
+            <div className="student-control-adaptive-panel__header">
+              <div>
+                <p className="card__eyebrow">Статус адаптации</p>
+                <h3>{adaptiveStatus?.title ?? "Маршрут контроля формируется"}</h3>
+              </div>
+              <span className={`student-control-adaptive-panel__chip student-control-adaptive-panel__chip--${durationTone}`}>
+                {control?.is_extra_practice ? "Доп. практика" : `Этап: ${stageLabel}`}
+              </span>
+            </div>
+            <p className="student-control-adaptive-panel__summary">
+              {adaptiveStatus?.summary ??
+                "Система анализирует текущий прогресс, историю ответов и выбирает следующий шаг контроля."}
+            </p>
+            {signalKind ? (
+              <div className={`student-control-adaptive-panel__route student-control-adaptive-panel__route--${signalKind}`}>
+                <strong>{adaptiveTitleText}</strong>
+                <span>{adaptiveSummaryText}</span>
+              </div>
+            ) : null}
+            {durationSignalsEnabled ? (
+              <>
+                <div className="student-control-adaptive-panel__metrics">
+                  <div className="student-control-adaptive-panel__metric">
+                    <span>Таймер текущего ответа</span>
+                    <strong>{formatDuration(elapsedSeconds)}</strong>
+                  </div>
+                  <div className="student-control-adaptive-panel__metric">
+                    <span>Ожидаемое время</span>
+                    <strong>{expectedDurationSeconds !== null ? formatDuration(expectedDurationSeconds) : "-"}</strong>
+                  </div>
+                </div>
+                <div className="student-control-adaptive-panel__timeline">
+                  <div className="student-control-adaptive-panel__timeline-bar">
+                    <i
+                      className={`student-control-adaptive-panel__timeline-fill student-control-adaptive-panel__timeline-fill--${durationTone}`}
+                      style={{ width: `${durationProgressPercent}%` }}
+                    />
+                  </div>
+                  <div className="student-control-adaptive-panel__timeline-labels">
+                    <span>Старт</span>
+                    <span>
+                      {currentDurationLimitSeconds !== null ? formatDuration(currentDurationLimitSeconds) : "Без лимита"}
+                    </span>
+                  </div>
+                </div>
+              </>
+            ) : null}
+            <div className="student-control-adaptive-panel__notes">
+              <div className={`student-control-adaptive-panel__note student-control-adaptive-panel__note--${durationTone}`}>
+                {durationSignalsEnabled
+                  ? durationTone === "steady"
+                    ? "Ответ идет в ожидаемом темпе."
+                    : durationTone === "warning"
+                      ? "Ответ уже дольше ожидаемого, но пока в допустимой зоне."
+                      : "Ответ заметно дольше нормы. Если он будет верным, система может выдать дополнительную проверку."
+                  : "На этапе «Владеть» время ответа не влияет на адаптацию и не меняет маршрут контроля."}
+              </div>
+              {durationSignalsEnabled &&
+              adaptiveStatus?.last_duration_seconds !== null &&
+              adaptiveStatus?.last_duration_seconds !== undefined ? (
+                <div className="student-control-adaptive-panel__note">
+                  Прошлая зафиксированная попытка заняла {formatDuration(adaptiveStatus.last_duration_seconds)}
+                  {adaptiveStatus.expected_duration_seconds
+                    ? ` при ориентире ${formatDuration(adaptiveStatus.expected_duration_seconds)}.`
+                    : "."}
+                </div>
+              ) : null}
+            </div>
+          </div>
         </section>
 
         <aside className="card card--soft student-control-panel">
+          <div className="student-control-adaptive-panel">
+            <div className="student-control-adaptive-panel__header">
+              <div>
+                <p className="card__eyebrow">Статус адаптации</p>
+                <h3>{adaptiveStatus?.title ?? "Маршрут контроля формируется"}</h3>
+              </div>
+              <span className={`student-control-adaptive-panel__chip student-control-adaptive-panel__chip--${durationTone}`}>
+                {control?.is_extra_practice ? "Доп. практика" : `Этап: ${stageLabel}`}
+              </span>
+            </div>
+            <p className="student-control-adaptive-panel__summary">
+              {adaptiveStatus?.summary ??
+                "Система анализирует текущий прогресс, историю ответов и выбирает следующий шаг контроля."}
+            </p>
+            {signalKind ? (
+              <div className={`student-control-adaptive-panel__route student-control-adaptive-panel__route--${signalKind}`}>
+                <strong>{adaptiveTitleText}</strong>
+                <span>{adaptiveSummaryText}</span>
+              </div>
+            ) : null}
+            <div className="student-control-adaptive-panel__metrics">
+              <div className="student-control-adaptive-panel__metric">
+                <span>Таймер текущего ответа</span>
+                <strong>{formatDuration(elapsedSeconds)}</strong>
+              </div>
+              <div className="student-control-adaptive-panel__metric">
+                <span>Ожидаемое время</span>
+                <strong>{expectedDurationSeconds !== null ? formatDuration(expectedDurationSeconds) : "-"}</strong>
+              </div>
+              <div className="student-control-adaptive-panel__metric">
+                <span>Приоритет выбора</span>
+                <strong>
+                  {adaptiveStatus?.recommendation_score !== null && adaptiveStatus?.recommendation_score !== undefined
+                    ? `${Math.round(adaptiveStatus.recommendation_score * 100)}%`
+                    : "-"}
+                </strong>
+              </div>
+            </div>
+            <div className="student-control-adaptive-panel__timeline">
+              <div className="student-control-adaptive-panel__timeline-bar">
+                <i
+                  className={`student-control-adaptive-panel__timeline-fill student-control-adaptive-panel__timeline-fill--${durationTone}`}
+                  style={{ width: `${durationProgressPercent}%` }}
+                />
+              </div>
+              <div className="student-control-adaptive-panel__timeline-labels">
+                <span>Старт</span>
+                <span>
+                  {currentDurationLimitSeconds !== null ? formatDuration(currentDurationLimitSeconds) : "Без лимита"}
+                </span>
+              </div>
+            </div>
+            <div className="student-control-adaptive-panel__notes">
+              <div className={`student-control-adaptive-panel__note student-control-adaptive-panel__note--${durationTone}`}>
+                {durationTone === "steady"
+                  ? "Ответ идет в ожидаемом темпе."
+                  : durationTone === "warning"
+                    ? "Ответ уже дольше ожидаемого, но пока в допустимой зоне."
+                    : "Ответ заметно дольше нормы. Если он будет верным, система может выдать дополнительную проверку."}
+              </div>
+              {adaptiveStatus?.last_duration_seconds !== null && adaptiveStatus?.last_duration_seconds !== undefined ? (
+                <div className="student-control-adaptive-panel__note">
+                  Прошлая зафиксированная попытка заняла {formatDuration(adaptiveStatus.last_duration_seconds)}
+                  {adaptiveStatus.expected_duration_seconds
+                    ? ` при ориентире ${formatDuration(adaptiveStatus.expected_duration_seconds)}.`
+                    : "."}
+                </div>
+              ) : null}
+            </div>
+          </div>
           <div className="student-control-panel__header">
             <h3>Элементы темы</h3>
             {canToggleElements ? (
