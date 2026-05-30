@@ -113,10 +113,6 @@ export default function DisciplineOverviewPage() {
         <div>
           <p className="hero__eyebrow">Паспорт дисциплины</p>
           <h1>{graph?.discipline.name ?? "Дисциплина"}</h1>
-          <p className="hero__subtitle">
-            Преподаватели, группы, траектории и краткая статистика графа знаний в одном
-            рабочем экране.
-          </p>
         </div>
         <div className="hero__controls">
           <button className="ghost-button" onClick={() => navigate(getSessionHomePath())} type="button">

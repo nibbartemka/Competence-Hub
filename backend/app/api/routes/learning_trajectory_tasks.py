@@ -52,6 +52,7 @@ from app.services.learning_tasks import (
     build_student_task_read,
     build_task_read,
     dump_task_content,
+    enrich_feedback_for_adaptive_control,
     ensure_task_write_allowed,
     evaluate_task_answer,
     merge_mastery_value,
@@ -1342,6 +1343,13 @@ async def submit_student_task_score(
         payload.answer_payload,
         content_snapshot=content_snapshot,
     )
+    feedback = enrich_feedback_for_adaptive_control(
+        task,
+        normalized_answer_payload,
+        feedback,
+        score=score,
+        duration_seconds=payload.duration_seconds,
+    )
     answered_at = datetime.utcnow()
     instance.answered_at = answered_at
     session.add(
@@ -1487,6 +1495,8 @@ async def submit_student_task_file(
         "Файл отправлен и ожидает проверки преподавателем.",
         pending_review=True,
     )
+    if duration_seconds is not None:
+        feedback["duration_seconds"] = duration_seconds
     answered_at = datetime.utcnow()
     instance.answered_at = answered_at
 

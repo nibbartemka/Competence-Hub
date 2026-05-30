@@ -458,11 +458,6 @@ export function HomePage() {
     : isExpertMode
       ? "Кабинет эксперта"
       : "Кабинет преподавателя";
-  const pageDescription = isAdminMode
-    ? "Администратор управляет учетными записями, группами, дисциплинами и имеет доступ ко всей системе."
-    : isExpertMode
-      ? "Эксперт работает с дисциплинами и графами знаний, не управляя студенческими и преподавательскими учетными записями."
-      : "Преподаватель работает со своими дисциплинами, траекториями и студентами закрепленных групп.";
   const canCreateDiscipline =
     !busyAction &&
     disciplineName.trim() &&
@@ -2011,9 +2006,6 @@ export function HomePage() {
             <div>
               <p className="card__eyebrow">Мои дисциплины</p>
               <h2>Список дисциплин эксперта</h2>
-              <p className="card__text">
-                Эксперт работает только с графом знаний. Траектории здесь недоступны, это зона преподавателя.
-              </p>
             </div>
           </div>
 
@@ -2523,7 +2515,6 @@ export function HomePage() {
             <div>
               <p className="card__eyebrow">Создание</p>
               <h2>Создание пользователей</h2>
-              <p className="card__text">Выберите тип учетной записи и заполните форму ниже.</p>
             </div>
             <button
               className="secondary-button admin-section-toggle"
@@ -2690,9 +2681,6 @@ export function HomePage() {
           <div className="admin-section-heading">
             <p className="card__eyebrow">Дисциплины</p>
             <h2>Дисциплины и закрепление дисциплин</h2>
-            <p className="card__text">
-              Администратор создает дисциплины и назначает преподавателей. Граф знаний ведет эксперт и этот блок здесь не редактируется.
-            </p>
           </div>
 
           <div className="admin-discipline-split">
@@ -3597,7 +3585,6 @@ export function HomePage() {
         <div className="home-hero__body">
           <div className="home-hero__copy">
             <h1>{pageTitle}</h1>
-            <p className="home-hero__text">{pageDescription}</p>
           </div>
 
           {isTeacherMode ? (
@@ -3722,12 +3709,7 @@ export function HomePage() {
                         <span>Преподаватель</span>
                         <input value={currentTeacher?.name ?? ""} readOnly />
                       </label>
-                    ) : (
-                      <div className="home-hint">
-                        Эксперт создает дисциплину без назначения преподавателя. Преподавателя позже
-                        может указать администратор.
-                      </div>
-                    )
+                    ) : null
                   ) : null}
 
                   {!isAdminMode ? (

@@ -122,9 +122,6 @@ export default function AdminUserProfilePage() {
         <div>
           <p className="hero__eyebrow">Просмотр профиля</p>
           <h1>{user?.name ?? ROLE_LABELS[role]}</h1>
-          <p className="hero__subtitle">
-            Администратор просматривает профиль пользователя без входа в его учетную запись.
-          </p>
         </div>
         <div className="hero__controls">
           <button className="ghost-button" onClick={() => navigate(getSessionHomePath())} type="button">

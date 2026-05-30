@@ -3256,12 +3256,17 @@ body:has(.session-profile-header) .home-shell {
 
 .student-task-answer__option {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   gap: 10px;
-  padding: 10px 12px;
+  padding: 14px 16px;
   border-radius: 14px;
   border: 1px solid rgba(31, 55, 84, 0.08);
   background: rgba(255, 255, 255, 0.72);
+}
+
+.student-task-answer__option span {
+  font-size: 1rem;
+  line-height: 1.45;
 }
 
 .trajectory-task-card__chips,
@@ -3398,6 +3403,10 @@ body:has(.session-profile-header) .home-shell {
   gap: 12px;
 }
 
+.student-control-header__meta .hero__chip {
+  white-space: nowrap;
+}
+
 .student-control-layout {
   width: min(1180px, calc(100% - 48px));
   margin: 0 auto 48px;
@@ -3408,7 +3417,24 @@ body:has(.session-profile-header) .home-shell {
 }
 
 .student-control-task {
+  display: grid;
+  gap: 18px;
+  align-content: start;
   min-height: 420px;
+}
+
+.student-control-task__task-topline {
+  display: flex;
+  justify-content: flex-end;
+  margin-bottom: 8px;
+}
+
+.student-control-task__prompt {
+  margin: 0;
+  color: #2c59ba;
+  font-size: clamp(1.28rem, 1.75vw, 1.68rem);
+  font-weight: 900;
+  line-height: 1.38;
 }
 
 .student-control-notice {
@@ -3439,6 +3465,240 @@ body:has(.session-profile-header) .home-shell {
 .student-control-panel {
   position: sticky;
   top: 20px;
+}
+
+.student-control-panel > .student-control-adaptive-panel {
+  display: none;
+}
+
+.student-control-adaptive-panel {
+  display: grid;
+  gap: 14px;
+  margin-bottom: 18px;
+  padding: 18px;
+  border-radius: 22px;
+  background:
+    radial-gradient(circle at top right, rgba(64, 142, 255, 0.12), transparent 36%),
+    linear-gradient(180deg, rgba(241, 247, 255, 0.98), rgba(232, 241, 255, 0.94));
+  border: 1px solid rgba(74, 120, 192, 0.18);
+}
+
+.student-control-adaptive-panel--horizontal {
+  margin-top: 4px;
+  margin-bottom: 0;
+}
+
+.student-control-adaptive-panel--horizontal .student-control-adaptive-panel__header {
+  align-items: center;
+}
+
+.student-control-adaptive-panel--horizontal .student-control-adaptive-panel__metrics {
+  grid-template-columns: repeat(2, minmax(180px, 1fr));
+}
+
+.student-control-adaptive-panel--horizontal .student-control-adaptive-panel__notes {
+  grid-template-columns: minmax(0, 1.2fr) minmax(240px, 0.8fr);
+}
+
+.student-control-adaptive-panel__header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.student-control-adaptive-panel__header h3 {
+  margin: 4px 0 0;
+  color: #1f3550;
+  font-size: 1.12rem;
+}
+
+.student-control-adaptive-panel__chip {
+  border-radius: 999px;
+  padding: 8px 11px;
+  font-size: 0.78rem;
+  font-weight: 900;
+  line-height: 1.2;
+  white-space: nowrap;
+}
+
+.student-control-adaptive-panel__chip--steady {
+  background: rgba(36, 145, 92, 0.14);
+  color: #0f6b43;
+}
+
+.student-control-adaptive-panel__chip--warning {
+  background: rgba(219, 153, 53, 0.16);
+  color: #8a5b13;
+}
+
+.student-control-adaptive-panel__chip--critical {
+  background: rgba(199, 81, 81, 0.16);
+  color: #8f2d2d;
+}
+
+.student-control-adaptive-panel__summary {
+  margin: 0;
+  color: #39526f;
+  line-height: 1.55;
+}
+
+.student-control-adaptive-panel__route {
+  display: grid;
+  gap: 6px;
+  padding: 12px 14px;
+  border-radius: 16px;
+  border: 1px solid rgba(72, 105, 160, 0.14);
+  background: rgba(255, 255, 255, 0.78);
+}
+
+.student-control-adaptive-panel__route strong {
+  color: #1f3550;
+}
+
+.student-control-adaptive-panel__route span {
+  color: #39526f;
+  line-height: 1.5;
+}
+
+.student-control-adaptive-panel__route--error {
+  background: rgba(255, 236, 226, 0.92);
+  border-color: rgba(210, 109, 63, 0.2);
+}
+
+.student-control-adaptive-panel__route--fragile_success {
+  background: rgba(255, 245, 222, 0.92);
+  border-color: rgba(214, 164, 64, 0.22);
+}
+
+.student-control-adaptive-panel__metrics {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.student-control-adaptive-panel__metric {
+  display: grid;
+  gap: 4px;
+  padding: 12px 14px;
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.78);
+  border: 1px solid rgba(69, 104, 164, 0.12);
+}
+
+.student-control-adaptive-panel__metric span {
+  color: #66809d;
+  font-size: 0.78rem;
+  font-weight: 700;
+}
+
+.student-control-adaptive-panel__metric strong {
+  color: #153760;
+  font-size: 1.12rem;
+}
+
+.student-control-adaptive-panel__timeline {
+  display: grid;
+  gap: 8px;
+}
+
+.student-control-adaptive-panel__timeline-bar {
+  height: 10px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: rgba(36, 55, 84, 0.1);
+}
+
+.student-control-adaptive-panel__timeline-fill {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+}
+
+.student-control-adaptive-panel__timeline-fill--steady {
+  background: linear-gradient(135deg, #3ab877, #74d9a7);
+}
+
+.student-control-adaptive-panel__timeline-fill--warning {
+  background: linear-gradient(135deg, #f2ad43, #ffd178);
+}
+
+.student-control-adaptive-panel__timeline-fill--critical {
+  background: linear-gradient(135deg, #e06d5f, #f39a8b);
+}
+
+.student-control-adaptive-panel__timeline-labels {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  color: #65809e;
+  font-size: 0.8rem;
+  font-weight: 800;
+}
+
+.student-control-adaptive-panel__notes {
+  display: grid;
+  gap: 10px;
+}
+
+.student-control-adaptive-panel__note {
+  padding: 12px 14px;
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.78);
+  border: 1px solid rgba(72, 105, 160, 0.12);
+  color: #34516f;
+  line-height: 1.5;
+}
+
+.student-control-adaptive-panel__note--steady {
+  background: rgba(224, 244, 233, 0.88);
+  border-color: rgba(63, 151, 107, 0.18);
+  color: #135d3c;
+}
+
+.student-control-adaptive-panel__note--warning {
+  background: rgba(255, 243, 220, 0.92);
+  border-color: rgba(219, 153, 53, 0.2);
+  color: #7f5413;
+}
+
+.student-control-adaptive-panel__note--critical {
+  background: rgba(255, 229, 229, 0.92);
+  border-color: rgba(199, 81, 81, 0.2);
+  color: #8f2d2d;
+}
+
+.student-control-panel__header {
+  display: flex;
+  align-items: start;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 10px;
+}
+
+.student-control-panel__header h3 {
+  margin: 6px 0 0;
+  color: #1f3550;
+  font-size: 1.18rem;
+}
+
+.student-control-panel__toggle {
+  min-height: 40px;
+  white-space: nowrap;
+}
+
+.student-control-panel__summary {
+  margin: 0 0 8px;
+  color: #59708f;
+  font-size: 0.92rem;
+  line-height: 1.4;
+}
+
+.student-control-panel__summary--muted {
+  margin-top: 12px;
+  margin-bottom: 0;
+  color: #7487a2;
 }
 
 .mastery-row {
@@ -3522,6 +3782,14 @@ body:has(.session-profile-header) .home-shell {
 
   .student-control-panel {
     position: static;
+  }
+
+  .student-control-adaptive-panel__metrics {
+    grid-template-columns: 1fr;
+  }
+
+  .student-control-adaptive-panel--horizontal .student-control-adaptive-panel__notes {
+    grid-template-columns: 1fr;
   }
 
   .home-shell {
@@ -4505,6 +4773,29 @@ body:has(.session-profile-header) .home-shell {
   white-space: nowrap;
 }
 
+.trajectory-sidebar-detail {
+  display: grid;
+  gap: 14px;
+  padding: 18px;
+  border-radius: 20px;
+  border: 1px solid rgba(31, 55, 84, 0.08);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.9), rgba(238, 245, 252, 0.82)),
+    rgba(255, 255, 255, 0.82);
+}
+
+.trajectory-sidebar-detail__header {
+  display: grid;
+  gap: 6px;
+}
+
+.trajectory-sidebar-detail__header h2 {
+  margin: 0;
+  color: #1f3550;
+  font-size: 1.45rem;
+  line-height: 1.15;
+}
+
 .trajectory-detail-page .hero {
   display: grid;
   gap: 18px;
@@ -4691,8 +4982,8 @@ body:has(.session-profile-header) .home-shell {
 }
 
 .trajectory-page .graph-node {
-  padding: 16px 18px 28px;
-  gap: 9px;
+  padding: 18px 20px 26px;
+  gap: 10px;
 }
 
 .trajectory-page .graph-node__header {
@@ -4711,8 +5002,8 @@ body:has(.session-profile-header) .home-shell {
 }
 
 .trajectory-page .graph-node__title {
-  font-size: 1rem;
-  line-height: 1.2;
+  font-size: 1.06rem;
+  line-height: 1.24;
   overflow-wrap: anywhere;
 }
 
@@ -4722,8 +5013,8 @@ body:has(.session-profile-header) .home-shell {
 }
 
 .trajectory-page .graph-node__description {
-  font-size: 0.86rem;
-  line-height: 1.32;
+  font-size: 0.9rem;
+  line-height: 1.4;
 }
 
 .trajectory-page .graph-node__metrics {

@@ -1,3 +1,4 @@
+import json
 from uuid import UUID
 
 from fastapi import APIRouter, HTTPException, Query, status
@@ -29,6 +30,7 @@ from app.models.enums import (
     TopicKnowledgeElementRole,
 )
 from app.schemas import (
+    StudentAdaptiveStatusRead,
     StudentTopicControlElementRead,
     StudentTopicControlNextTopicRead,
     StudentTopicControlRead,
@@ -83,6 +85,171 @@ def _control_task_options():
                 KnowledgeElement.competence_type,
             ),
         ),
+        selectinload(LearningTrajectoryTask.related_elements).options(
+            lazyload("*"),
+            load_only(LearningTrajectoryTaskElement.element_id),
+        ),
+        selectinload(LearningTrajectoryTask.checked_relations)
+        .selectinload(LearningTrajectoryTaskRelation.relation)
+        .options(
+            lazyload("*"),
+            load_only(
+                KnowledgeElementRelation.id,
+                KnowledgeElementRelation.source_element_id,
+                KnowledgeElementRelation.target_element_id,
+            ),
+        ),
+    )
+
+
+def _parse_adaptive_feedback(progress: StudentTaskProgress | None) -> dict:
+    if progress is None or not progress.last_feedback_json:
+        return {}
+    try:
+        parsed = json.loads(progress.last_feedback_json)
+    except json.JSONDecodeError:
+        return {}
+    return parsed if isinstance(parsed, dict) else {}
+
+
+def _latest_adaptive_signal(
+    candidates: list[tuple[LearningTrajectoryTask, StudentTaskProgress | None]],
+) -> tuple[dict, dict] | tuple[None, None]:
+    latest_feedback: dict | None = None
+    latest_signal: dict | None = None
+    latest_answered_at = None
+    for _task, progress in candidates:
+        if progress is None or progress.last_answered_at is None:
+            continue
+        feedback = _parse_adaptive_feedback(progress)
+        adaptive_signal = feedback.get("adaptive_signal")
+        if not isinstance(adaptive_signal, dict):
+            continue
+        if adaptive_signal.get("kind") not in {"error", "fragile_success"}:
+            continue
+        if latest_answered_at is None or progress.last_answered_at > latest_answered_at:
+            latest_answered_at = progress.last_answered_at
+            latest_feedback = feedback
+            latest_signal = adaptive_signal
+
+    if latest_signal is None or latest_feedback is None:
+        return None, None
+    return latest_signal, latest_feedback
+
+
+def _build_adaptive_status(
+    *,
+    selected: tuple[LearningTrajectoryTask, StudentTaskProgress | None, float] | None,
+    candidate_pool: list[tuple[LearningTrajectoryTask, StudentTaskProgress | None]],
+    practice_stage: str,
+    continue_practice: bool,
+    continue_practice_available: bool,
+    has_tasks: bool,
+    show_next_topic_prompt: bool,
+) -> StudentAdaptiveStatusRead:
+    latest_signal, latest_feedback = _latest_adaptive_signal(candidate_pool)
+
+    if selected is None:
+        if continue_practice_available and not continue_practice and has_tasks:
+            return StudentAdaptiveStatusRead(
+                mode="practice_available",
+                title="Основной порог уже достигнут",
+                summary="В обычном режиме подходящие задания закончились, но можно включить дополнительную практику для закрепления.",
+            )
+        if continue_practice and has_tasks:
+            return StudentAdaptiveStatusRead(
+                mode="extra_practice_complete",
+                title="Дополнительная практика исчерпана",
+                summary="Система не нашла новых заданий даже в режиме дополнительной практики.",
+            )
+        if not has_tasks:
+            return StudentAdaptiveStatusRead(
+                mode="no_tasks",
+                title="Для этого шага пока нет заданий",
+                summary="В текущем состоянии темы система не может выдать задание на выбранном этапе контроля.",
+            )
+        return StudentAdaptiveStatusRead(
+            mode="idle",
+            title="Подходящее задание не выбрано",
+            summary="Система не нашла задание, которое удовлетворяет текущим ограничениям отбора.",
+        )
+
+    _task, _progress, recommendation_score = selected
+    expected_duration_seconds = None
+    last_duration_seconds = None
+    signal_kind = None
+    if latest_signal is not None:
+        signal_kind = str(latest_signal.get("kind") or "")
+        expected_duration_seconds = (
+            int(latest_signal["expected_duration_seconds"])
+            if latest_signal.get("expected_duration_seconds") is not None
+            else None
+        )
+        last_duration_seconds = (
+            int(latest_feedback["duration_seconds"])
+            if latest_feedback is not None and latest_feedback.get("duration_seconds") is not None
+            else None
+        )
+
+    if signal_kind == "error":
+        return StudentAdaptiveStatusRead(
+            mode="recovery",
+            title="Маршрут после недавней ошибки",
+            summary="Следующий шаг выбран как повторная проверка после неверного ответа, чтобы уточнить понимание и закрепить слабое место.",
+            signal_kind=signal_kind,
+            recommendation_score=round(recommendation_score, 4),
+            last_duration_seconds=last_duration_seconds,
+            expected_duration_seconds=expected_duration_seconds,
+        )
+
+    if signal_kind == "fragile_success":
+        return StudentAdaptiveStatusRead(
+            mode="fragile_success",
+            title="Подтверждение после медленного верного ответа",
+            summary="Система выбрала дополнительный проверочный шаг, потому что прошлый ответ был верным, но занял больше ожидаемого времени.",
+            signal_kind=signal_kind,
+            recommendation_score=round(recommendation_score, 4),
+            last_duration_seconds=last_duration_seconds,
+            expected_duration_seconds=expected_duration_seconds,
+        )
+
+    if continue_practice:
+        return StudentAdaptiveStatusRead(
+            mode="extra_practice",
+            title="Режим дополнительной практики",
+            summary="Основной порог уже достигнут, поэтому система продолжает закрепление темы дополнительными заданиями.",
+            recommendation_score=round(recommendation_score, 4),
+        )
+
+    if practice_stage == "master":
+        return StudentAdaptiveStatusRead(
+            mode="master_stage",
+            title="Текущий путь: этап «Владеть»",
+            summary="Система перешла к заданиям, которые проверяют устойчивое применение знаний и требуют более содержательного ответа.",
+            recommendation_score=round(recommendation_score, 4),
+        )
+
+    if practice_stage == "can":
+        return StudentAdaptiveStatusRead(
+            mode="can_stage",
+            title="Текущий путь: этап «Уметь»",
+            summary="Порог по знаниям уже пройден, поэтому система выдает практические задания на применение темы.",
+            recommendation_score=round(recommendation_score, 4),
+        )
+
+    if show_next_topic_prompt:
+        return StudentAdaptiveStatusRead(
+            mode="topic_threshold_passed",
+            title="Порог по знаниям уже пройден",
+            summary="Тема уже позволяет двигаться дальше, но система все еще может выдавать задания для закрепления или перехода на следующий этап.",
+            recommendation_score=round(recommendation_score, 4),
+        )
+
+    return StudentAdaptiveStatusRead(
+        mode="regular",
+        title="Стандартный шаг адаптивного контроля",
+        summary="Система выбрала следующее задание по текущему прогрессу, порогам темы и приоритету кандидатов.",
+        recommendation_score=round(recommendation_score, 4),
     )
 
 
@@ -377,6 +544,15 @@ async def _build_student_topic_control(
         mastery_by_element_id,
         degree_by_element_id,
     )
+    adaptive_status = _build_adaptive_status(
+        selected=selected,
+        candidate_pool=candidate_pool,
+        practice_stage=normalized_practice_stage,
+        continue_practice=continue_practice,
+        continue_practice_available=continue_practice_available,
+        has_tasks=has_tasks,
+        show_next_topic_prompt=show_next_topic_prompt,
+    )
 
     current_task = None
     if selected is not None:
@@ -412,6 +588,7 @@ async def _build_student_topic_control(
         master_practice_available=master_practice_available,
         show_next_topic_prompt=show_next_topic_prompt,
         next_topic=next_topic_read,
+        adaptive_status=adaptive_status,
         elements=elements,
         current_task=current_task,
     )

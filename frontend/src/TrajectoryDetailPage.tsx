@@ -263,7 +263,7 @@ function clampTaskDifficulty(value: number) {
 
 function estimateTrajectoryNodeHeight(topic: Topic) {
   const text = topic.description?.trim() || "Описание темы пока не добавлено.";
-  return Math.min(360, 196 + Math.ceil(text.length / 30) * 16);
+  return Math.min(420, 230 + Math.ceil(text.length / 26) * 18);
 }
 
 function estimateTrajectoryElementNodeHeight(element: KnowledgeElement) {
@@ -283,7 +283,8 @@ function buildDetailValueKey(label: string, value: string) {
 
 function trajectoryTopicColumnCount(totalTopics: number) {
   if (totalTopics <= 3) return totalTopics || 1;
-  if (totalTopics <= 8) return 4;
+  if (totalTopics <= 6) return 3;
+  if (totalTopics <= 10) return 4;
   return 5;
 }
 
@@ -599,9 +600,9 @@ function buildTrajectoryScene(
     nodes.push({
       id: nodeId,
       text: topic.name,
-      x: 120 + col * 300,
+      x: 120 + col * 320,
       y: 160 + row * 312,
-      width: 270,
+      width: 292,
       height: estimateTrajectoryNodeHeight(topic),
       nodeShape: 1,
       data,
@@ -611,9 +612,7 @@ function buildTrajectoryScene(
       title: topic.name,
       subtitle: `Шаг ${index + 1} в траектории`,
       description: topic.description ?? "Описание темы пока не добавлено.",
-      chips: [
-        { label: `Элементов: ${selectedElementsCount}`, tone: "formed" },
-      ],
+      chips: [],
       stats: [
         { label: "Требуется ЗУН", value: String(requiredCount) },
         { label: "Формируется ЗУН", value: String(formedCount) },
@@ -715,7 +714,7 @@ function buildStudentTrajectoryTopicsScene(
       title: topic.name,
       subtitle: `Шаг ${index + 1}`,
       description: topic.description ?? "Описание темы пока не добавлено.",
-      metrics: [`${topicElements.length} элементов`, `Балл ${topicMastery}`],
+      metrics: [],
       progressValue: topicMastery,
       progressLabel: "Прогресс темы",
       hint: isUnlocked ? "Открыть тему" : "Тема закрыта",
@@ -729,9 +728,9 @@ function buildStudentTrajectoryTopicsScene(
     nodes.push({
       id: nodeId,
       text: topic.name,
-      x: 120 + col * 300,
+      x: 120 + col * 320,
       y: 160 + row * 312,
-      width: 270,
+      width: 292,
       height: estimateTrajectoryNodeHeight(topic),
       nodeShape: 1,
       data,
@@ -3232,10 +3231,6 @@ export default function TrajectoryDetailPage() {
             {uncoveredTrajectoryElementsCount ? ` (${uncoveredTrajectoryElementsCount})` : " (0)"}
           </summary>
           <div className="editor-form">
-            <p className="card__text">
-              Здесь показаны элементы текущей траектории, для которых ещё нет ни одного задания, где
-              они выступают ключевым проверяемым элементом.
-            </p>
             {uncoveredTrajectoryElementsByTopic.length ? (
               <div className="trajectory-task-coverage__topics">
                 {uncoveredTrajectoryElementsByTopic.map((topicGroup) => (
@@ -3259,11 +3254,6 @@ export default function TrajectoryDetailPage() {
 
         {tasksModalSection === "create" ? (
           <>
-            <p className="card__text">
-              Шаблон задаёт структуру задания. Для всех шаблонов, кроме ручного, тип задания фиксирован.
-              Варианты ответа и пары выбираются через элементы выбранной темы.
-            </p>
-
             {allTrajectoryPrimaryElements.length ? (
               <div className="trajectory-task-editor">
                 <div className="editor-tabs trajectory-task-competence-tabs">
@@ -3283,7 +3273,6 @@ export default function TrajectoryDetailPage() {
                   <div className="trajectory-task-step__header">
                     <span className="trajectory-task-step__eyebrow">Шаг 1</span>
                     <strong>Тема и ключевой элемент</strong>
-                    <p className="trajectory-task-step__hint">Сначала выбери тему, ключевой элемент и базовый шаблон задания.</p>
                   </div>
                 <div className="trajectory-task-editor__grid trajectory-task-editor__grid--two">
                   <label className="field">
@@ -3337,7 +3326,6 @@ export default function TrajectoryDetailPage() {
                   <div className="trajectory-task-step__header">
                     <span className="trajectory-task-step__eyebrow">Шаг 2</span>
                     <strong>Формулировка задания</strong>
-                    <p className="trajectory-task-step__hint">Заполни название и описание задания, чтобы студент сразу понимал, что от него требуется.</p>
                   </div>
                 <div className="trajectory-task-editor__grid">
                   {taskCompetenceTab === "know" ? (
@@ -3403,7 +3391,6 @@ export default function TrajectoryDetailPage() {
                   <div className="trajectory-task-step__header">
                     <span className="trajectory-task-step__eyebrow">Шаг 3</span>
                     <strong>Параметры по типу компетенции</strong>
-                    <p className="trajectory-task-step__hint">Настрой шаблон и специальные параметры, которые зависят от уровня компетенции и формата задания.</p>
                   </div>
                 {taskCompetenceTab === "know" ? (
                   <div className="trajectory-task-editor__grid trajectory-task-editor__grid--two">
@@ -3450,9 +3437,6 @@ export default function TrajectoryDetailPage() {
                 {taskCompetenceTab === "can" ? (
                   <div className="trajectory-task-related">
                     <strong>Настройка задания уровня «Уметь»</strong>
-                    <p className="card__text">
-                      Преподаватель задает входные данные операции. Студент увидит их и отправит итоговый ответ.
-                    </p>
                     {!availablePrimaryElements.length ? (
                       <p className="form-error">
                         В выбранной теме траектории пока нет элементов «Уметь».
@@ -3494,11 +3478,6 @@ export default function TrajectoryDetailPage() {
                 {taskCompetenceTab === "master" ? (
                   <div className="trajectory-task-related">
                     <strong>Настройка задания уровня «Владеть»</strong>
-                    <p className="card__text">
-                      Обязательные связанные элементы подставляются автоматически: элементы «Уметь» по связи
-                      «автоматизирует» и элементы «Знать» по связи «опирается на» в рамках этой темы.
-                      Дополнительно можно отметить связи с другими элементами «Владеть» этой же темы.
-                    </p>
                     <label className="field">
                       <span>Подсказка в поле ответа</span>
                       <input
@@ -3544,14 +3523,10 @@ export default function TrajectoryDetailPage() {
                   <div className="trajectory-task-step__header">
                     <span className="trajectory-task-step__eyebrow">Шаг 4</span>
                     <strong>Связанные элементы и связи</strong>
-                    <p className="trajectory-task-step__hint">Выбери элементы и связи, которые реально участвуют в задании и должны учитываться при проверке.</p>
                   </div>
                 {taskCompetenceTab === "know" ? (
                   <div className="trajectory-task-related">
                   <strong>Релевантные связанные элементы</strong>
-                  <p className="card__text">
-                    Эти элементы напрямую связаны с ключевым элементом и обычно подходят для вариантов ответа.
-                  </p>
                   <div className="trajectory-task-related__list">
                     {relevantTaskElements.length ? (
                       relevantTaskElements.map((element) => (
@@ -3576,9 +3551,6 @@ export default function TrajectoryDetailPage() {
                   </div>
 
                   <strong>Другие элементы темы</strong>
-                  <p className="card__text">
-                    Эти элементы можно использовать как дополнительные варианты ответа или дистракторы.
-                  </p>
                   <div className="trajectory-task-related__list">
                     {otherTaskElements.length ? (
                       otherTaskElements.map((element) => (
@@ -3627,9 +3599,6 @@ export default function TrajectoryDetailPage() {
                 {taskCompetenceTab === "know" && taskTemplateKind === "manual" && taskType === "multiple_choice" ? (
                   <div className="trajectory-task-related">
                     <strong>Правильные варианты</strong>
-                    <p className="card__text">
-                      Отметь, какие из выбранных элементов должны считаться правильными. Неотмеченные элементы станут дистракторами, но при необходимости можно отметить все выбранные варианты как правильные.
-                    </p>
                     <div className="trajectory-task-related__list">
                       {taskRelatedElementIds.length ? (
                         taskRelatedElementIds.map((elementId) => (
@@ -3653,9 +3622,6 @@ export default function TrajectoryDetailPage() {
                 {taskCompetenceTab === "know" && (taskTemplateKind === "property_multiple" || taskTemplateKind === "contains_multiple") ? (
                   <div className="trajectory-task-related">
                     <strong>Автоматическое определение правильных вариантов</strong>
-                    <p className="card__text">
-                      Система сама выделит правильные ответы по связям графа. Для этого шаблона преподаватель выбирает только элементы темы.
-                    </p>
                     <div className="trajectory-task-preview__items">
                       {autoMultipleChoiceBuckets.correctIds.map((elementId) => (
                         <span className="trajectory-task-preview__item trajectory-task-preview__item--correct" key={`auto-correct-${elementId}`}>
@@ -3674,9 +3640,6 @@ export default function TrajectoryDetailPage() {
                 {taskCompetenceTab === "know" ? (
                   <div className="trajectory-task-related">
                     <strong>Проверяемые связи</strong>
-                    <p className="card__text">
-                      Выбери отношения между выбранными элементами, которые реально проверяет это задание.
-                    </p>
                     {availableCheckedRelations.length ? (
                       <div className="trajectory-task-related__list">
                         {availableCheckedRelations.map((relation) => (
@@ -3702,10 +3665,6 @@ export default function TrajectoryDetailPage() {
                 {taskCompetenceTab === "can" ? (
                   <div className="trajectory-task-related">
                     <strong>Проверяемые связи</strong>
-                    <p className="card__text">
-                      Связи «реализует» с элементами «Знать» подставляются автоматически и остаются обязательными.
-                      Дополнительно можно отметить связи с другими элементами «Уметь» этой темы.
-                    </p>
                     <div className="trajectory-task-related__list">
                       {mandatorySkillRelations.map((relation) => (
                         <label className="trajectory-task-related__item" key={relation.id}>
@@ -3741,10 +3700,6 @@ export default function TrajectoryDetailPage() {
                 {taskCompetenceTab === "master" ? (
                   <div className="trajectory-task-related">
                     <strong>Проверяемые связи</strong>
-                    <p className="card__text">
-                      Связи «автоматизирует» и «опирается на» подставляются автоматически и остаются обязательными.
-                      Дополнительно можно отметить связи с другими элементами «Владеть» этой темы.
-                    </p>
                     <div className="trajectory-task-related__list">
                       {mandatoryMasterRelations.map((relation) => (
                         <label className="trajectory-task-related__item" key={`master-mandatory-${relation.id}`}>
@@ -3782,7 +3737,6 @@ export default function TrajectoryDetailPage() {
                   <div className="trajectory-task-step__header">
                     <span className="trajectory-task-step__eyebrow">Шаг 5</span>
                     <strong>Сложность</strong>
-                    <p className="trajectory-task-step__hint">Последним шагом задай числовую сложность задания.</p>
                   </div>
                   <div className="trajectory-task-editor__grid trajectory-task-editor__grid--single-two">
                     <label className="field">
@@ -3931,13 +3885,6 @@ export default function TrajectoryDetailPage() {
         <div>
           <p className="hero__eyebrow">Навигация</p>
           <h1>{trajectory?.name ?? "Траектория изучения"}</h1>
-          <p className="hero__subtitle">
-            {isTeacherReviewMode
-              ? "Режим проверки работ студента по заданиям уровня «Владеть»."
-              : isStudentMode
-              ? "Студент видит только порядок тем и элементы, которые будут изучаться в каждой теме."
-              : "Просмотр сохранённой траектории и быстрый редактор порядка тем."}
-          </p>
         </div>
 
         <div className="hero__controls trajectory-detail-hero-actions">
@@ -4029,6 +3976,41 @@ export default function TrajectoryDetailPage() {
             </>
           )}
         </div>
+        {showStudentView ? (
+          <section className="trajectory-sidebar-detail">
+            {detail ? (
+              <>
+                <div className="trajectory-sidebar-detail__header">
+                  <span className="card__eyebrow">Текущая тема</span>
+                  <h2>{detail.title}</h2>
+                </div>
+                {detail.subtitle ? <p className="card__lead">{detail.subtitle}</p> : null}
+                {detail.description ? <p className="card__text">{detail.description}</p> : null}
+
+                <div className="stat-grid">
+                  {(detail.stats ?? []).map((stat) => (
+                    <div className="stat" key={stat.label}>
+                      <span>{stat.label}</span>
+                      {Array.isArray(stat.value) ? (
+                        <ul className="stat__value-list">
+                          {stat.value.map((value) => (
+                            <li key={buildDetailValueKey(stat.label, value)}>{value}</li>
+                          ))}
+                        </ul>
+                      ) : (
+                        <strong>{stat.value}</strong>
+                      )}
+                    </div>
+                  ))}
+                </div>
+
+                {detail.footnote ? <p className="card__footnote">{detail.footnote}</p> : null}
+              </>
+            ) : (
+              <p className="card__text">Выбери тему на графе, чтобы увидеть детали этого шага.</p>
+            )}
+          </section>
+        ) : null}
         </aside>
 
         <main className="trajectory-detail-layout">
@@ -4040,13 +4022,6 @@ export default function TrajectoryDetailPage() {
               </span>
               <h2>{trajectory?.name ?? "Загрузка"}</h2>
             </div>
-            <p className="graph-toolbar__hint">
-              {showStudentView
-                ? studentView.level === "topics"
-                  ? "Открой тему, чтобы увидеть только те элементы, которые студент изучит на этом шаге."
-                  : "Показаны только формируемые элементы выбранной темы. Нажми на центральную карточку темы, чтобы вернуться."
-                : "Зелёные стрелки показывают порядок прохождения, синие пунктирные связи показывают зависимости."}
-            </p>
           </div>
 
           <div className="graph-surface">
@@ -4087,6 +4062,7 @@ export default function TrajectoryDetailPage() {
           </div>
         </section>
 
+        {!showStudentView ? (
         <aside className="inspector">
           <section className="card card--soft">
             <div className="card__header">
@@ -4125,13 +4101,10 @@ export default function TrajectoryDetailPage() {
 
                 {detail.footnote ? <p className="card__footnote">{detail.footnote}</p> : null}
               </>
-            ) : (
-              <p className="card__text">
-                Выдели тему или элемент на графе, чтобы увидеть его описание и связанные вершины.
-              </p>
-            )}
+            ) : null}
           </section>
         </aside>
+        ) : null}
 
         {studentPreviewOpen && studentIdFromQuery && false ? (
           <section className="card card--soft trajectory-student-topic-panel">
@@ -4142,10 +4115,6 @@ export default function TrajectoryDetailPage() {
               </div>
               <span className="hero__chip">{selectedTopicStudentTasks.length} Р·Р°РґР°РЅРёР№</span>
             </div>
-            <p className="card__text">
-              Выбери тему на графе. Ниже показываются задания, связанные с элементами этой темы.
-            </p>
-
             {selectedTopicStudentTasks.length ? (
               <div className="student-task-list">
                 {selectedTopicStudentTasks.map((task) => (
@@ -4163,7 +4132,7 @@ export default function TrajectoryDetailPage() {
                     <p>{task.prompt}</p>
 
                     <div className="student-task-card__progress">
-                      <span>Статус: {task.progress.status}</span>
+                      <span>Статус: {studentTaskProgressLabel(task.progress.status)}</span>
                       <span>Попыток: {task.progress.attempts_count}</span>
                       <span>Последний балл: {task.progress.last_score ?? "еще нет"}</span>
                       <span>Лучший балл: {task.progress.best_score ?? "еще нет"}</span>
@@ -4209,11 +4178,6 @@ export default function TrajectoryDetailPage() {
               </div>
               <span className="hero__chip">{statusLabel(trajectory.status)}</span>
             </div>
-            <p className="card__text">
-              Так студент увидит назначенную последовательность: темы идут по шагам, внутри каждой
-              темы показаны выбранные формируемые элементы и их пороги.
-            </p>
-
             {topicOrder.length ? (
               <div className="trajectory-preview-list">
                 {topicOrder.map((topicId, index) => {
@@ -4272,13 +4236,6 @@ export default function TrajectoryDetailPage() {
               </span>
               <span>{trajectory.is_actual ? "Актуальна" : "Устарела"}</span>
             </div>
-          ) : null}
-
-          {!canEditTrajectory && trajectory ? (
-            <p className="card__text">
-              Изменение порядка заблокировано: траектория должна быть черновиком и
-              соответствовать текущей версии графа знаний.
-            </p>
           ) : null}
 
           {topicOrder.length ? (
@@ -4345,10 +4302,6 @@ export default function TrajectoryDetailPage() {
             </div>
             <span className="hero__chip">{tasks.length} Р·Р°РґР°РЅРёР№</span>
           </div>
-
-          <p className="card__text">
-            Основная форма создания заданий теперь открывается через кнопку «Задания» и поддерживает отдельные сценарии для «Знать», «Уметь» и «Владеть».
-          </p>
 
           {allTrajectoryPrimaryElements.length ? (
             <div className="trajectory-task-editor">
@@ -4906,7 +4859,7 @@ export default function TrajectoryDetailPage() {
                         </div>
                         <p>{selectedTopicRecommendedTask.prompt}</p>
                         <div className="student-task-card__progress">
-                          <span>Статус: {selectedTopicRecommendedTask.progress.status}</span>
+                          <span>Статус: {studentTaskProgressLabel(selectedTopicRecommendedTask.progress.status)}</span>
                           <span>Попыток: {selectedTopicRecommendedTask.progress.attempts_count}</span>
                           <span>Последний балл: {selectedTopicRecommendedTask.progress.last_score ?? "еще нет"}</span>
                           <span>Лучший балл: {selectedTopicRecommendedTask.progress.best_score ?? "еще нет"}</span>

@@ -990,10 +990,6 @@ export default function TeacherReviewPage() {
         <div>
           <p className="hero__eyebrow">Проверка работ</p>
           <h1>{teacher?.name ?? "Преподаватель"}</h1>
-          <p className="hero__subtitle">
-            Отдельный экран ручной проверки заданий уровня «Владеть» с двумя режимами
-            просмотра: по темам и по студентам.
-          </p>
         </div>
         <div className="hero__controls">
           <button className="ghost-button" onClick={() => navigate(`/teachers/${teacherId}`)} type="button">

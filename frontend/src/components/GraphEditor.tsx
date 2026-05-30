@@ -2137,15 +2137,8 @@ export function GraphEditor({
                     </option>
                   ))}
                 </select>
-                <small>Новый элемент будет добавлен в тему как формируемый.</small>
               </label>
             )}
-
-            {sortedTopics.length > 0 && !elementCreateTopicId ? (
-              <p className="editor-empty">
-                Привязка к теме необязательна. Если тему не выбирать, элемент будет создан как непривязанный.
-              </p>
-            ) : null}
 
             <button className="primary-button" disabled={!elementName.trim() || !!busyAction}>
               {busyAction === "element-create" ? "Сохраняю..." : "Создать элемент"}
@@ -2652,11 +2645,7 @@ export function GraphEditor({
               />
             </label>
 
-            {!sortedTopics.length ? (
-              <p className="editor-empty">
-                Если тем еще нет, сначала создай тему во вкладке тем и возвращайся к элементам.
-              </p>
-            ) : (
+            {!sortedTopics.length ? null : (
               <label className="field">
                 <span>Тема элемента</span>
                 <select
@@ -2670,25 +2659,17 @@ export function GraphEditor({
                     </option>
                   ))}
                 </select>
-                <small>
-                  {elementCompetence === "can"
-                    ? "Для элемента уровня Уметь тема обязательна: внутри темы нужно выбрать опорные знания."
-                    : "Новый элемент будет добавлен в тему как формируемый."}
-                </small>
               </label>
             )}
 
             {elementCompetence === "can" ? (
               !elementCreateTopicId ? (
-                <p className="editor-empty">
-                  Для элемента уровня Уметь сначала выбери тему.
-                </p>
+                null
               ) : availableKnowledgeForNewSkillElement.length ? (
                 <div className="editor-subsection">
                   <div className="editor-subsection__header">
                     <div>
                       <strong>Связанные элементы темы</strong>
-                      <p>Отметь один или несколько элементов этой темы уровня Знать или Уметь, на которых основано новое умение.</p>
                     </div>
                   </div>
 
@@ -2709,14 +2690,10 @@ export function GraphEditor({
                   </div>
                 </div>
               ) : (
-                <p className="editor-empty">
-                  В выбранной теме пока нет элементов уровней Знать или Уметь, поэтому здесь не с чем связать новое умение.
-                </p>
+                <p className="editor-empty">В выбранной теме пока нет элементов уровней Знать или Уметь.</p>
               )
             ) : sortedTopics.length > 0 && !elementCreateTopicId ? (
-              <p className="editor-empty">
-                Выбери тему по желанию. Если тему не указывать, элемент будет создан без привязки.
-              </p>
+              null
             ) : null}
 
             {elementCompetence === "can" ? (
@@ -2738,9 +2715,7 @@ export function GraphEditor({
 
             {elementCompetence === "master" ? (
               !elementCreateTopicId ? (
-                <p className="editor-empty">
-                  Для элемента уровня «Владеть» сначала выбери тему.
-                </p>
+                null
               ) : (
                 <>
                   <label className="field">
@@ -2769,11 +2744,6 @@ export function GraphEditor({
                         </option>
                       ))}
                     </select>
-                    <small>
-                      После создания элемента «Владеть» автоматически появится связь
-                      «Автоматизирует» с выбранным элементом «Уметь». Выбрать можно только
-                      элементы этой темы, которые уже связаны с алгоритмом.
-                    </small>
                   </label>
 
                   {!availableSkillElementsForMaster.length ? (
@@ -2789,13 +2759,6 @@ export function GraphEditor({
                         <div className="editor-subsection__header">
                           <div>
                             <strong>Объекты предметной области и связи «Опирается на»</strong>
-                            <p>
-                              Стартовый набор знаний берется из связей выбранного элемента
-                              «Уметь» с элементами «Знать», но дополнительно здесь можно
-                              выбрать и любые другие элементы «Знать» этой же темы. Для
-                              каждого сопоставления будет автоматически создана связь
-                              «Опирается на». Обязательные знания нужно покрыть полностью.
-                            </p>
                           </div>
 
                           <button
@@ -3429,10 +3392,6 @@ export function GraphEditor({
           <span className="card__eyebrow">Редактор</span>
         </div>
         <h3>Редактор графа</h3>
-        <p className="card__text">
-          Модальное окно разбито на разделы «Темы», «Элементы» и «Связи». Логика
-          создания темы с требуемыми элементами и добавлением новых элементов сохранена.
-        </p>
 
         <div className="editor-tabs">
           <button

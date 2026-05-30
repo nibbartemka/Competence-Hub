@@ -195,9 +195,6 @@ export function LandingPage() {
 
             <div className="landing-auth-card__header">
               <h1>Авторизация</h1>
-              <p className="landing-auth-card__subtitle">
-                Введите учетные данные для входа в систему
-              </p>
             </div>
           </header>
 

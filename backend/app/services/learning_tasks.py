@@ -2,10 +2,13 @@ import json
 import random
 import re
 from collections import defaultdict
+from math import ceil
 from typing import Any
 from uuid import UUID
 
 from fastapi import HTTPException, status
+from sqlalchemy.exc import NoInspectionAvailable
+from sqlalchemy.inspection import inspect as sa_inspect
 
 from app.algorithm_library import get_operation_contract
 from app.models import (
@@ -89,6 +92,23 @@ BASIC_TASK_MAX_DIFFICULTY = 40
 ADVANCED_UNLOCK_MASTERY = 55
 MASTERY_UPDATE_FACTOR = 0.45
 SUCCESS_SCORE_THRESHOLD = 60
+FULL_SUCCESS_SCORE = 100
+
+KNOW_STAGE_BASE_DURATION_BY_TYPE = {
+    LearningTrajectoryTaskType.SINGLE_CHOICE: 20,
+    LearningTrajectoryTaskType.MULTIPLE_CHOICE: 35,
+    LearningTrajectoryTaskType.MATCHING: 50,
+    LearningTrajectoryTaskType.ORDERING: 65,
+    LearningTrajectoryTaskType.TEXT: 120,
+}
+
+CAN_STAGE_BASE_DURATION_BY_TYPE = {
+    LearningTrajectoryTaskType.SINGLE_CHOICE: 45,
+    LearningTrajectoryTaskType.MULTIPLE_CHOICE: 70,
+    LearningTrajectoryTaskType.MATCHING: 95,
+    LearningTrajectoryTaskType.ORDERING: 120,
+    LearningTrajectoryTaskType.TEXT: 180,
+}
 
 
 def bad_request(detail: str) -> HTTPException:
@@ -731,6 +751,189 @@ def merge_mastery_value(current_value: int | None, score: int) -> int:
     return max(0, min(100, round(next_value)))
 
 
+def _normalize_uuid_like_list(values: list[Any] | None) -> list[str]:
+    if not isinstance(values, list):
+        return []
+    return sorted(
+        {
+            str(value).strip()
+            for value in values
+            if str(value).strip()
+        }
+    )
+
+
+def _single_choice_error_details(answer_payload: dict[str, Any]) -> tuple[str, list[str]] | None:
+    selected_ids = _normalize_uuid_like_list(answer_payload.get("selected_option_ids"))
+    if not selected_ids:
+        return ("choice:no_selection", [])
+    return (f"choice:wrong_option:{selected_ids[0]}", selected_ids[:1])
+
+
+def _multiple_choice_error_details(
+    answer_payload: dict[str, Any],
+    feedback: dict[str, Any],
+) -> tuple[str, list[str]] | None:
+    selected_ids = set(_normalize_uuid_like_list(answer_payload.get("selected_option_ids")))
+    correct_ids = set(_normalize_uuid_like_list(feedback.get("correct_option_ids")))
+    extra_ids = sorted(selected_ids - correct_ids)
+    missed_ids = sorted(correct_ids - selected_ids)
+    if not extra_ids and not missed_ids:
+        return None
+    signature_parts: list[str] = []
+    if extra_ids:
+        signature_parts.append(f"extra:{','.join(extra_ids)}")
+    if missed_ids:
+        signature_parts.append(f"missed:{','.join(missed_ids)}")
+    focus_ids = sorted({*extra_ids, *missed_ids})
+    return (f"multiple:{'|'.join(signature_parts)}", focus_ids)
+
+
+def _matching_error_details(
+    answer_payload: dict[str, Any],
+) -> tuple[str, list[str]] | None:
+    pairings = answer_payload.get("pairings")
+    if not isinstance(pairings, list):
+        return ("matching:invalid_payload", [])
+
+    mismatches: list[str] = []
+    focus_ids: set[str] = set()
+    for pairing in pairings:
+        if not isinstance(pairing, dict):
+            continue
+        left_id = str(pairing.get("left_id", "")).strip()
+        right_id = str(pairing.get("right_id", "")).strip()
+        if not left_id:
+            continue
+        if right_id != left_id:
+            mismatches.append(f"{left_id}->{right_id or 'empty'}")
+            focus_ids.add(left_id)
+            if right_id:
+                focus_ids.add(right_id)
+    if not mismatches:
+        return ("matching:incomplete_or_empty", sorted(focus_ids))
+    return (f"matching:{'|'.join(sorted(mismatches))}", sorted(focus_ids))
+
+
+def _ordering_error_details(
+    answer_payload: dict[str, Any],
+    feedback: dict[str, Any],
+) -> tuple[str, list[str]] | None:
+    submitted_order = _normalize_uuid_like_list(answer_payload.get("ordered_item_ids"))
+    raw_correct_order = feedback.get("correct_order_ids")
+    correct_order = [
+        str(item).strip()
+        for item in raw_correct_order
+        if str(item).strip()
+    ] if isinstance(raw_correct_order, list) else []
+    if not correct_order:
+        return ("ordering:no_reference", [])
+
+    raw_submitted = answer_payload.get("ordered_item_ids")
+    normalized_submitted = [
+        str(item).strip()
+        for item in raw_submitted
+        if str(item).strip()
+    ] if isinstance(raw_submitted, list) else []
+    for index, expected_id in enumerate(correct_order):
+        actual_id = normalized_submitted[index] if index < len(normalized_submitted) else ""
+        if actual_id != expected_id:
+            focus_ids = [expected_id]
+            if actual_id:
+                focus_ids.append(actual_id)
+            return (
+                f"ordering:position:{index}:expected:{expected_id}:actual:{actual_id or 'empty'}",
+                focus_ids,
+            )
+    if len(normalized_submitted) != len(correct_order):
+        return ("ordering:length_mismatch", sorted({*submitted_order, *correct_order}))
+    return None
+
+
+def derive_adaptive_error_details(
+    task: LearningTrajectoryTask,
+    answer_payload: dict[str, Any],
+    feedback: dict[str, Any],
+) -> tuple[str, list[str]] | None:
+    if task.task_type == LearningTrajectoryTaskType.SINGLE_CHOICE:
+        return _single_choice_error_details(answer_payload)
+    if task.task_type == LearningTrajectoryTaskType.MULTIPLE_CHOICE:
+        return _multiple_choice_error_details(answer_payload, feedback)
+    if task.task_type == LearningTrajectoryTaskType.MATCHING:
+        return _matching_error_details(answer_payload)
+    if task.task_type == LearningTrajectoryTaskType.ORDERING:
+        return _ordering_error_details(answer_payload, feedback)
+    return None
+
+
+def duration_tracking_enabled(task: LearningTrajectoryTask) -> bool:
+    competence_type = getattr(getattr(task, "primary_element", None), "competence_type", None)
+    return competence_type != CompetenceType.MASTER
+
+
+def expected_duration_seconds(task: LearningTrajectoryTask) -> int | None:
+    competence_type = getattr(getattr(task, "primary_element", None), "competence_type", None)
+    if competence_type == CompetenceType.MASTER:
+        return None
+
+    if competence_type == CompetenceType.CAN:
+        base_duration = CAN_STAGE_BASE_DURATION_BY_TYPE.get(task.task_type, 60)
+        difficulty_factor = 1.2
+    else:
+        base_duration = KNOW_STAGE_BASE_DURATION_BY_TYPE.get(task.task_type, 30)
+        difficulty_factor = 0.8
+
+    return max(15, ceil(base_duration + task.difficulty * difficulty_factor))
+
+
+def is_fragile_success(
+    task: LearningTrajectoryTask,
+    score: int,
+    duration_seconds: int | None,
+) -> bool:
+    if duration_seconds is None or score < FULL_SUCCESS_SCORE:
+        return False
+    expected_duration = expected_duration_seconds(task)
+    if expected_duration is None:
+        return False
+    return duration_seconds > ceil(expected_duration * 1.6)
+
+
+def enrich_feedback_for_adaptive_control(
+    task: LearningTrajectoryTask,
+    answer_payload: dict[str, Any],
+    feedback: dict[str, Any],
+    *,
+    score: int,
+    duration_seconds: int | None,
+) -> dict[str, Any]:
+    enriched_feedback = dict(feedback)
+    if duration_seconds is not None and duration_tracking_enabled(task):
+        enriched_feedback["duration_seconds"] = duration_seconds
+
+    has_error = score < FULL_SUCCESS_SCORE or not bool(feedback.get("is_correct", False))
+    error_details = derive_adaptive_error_details(task, answer_payload, feedback) if has_error else None
+    if error_details is not None:
+        error_signature, focus_element_ids = error_details
+        enriched_feedback["error_signature"] = error_signature
+        enriched_feedback["focus_element_ids"] = focus_element_ids
+        enriched_feedback["adaptive_signal"] = {
+            "kind": "error",
+            "error_signature": error_signature,
+            "focus_element_ids": focus_element_ids,
+        }
+        return enriched_feedback
+
+    if is_fragile_success(task, score, duration_seconds):
+        expected_duration = expected_duration_seconds(task)
+        enriched_feedback["adaptive_signal"] = {
+            "kind": "fragile_success",
+            "duration_seconds": duration_seconds,
+            "expected_duration_seconds": expected_duration,
+        }
+    return enriched_feedback
+
+
 def _build_master_manual_review_context(task: LearningTrajectoryTask) -> dict[str, Any] | None:
     if task.primary_element.competence_type != CompetenceType.MASTER:
         return None
@@ -845,6 +1048,7 @@ def build_student_task_content_from_snapshot(
             }
             for option in content.get("options", [])
         ]
+        random.Random(seed or str(task.id)).shuffle(options)
         return {
             "options": options,
             "debug_solution": {
@@ -1097,6 +1301,77 @@ def build_relation_maps(
     return outgoing_by_source, degree_by_element_id
 
 
+def _latest_progress_by_primary_element(
+    tasks: list[LearningTrajectoryTask],
+    progress_by_task_id: dict[UUID, StudentTaskProgress],
+) -> dict[UUID, StudentTaskProgress]:
+    latest_by_element_id: dict[UUID, StudentTaskProgress] = {}
+    for task in tasks:
+        progress = progress_by_task_id.get(task.id)
+        if progress is None or progress.last_answered_at is None:
+            continue
+        current = latest_by_element_id.get(task.primary_element_id)
+        if current is None or (
+            current.last_answered_at is not None
+            and progress.last_answered_at > current.last_answered_at
+        ):
+            latest_by_element_id[task.primary_element_id] = progress
+    return latest_by_element_id
+
+
+def _parse_progress_feedback(progress: StudentTaskProgress | None) -> dict[str, Any]:
+    if progress is None or not getattr(progress, "last_feedback_json", None):
+        return {}
+    try:
+        parsed = json.loads(progress.last_feedback_json)
+    except json.JSONDecodeError:
+        return {}
+    return parsed if isinstance(parsed, dict) else {}
+
+
+def _progress_signal(progress: StudentTaskProgress | None) -> dict[str, Any] | None:
+    feedback = _parse_progress_feedback(progress)
+    adaptive_signal = feedback.get("adaptive_signal")
+    if not isinstance(adaptive_signal, dict):
+        return None
+    return adaptive_signal
+
+
+def _loaded_relationship_items(task: LearningTrajectoryTask, attribute: str) -> list[Any]:
+    try:
+        inspection = sa_inspect(task)
+    except NoInspectionAvailable:
+        value = getattr(task, attribute, ())
+        return list(value or ())
+
+    if attribute in inspection.unloaded:
+        return []
+
+    value = getattr(task, attribute, ())
+    return list(value or ())
+
+
+def _task_matches_focus_elements(
+    task: LearningTrajectoryTask,
+    focus_element_ids: set[str],
+) -> bool:
+    if not focus_element_ids:
+        return False
+    if str(task.primary_element_id) in focus_element_ids:
+        return True
+    related_elements = _loaded_relationship_items(task, "related_elements")
+    if any(str(link.element_id) in focus_element_ids for link in related_elements):
+        return True
+    for link in _loaded_relationship_items(task, "checked_relations"):
+        relation = link.relation
+        if (
+            str(relation.source_element_id) in focus_element_ids
+            or str(relation.target_element_id) in focus_element_ids
+        ):
+            return True
+    return False
+
+
 def task_target_mastery(task: LearningTrajectoryTask) -> int:
     trajectory_element = next(
         (
@@ -1183,16 +1458,31 @@ def build_adaptive_candidate_pool(
     tasks_by_primary_element: dict[UUID, list[LearningTrajectoryTask]] = defaultdict(list)
     for task in tasks:
         tasks_by_primary_element[task.primary_element_id].append(task)
+    latest_progress_by_element_id = _latest_progress_by_primary_element(
+        tasks,
+        progress_by_task_id,
+    )
+    prioritized_element_ids = {
+        element_id
+        for element_id, progress in latest_progress_by_element_id.items()
+        if (
+            (signal := _progress_signal(progress)) is not None
+            and signal.get("kind") in {"error", "fragile_success"}
+        )
+    }
 
     candidates: list[tuple[LearningTrajectoryTask, StudentTaskProgress | None]] = []
     for task in tasks:
         if not ignore_prerequisites and not prerequisites_ready(task, mastery_by_element_id, outgoing_by_source):
             continue
 
-        if not task_needs_more_practice(
-            task,
-            mastery_by_element_id,
-            ignore_target_mastery=ignore_target_mastery,
+        if (
+            task.primary_element_id not in prioritized_element_ids
+            and not task_needs_more_practice(
+                task,
+                mastery_by_element_id,
+                ignore_target_mastery=ignore_target_mastery,
+            )
         ):
             continue
 
@@ -1285,7 +1575,45 @@ def select_next_task(
     if not candidates:
         return None
 
-    def sort_key(item: tuple[LearningTrajectoryTask, StudentTaskProgress | None]):
+    latest_signal_task: LearningTrajectoryTask | None = None
+    latest_signal_progress: StudentTaskProgress | None = None
+    latest_signal: dict[str, Any] | None = None
+    for task, progress in candidates:
+        if progress is None or progress.last_answered_at is None:
+            continue
+        signal = _progress_signal(progress)
+        if signal is None or signal.get("kind") not in {"error", "fragile_success"}:
+            continue
+        if latest_signal_progress is None or progress.last_answered_at > latest_signal_progress.last_answered_at:
+            latest_signal_task = task
+            latest_signal_progress = progress
+            latest_signal = signal
+
+    scoped_candidates = candidates
+    if latest_signal_task is not None:
+        signal_candidates = [
+            item
+            for item in candidates
+            if item[0].primary_element_id == latest_signal_task.primary_element_id
+        ]
+        if signal_candidates:
+            scoped_candidates = signal_candidates
+
+        if latest_signal is not None and latest_signal.get("kind") == "error":
+            focus_element_ids = {
+                str(element_id).strip()
+                for element_id in latest_signal.get("focus_element_ids", [])
+                if str(element_id).strip()
+            }
+            matching_focus_candidates = [
+                item
+                for item in scoped_candidates
+                if _task_matches_focus_elements(item[0], focus_element_ids)
+            ]
+            if matching_focus_candidates:
+                scoped_candidates = matching_focus_candidates
+
+    def selection_key(item: tuple[LearningTrajectoryTask, StudentTaskProgress | None]):
         task, progress = item
         attempts_count = progress.attempts_count if progress is not None else 0
         priority = task_priority(task, mastery_by_element_id, degree_by_element_id, progress)
@@ -1293,10 +1621,15 @@ def select_next_task(
             -priority,
             attempts_count,
             task.difficulty,
-            task.created_at,
         )
 
-    task, progress = min(candidates, key=sort_key)
+    best_key = min(selection_key(item) for item in scoped_candidates)
+    best_candidates = [
+        item
+        for item in scoped_candidates
+        if selection_key(item) == best_key
+    ]
+    task, progress = random.choice(best_candidates)
     return (
         task,
         progress,
@@ -1310,7 +1643,7 @@ def _score_single_choice(
 ) -> tuple[int, dict[str, Any]]:
     selected_ids = answer_payload.get("selected_option_ids")
     if not isinstance(selected_ids, list):
-        raise bad_request("Ответ на задание с одним выбором должен содержать selected_option_ids.")
+        raise bad_request("Ответ на задание с одним выбором должен содержать список выбранных вариантов.")
     selected_set = {str(item).strip() for item in selected_ids if str(item).strip()}
     if len(selected_set) != 1:
         return 0, {
@@ -1343,7 +1676,7 @@ def _score_multiple_choice(
 ) -> tuple[int, dict[str, Any]]:
     selected_ids = answer_payload.get("selected_option_ids")
     if not isinstance(selected_ids, list):
-        raise bad_request("Ответ на задание с несколькими вариантами должен содержать selected_option_ids.")
+        raise bad_request("Ответ на задание с несколькими вариантами должен содержать список выбранных вариантов.")
 
     selected_set = {str(item).strip() for item in selected_ids if str(item).strip()}
     correct_set = {
@@ -1384,7 +1717,7 @@ def _score_matching(
 ) -> tuple[int, dict[str, Any]]:
     pairings = answer_payload.get("pairings")
     if not isinstance(pairings, list):
-        raise bad_request("Ответ на сопоставление должен содержать pairings.")
+        raise bad_request("Ответ на сопоставление должен содержать список сопоставлений.")
 
     submitted_mapping: dict[str, str] = {}
     for pairing in pairings:
@@ -1428,7 +1761,7 @@ def _score_ordering(
 ) -> tuple[int, dict[str, Any]]:
     submitted_order = answer_payload.get("ordered_item_ids")
     if not isinstance(submitted_order, list):
-        raise bad_request("Ответ на порядок должен содержать ordered_item_ids.")
+        raise bad_request("Ответ на порядок должен содержать список элементов в выбранном порядке.")
 
     normalized_order = [str(item).strip() for item in submitted_order if str(item).strip()]
     correct_order = [

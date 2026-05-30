@@ -1714,19 +1714,13 @@ export default function TrajectoryGraphBuilder() {
                         );
                       })}
                     </div>
-                  ) : (
-                    <p className="home-hint">
-                      Открой элементы темы и выбери формируемые элементы.
-                    </p>
-                  )}
+                  ) : null}
                 </article>
               );
             })}
           </div>
         ) : (
-          <p className="card__text">
-            Клик по теме на графе добавит ее сюда в конец траектории.
-          </p>
+          <></>
         )}
       </section>
     );
@@ -1735,8 +1729,6 @@ export default function TrajectoryGraphBuilder() {
   function renderSettingsPanelContent() {
     return (
       <>
-        <p className="draft-autosave-note">Черновик автосохраняется в этом браузере.</p>
-
         <div className="trajectory-settings">
           <label className="field">
             <span>Название траектории</span>
@@ -1803,11 +1795,7 @@ export default function TrajectoryGraphBuilder() {
   function renderValidationPanelContent() {
     return (
       <>
-        {!validationRequested ? (
-          <p className="card__text">
-            Нажми «Создать траекторию», и система покажет, что нужно исправить перед сохранением.
-          </p>
-        ) : (
+        {!validationRequested ? null : (
           <>
             {validationErrors.length ? <p className="trajectory-errors-title">Ошибки</p> : null}
             <div className="trajectory-validation trajectory-validation--compact">
@@ -1834,11 +1822,7 @@ export default function TrajectoryGraphBuilder() {
 
   function renderDetailPanelContent() {
     if (!detail) {
-      return (
-        <p className="card__text">
-          Выдели тему или элемент на графе, чтобы увидеть детали и список связанных вершин.
-        </p>
-      );
+      return null;
     }
 
     return (
@@ -1931,10 +1915,6 @@ export default function TrajectoryGraphBuilder() {
         <div className="trajectory-hero__top">
           <p className="hero__eyebrow">Learning path</p>
           <h1>Конструктор траектории</h1>
-          <p className="hero__subtitle">
-            Собираем последовательность прямо из графа знаний: тема выбирается кликом
-            по вершине, элементы выбираются внутри темы.
-          </p>
         </div>
 
         <div className="hero__controls">
@@ -2086,7 +2066,6 @@ export default function TrajectoryGraphBuilder() {
           <section className="trajectory-sidebar__panel trajectory-sidebar__panel--settings">
             <p className="card__eyebrow">Настройки</p>
             <h2>{activeDiscipline?.name ?? "Дисциплина"}</h2>
-            <p className="draft-autosave-note">Черновик автосохраняется в этом браузере.</p>
 
             <div className="trajectory-settings">
               <label className="field">
@@ -2227,11 +2206,7 @@ export default function TrajectoryGraphBuilder() {
 
                 {detail.footnote ? <p className="card__footnote">{detail.footnote}</p> : null}
               </>
-            ) : (
-              <p className="card__text">
-                Выдели тему или элемент на графе, чтобы увидеть детали и список связанных вершин.
-              </p>
-            )}
+            ) : null}
           </section>
 
           <section className="trajectory-sidebar__panel trajectory-sidebar__panel--saved">
@@ -2304,11 +2279,6 @@ export default function TrajectoryGraphBuilder() {
                     К темам
                   </button>
                 ) : null}
-                <p className="graph-toolbar__hint">
-                  {view.level === "topics"
-                    ? "Клик по карточке выбирает тему. Кнопка внутри карточки открывает элементы."
-                    : "Клик по зеленому формируемому элементу добавляет его в траекторию."}
-                </p>
               </div>
             </div>
 
@@ -2322,7 +2292,6 @@ export default function TrajectoryGraphBuilder() {
               ) : !scene || !scene.nodes.length ? (
                 <div className="status-view">
                   <h3>Нет данных для конструктора</h3>
-                  <p>Сначала добавь темы и формируемые элементы в граф знаний.</p>
                 </div>
               ) : (
                 <div className="graph-frame">

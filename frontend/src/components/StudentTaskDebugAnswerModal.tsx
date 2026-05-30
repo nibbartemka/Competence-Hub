@@ -83,7 +83,7 @@ export default function StudentTaskDebugAnswerModal({
       >
         <div className="modal-panel__header">
           <div>
-            <p className="card__eyebrow">Debug</p>
+            <p className="card__eyebrow">Отладка</p>
             <h2>Правильный ответ</h2>
           </div>
           <button className="ghost-button" onClick={onClose} type="button">
@@ -155,11 +155,11 @@ export default function StudentTaskDebugAnswerModal({
 
           {!kind ? (
             <div className="student-task-debug-modal__section">
+              <p className="card__text">Эталонный ответ не получен для этого задания.</p>
               <p className="card__text">
-                Эталон не пришел от backend для этого задания.
-              </p>
-              <p className="card__text">
-                Скорее всего у тебя еще запущен старый backend-процесс. Перезапусти backend и обнови страницу, чтобы в student payload появилось поле <code>debug_solution</code>.
+                Возможно, запущена устаревшая версия сервера. Перезапустите сервер и
+                обновите страницу, чтобы в данных задания появилось поле{" "}
+                <code>debug_solution</code>.
               </p>
             </div>
           ) : null}

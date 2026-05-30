@@ -39,6 +39,20 @@ function schemaType(schema?: Record<string, unknown>) {
   return String(schema?.type ?? "").trim();
 }
 
+function schemaTypeLabel(type: string) {
+  if (type === "Graph") return "Граф";
+  if (type === "AdjacencyMatrix") return "Матрица смежности";
+  if (type === "IncidenceMatrix") return "Матрица инцидентности";
+  if (type === "DegreeSequence") return "Степени вершин";
+  if (type === "integer") return "Целое число";
+  if (type === "number") return "Число";
+  if (type === "boolean") return "Да / нет";
+  if (type === "string") return "Текст";
+  if (type === "object") return "Объект";
+  if (type === "array") return "Список";
+  return type || "Схема";
+}
+
 function numberFromUnknown(value: unknown) {
   if (typeof value === "number" && Number.isFinite(value)) return value;
   if (typeof value === "string" && value.trim() !== "") {
@@ -317,7 +331,7 @@ export function OperationInputPreview({ schema, payload }: OperationInputPreview
           <p className="card__eyebrow">Входные данные</p>
           <h3>Исходное условие</h3>
         </div>
-        <span className="hero__chip">{type || "Схема"}</span>
+        <span className="hero__chip">{schemaTypeLabel(type)}</span>
       </div>
 
       {type === "Graph" ? <GraphPreview graph={normalizeGraphPayload(payload)} /> : null}
@@ -659,7 +673,7 @@ function GenericAnswerEditor({
             <p className="card__eyebrow">Ответ студента</p>
             <h3>{type === "integer" ? "Целый результат" : "Числовой результат"}</h3>
           </div>
-          <span className="hero__chip">{type}</span>
+          <span className="hero__chip">{schemaTypeLabel(type)}</span>
         </div>
         <label className="field">
           <span>Значение</span>
@@ -687,7 +701,7 @@ function GenericAnswerEditor({
           <p className="card__eyebrow">Ответ студента</p>
           <h3>Структурированный ответ</h3>
         </div>
-        <span className="hero__chip">{type || "Объект"}</span>
+        <span className="hero__chip">{schemaTypeLabel(type || "object")}</span>
       </div>
       <div className="operation-task-schema__fields">
         {Object.entries(fields).map(([fieldName, rawFieldSchema]) => {
@@ -882,7 +896,7 @@ export function OperationOutputPreview({ content }: { content: StudentTaskConten
             <p className="card__eyebrow">Ожидаемый формат ответа</p>
             <h3>{type === "AdjacencyMatrix" ? "Матрица смежности" : "Матрица инцидентности"}</h3>
           </div>
-          <span className="hero__chip">{type}</span>
+          <span className="hero__chip">{schemaTypeLabel(type)}</span>
         </div>
         <ValuePreviewTable columns={columns} rows={graph.vertices} />
       </section>
@@ -898,11 +912,7 @@ export function OperationOutputPreview({ content }: { content: StudentTaskConten
             <p className="card__eyebrow">Ожидаемый формат ответа</p>
             <h3>Таблица степеней</h3>
           </div>
-          <span className="hero__chip">{type}</span>
-        </div>
-        <div className="operation-task-schema__hint-list">
-          <span>Вершины: {graph.vertices.join(", ") || "—"}</span>
-          <span>{graph.directed ? "Укажи deg-, deg+ и общую степень." : "Укажи степень каждой вершины."}</span>
+          <span className="hero__chip">{schemaTypeLabel(type)}</span>
         </div>
       </section>
     );
@@ -915,7 +925,7 @@ export function OperationOutputPreview({ content }: { content: StudentTaskConten
           <p className="card__eyebrow">Ожидаемый формат ответа</p>
           <h3>Структура результата</h3>
         </div>
-        <span className="hero__chip">{type}</span>
+        <span className="hero__chip">{schemaTypeLabel(type)}</span>
       </div>
     </section>
   );
@@ -943,7 +953,7 @@ export function OperationSolvedAnswerPreview({
             <p className="card__eyebrow">Правильный ответ</p>
             <h3>Матрица смежности</h3>
           </div>
-          <span className="hero__chip">{type}</span>
+          <span className="hero__chip">{schemaTypeLabel(type)}</span>
         </div>
         <div className="operation-task-schema__matrix-shell">
           <table className="operation-task-schema__matrix">
@@ -991,7 +1001,7 @@ export function OperationSolvedAnswerPreview({
             <p className="card__eyebrow">Правильный ответ</p>
             <h3>Матрица инцидентности</h3>
           </div>
-          <span className="hero__chip">{type}</span>
+          <span className="hero__chip">{schemaTypeLabel(type)}</span>
         </div>
         <div className="operation-task-schema__matrix-shell">
           <table className="operation-task-schema__matrix">
@@ -1033,7 +1043,7 @@ export function OperationSolvedAnswerPreview({
             <p className="card__eyebrow">Правильный ответ</p>
             <h3>Степени вершин</h3>
           </div>
-          <span className="hero__chip">{type}</span>
+          <span className="hero__chip">{schemaTypeLabel(type)}</span>
         </div>
         <div className="operation-task-schema__matrix-shell">
           <table className="operation-task-schema__matrix">
@@ -1071,7 +1081,7 @@ export function OperationSolvedAnswerPreview({
           <p className="card__eyebrow">Правильный ответ</p>
           <h3>Структурированный результат</h3>
         </div>
-        <span className="hero__chip">{type || "Ответ"}</span>
+        <span className="hero__chip">{schemaTypeLabel(type || "object")}</span>
       </div>
       <pre className="operation-task-schema__json">{JSON.stringify(answer, null, 2)}</pre>
     </section>

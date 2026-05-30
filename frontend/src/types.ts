@@ -506,6 +506,16 @@ export type StudentTopicControlNextTopic = {
   is_unlocked: boolean;
 };
 
+export type StudentAdaptiveStatus = {
+  mode: string;
+  title: string;
+  summary: string;
+  signal_kind: string | null;
+  recommendation_score: number | null;
+  last_duration_seconds: number | null;
+  expected_duration_seconds: number | null;
+};
+
 export type StudentTopicControl = {
   student_id: string;
   trajectory_id: string;
@@ -524,6 +534,7 @@ export type StudentTopicControl = {
   master_practice_available: boolean;
   show_next_topic_prompt: boolean;
   next_topic: StudentTopicControlNextTopic | null;
+  adaptive_status: StudentAdaptiveStatus | null;
   elements: StudentTopicControlElement[];
   current_task: StudentAssignedTask | null;
 };

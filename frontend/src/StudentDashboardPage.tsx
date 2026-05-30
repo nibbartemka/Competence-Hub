@@ -192,11 +192,6 @@ export default function StudentDashboardPage() {
             {isAdminViewer ? "Просмотр студента" : "Кабинет студента"}
           </p>
           <h1>{student?.name ?? "Студент"}</h1>
-          <p className="hero__subtitle">
-            {isAdminViewer
-              ? "Администратор просматривает страницу без доступа к прохождению контроля."
-              : "Здесь собраны все назначенные траектории обучения и их текущий прогресс."}
-          </p>
         </div>
         {isAdminViewer ? (
           <div className="hero__controls">

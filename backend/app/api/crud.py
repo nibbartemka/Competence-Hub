@@ -4,6 +4,14 @@ from fastapi import HTTPException, status
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
+ENTITY_LABELS = {
+    "Student": "Студент",
+    "Learning trajectory": "Траектория обучения",
+    "Trajectory topic": "Тема траектории",
+    "Learning trajectory task": "Задание траектории",
+    "Student task submission file": "Файл с решением студента",
+}
+
 
 async def flush_or_409(session: AsyncSession) -> None:
     try:
@@ -12,7 +20,7 @@ async def flush_or_409(session: AsyncSession) -> None:
         await session.rollback()
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
-            detail="Operation violates database constraints.",
+            detail="Операция нарушает ограничения базы данных.",
         ) from exc
 
 
@@ -23,7 +31,7 @@ async def commit_or_409(session: AsyncSession) -> None:
         await session.rollback()
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
-            detail="Operation violates database constraints.",
+            detail="Операция нарушает ограничения базы данных.",
         ) from exc
 
 
@@ -33,7 +41,8 @@ async def delete_and_commit(session: AsyncSession, instance: object) -> None:
 
 
 def not_found(entity_name: str, entity_id: UUID) -> HTTPException:
+    display_name = ENTITY_LABELS.get(entity_name, entity_name)
     return HTTPException(
         status_code=status.HTTP_404_NOT_FOUND,
-        detail=f"{entity_name} '{entity_id}' not found.",
+        detail=f"{display_name} '{entity_id}' не найден(а).",
     )
