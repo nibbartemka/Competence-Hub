@@ -7,7 +7,7 @@ from app.models.enums import LearningTrajectoryStatus
 
 class LearningTrajectoryElementCreate(BaseModel):
     element_id: UUID
-    threshold: int = Field(ge=0, le=100)
+    threshold: int = Field(ge=10, le=100)
 
 
 class LearningTrajectoryTopicCreate(BaseModel):

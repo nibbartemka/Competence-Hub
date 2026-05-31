@@ -42,6 +42,7 @@ from app.schemas import (
 
 
 router = APIRouter(prefix="/learning-trajectories", tags=["Learning Trajectories"])
+MIN_ELEMENT_THRESHOLD = 10
 
 
 def _bad_request(detail: str) -> HTTPException:
@@ -298,6 +299,10 @@ async def _validate_topics_and_elements(
                 topic = topics_by_id[topic_payload.topic_id]
                 raise _bad_request(
                     f"Topic '{topic.name}' can include only formed knowledge elements."
+                )
+            if element_payload.threshold < MIN_ELEMENT_THRESHOLD:
+                raise _bad_request(
+                    f"Порог элемента не может быть ниже {MIN_ELEMENT_THRESHOLD}."
                 )
             selected_elements_count += 1
 
