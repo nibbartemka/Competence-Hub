@@ -2,7 +2,7 @@ from enum import StrEnum
 from pathlib import Path
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
-from pydantic import Field, BaseModel
+from pydantic import Field, BaseModel, field_validator
 
 
 __all__ = [
@@ -71,6 +71,12 @@ class Settings(BaseSettings):
     APP: AppSettings = AppSettings()
     SQLITE: SQLiteSettings = SQLiteSettings()
     REDIS: RedisSettings = RedisSettings()
+    BACKEND_CORS_ORIGINS: str = (
+        "http://localhost:5173,"
+        "http://127.0.0.1:5173,"
+        "http://localhost:4173,"
+        "http://127.0.0.1:4173"
+    )
 
     # POSTGRES: PostgresSettings
 
@@ -84,6 +90,14 @@ class Settings(BaseSettings):
         env_nested_delimiter='__',
         env_file_encoding='utf-8',
     )
+
+    @property
+    def cors_origins(self) -> list[str]:
+        return [
+            item.strip()
+            for item in self.BACKEND_CORS_ORIGINS.split(",")
+            if item.strip()
+        ]
 
 
 settings: Settings = Settings()
