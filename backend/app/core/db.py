@@ -1,4 +1,5 @@
 from typing import AsyncGenerator
+from uuid import uuid4
 
 from sqlalchemy.ext.asyncio import (
     create_async_engine,
@@ -7,7 +8,7 @@ from sqlalchemy.ext.asyncio import (
     async_sessionmaker
 )
 from sqlalchemy.orm import declarative_base
-from sqlalchemy import text
+from sqlalchemy import text, select
 
 from .config import settings
 from .slugs import transliterate_to_slug_base
@@ -42,16 +43,20 @@ SQLITE_RELATION_DIRECTIONS: dict[str, str] = {
     "USED_WITH": "TWO_DIRECTION",
 }
 
-
 def get_async_engine() -> AsyncEngine:
     global async_engine
 
     if async_engine is None:
+        engine_kwargs: dict[str, object] = {
+            "echo": False,
+            "pool_size": 5,
+            "max_overflow": 10,
+            "pool_pre_ping": True,
+        }
+
         async_engine = create_async_engine(
-            settings.SQLITE.async_DSN,
-            pool_size=5,
-            max_overflow=10,
-            echo=False,
+            settings.async_database_dsn,
+            **engine_kwargs,
         )
 
     return async_engine
@@ -916,11 +921,68 @@ async def get_async_session() -> AsyncGenerator[AsyncSession, None]:
         yield session
 
 
+async def _seed_base_records() -> None:
+    from app.models.admins import Admin
+    from app.models.enums import KnowledgeElementRelationType, RelationDirectionType
+    from app.models.knowledge_graph import Relation
+
+    relation_direction_enums: dict[KnowledgeElementRelationType, RelationDirectionType] = {
+        KnowledgeElementRelationType.REQUIRES: RelationDirectionType.ONE_DIRECTION,
+        KnowledgeElementRelationType.BUILDS_ON: RelationDirectionType.ONE_DIRECTION,
+        KnowledgeElementRelationType.RELIES_ON: RelationDirectionType.ONE_DIRECTION,
+        KnowledgeElementRelationType.CONTAINS: RelationDirectionType.ONE_DIRECTION,
+        KnowledgeElementRelationType.PART_OF: RelationDirectionType.ONE_DIRECTION,
+        KnowledgeElementRelationType.PROPERTY_OF: RelationDirectionType.ONE_DIRECTION,
+        KnowledgeElementRelationType.REFINES: RelationDirectionType.ONE_DIRECTION,
+        KnowledgeElementRelationType.GENERALIZES: RelationDirectionType.ONE_DIRECTION,
+        KnowledgeElementRelationType.IMPLEMENTS: RelationDirectionType.ONE_DIRECTION,
+        KnowledgeElementRelationType.AUTOMATES: RelationDirectionType.ONE_DIRECTION,
+        KnowledgeElementRelationType.SIMILAR: RelationDirectionType.TWO_DIRECTION,
+        KnowledgeElementRelationType.CONTRASTS_WITH: RelationDirectionType.TWO_DIRECTION,
+        KnowledgeElementRelationType.USED_WITH: RelationDirectionType.TWO_DIRECTION,
+    }
+
+    async with get_async_session_maker()() as session:
+        existing_relations = {
+            relation.relation_type: relation
+            for relation in (await session.execute(select(Relation))).scalars().all()
+        }
+
+        for relation_type, direction in relation_direction_enums.items():
+            existing = existing_relations.get(relation_type)
+            if existing is None:
+                session.add(
+                    Relation(
+                        id=uuid4(),
+                        relation_type=relation_type,
+                        direction=direction,
+                    )
+                )
+                continue
+            if existing.direction != direction:
+                existing.direction = direction
+
+        admin_exists = await session.scalar(
+            select(Admin.id).where(Admin.login == "admin").limit(1)
+        )
+        if admin_exists is None:
+            session.add(
+                Admin(
+                    id=uuid4(),
+                    name="Администратор",
+                    login="admin",
+                    password="admin",
+                    is_active=True,
+                )
+            )
+
+        await session.commit()
+
+
 async def init_db() -> None:
     async with get_async_engine().begin() as connection:
         await connection.run_sync(Base.metadata.create_all)
-        if settings.SQLITE.async_DSN.startswith("sqlite"):
-            await connection.run_sync(_sync_sqlite_schema)
+    await _seed_base_records()
 
 
 async def drop_db() -> None:

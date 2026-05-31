@@ -2,7 +2,7 @@ from enum import StrEnum
 from pathlib import Path
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
-from pydantic import Field, BaseModel, field_validator
+from pydantic import Field, BaseModel
 
 
 __all__ = [
@@ -16,11 +16,11 @@ class EnvironmentTypes(StrEnum):
 
 
 class PostgresSettings(BaseModel):
-    HOST: str
+    HOST: str = "localhost"
     PORT: int = 5432
-    USER: str
-    PASSWORD: str
-    DB: str
+    USER: str = "competence_hub"
+    PASSWORD: str = "competence_hub"
+    DB: str = "competence_hub"
 
     @property
     def async_DSN(self) -> str:
@@ -70,6 +70,7 @@ class RedisSettings(BaseModel):
 class Settings(BaseSettings):
     APP: AppSettings = AppSettings()
     SQLITE: SQLiteSettings = SQLiteSettings()
+    POSTGRES: PostgresSettings = PostgresSettings()
     REDIS: RedisSettings = RedisSettings()
     BACKEND_CORS_ORIGINS: str = (
         "http://localhost:5173,"
@@ -77,8 +78,6 @@ class Settings(BaseSettings):
         "http://localhost:4173,"
         "http://127.0.0.1:4173"
     )
-
-    # POSTGRES: PostgresSettings
 
     ENVIRONMENT: EnvironmentTypes = Field(
         default=EnvironmentTypes.DEVELOPMENT,
@@ -89,6 +88,7 @@ class Settings(BaseSettings):
         env_file='.env',
         env_nested_delimiter='__',
         env_file_encoding='utf-8',
+        extra='ignore',
     )
 
     @property
@@ -98,6 +98,14 @@ class Settings(BaseSettings):
             for item in self.BACKEND_CORS_ORIGINS.split(",")
             if item.strip()
         ]
+
+    @property
+    def async_database_dsn(self) -> str:
+        return self.POSTGRES.async_DSN
+
+    @property
+    def sync_database_dsn(self) -> str:
+        return self.POSTGRES.DSN
 
 
 settings: Settings = Settings()
