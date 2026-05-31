@@ -82,6 +82,7 @@ const ELEMENT_PREREQUISITE_RELATIONS = new Set<KnowledgeElementRelationType>([
   "requires",
   "builds_on",
 ]);
+const MIN_ELEMENT_THRESHOLD = 10;
 
 const ELEMENT_RELATION_LABELS: Record<KnowledgeElementRelationType, string> = {
   requires: "требует",
@@ -148,8 +149,8 @@ function extractErrorMessage(error: unknown) {
 }
 
 function clampThreshold(value: number) {
-  if (Number.isNaN(value)) return 0;
-  return Math.min(100, Math.max(0, value));
+  if (Number.isNaN(value)) return MIN_ELEMENT_THRESHOLD;
+  return Math.min(100, Math.max(MIN_ELEMENT_THRESHOLD, value));
 }
 
 function buildElementKey(topicId: string, elementId: string) {
@@ -521,19 +522,13 @@ export default function TrajectoryGraphBuilder() {
       competenceType: CompetenceType;
       threshold: number;
     }> = [];
-    const availableCompetenceTypes = new Set<CompetenceType>();
-
     for (const topicId of selectedTopicIds) {
-      for (const element of formedElementsByTopic.get(topicId) ?? []) {
-        availableCompetenceTypes.add(element.competence_type);
-      }
-
       for (const elementId of selectedElementsByTopic[topicId] ?? []) {
         const element = elementById.get(elementId);
         if (!element) continue;
         selectedElementRecords.push({
           competenceType: element.competence_type,
-          threshold: elementThresholds[buildElementKey(topicId, elementId)] ?? 0,
+          threshold: elementThresholds[buildElementKey(topicId, elementId)] ?? MIN_ELEMENT_THRESHOLD,
         });
       }
     }
@@ -542,17 +537,13 @@ export default function TrajectoryGraphBuilder() {
       errors.push("Выбери хотя бы один формируемый элемент.");
     }
 
-    for (const competenceType of COMPETENCE_ORDER.filter((type) =>
-      availableCompetenceTypes.has(type),
-    )) {
-      const hasRequiredElement = selectedElementRecords.some(
-        (record) => record.competenceType === competenceType && record.threshold === 0,
+    const invalidThresholdRecord = selectedElementRecords.find(
+      (record) => record.threshold < MIN_ELEMENT_THRESHOLD,
+    );
+    if (invalidThresholdRecord) {
+      errors.push(
+        `Порог каждого выбранного элемента должен быть не меньше ${MIN_ELEMENT_THRESHOLD}.`,
       );
-      if (!hasRequiredElement) {
-        errors.push(
-          `Для компетенции "${COMPETENCE_LABELS[competenceType]}" нужен минимум один элемент с порогом 0.`,
-        );
-      }
     }
 
     return errors;
@@ -791,6 +782,7 @@ export default function TrajectoryGraphBuilder() {
         const topicId = view.topicId;
         const focusNodeId = `topic-focus:${topicId}`;
         const selectedElementIds = new Set(selectedElementsByTopic[topicId] ?? []);
+        const selectionContext = buildSelectionContextForTopic(topicId, selectedElementIds);
         const formedElementIdsInTopic = new Set(
           graph.topic_knowledge_elements
             .filter((link) => link.topic_id === topicId && link.role === "formed")
@@ -815,7 +807,7 @@ export default function TrajectoryGraphBuilder() {
           const selectionState = getElementSelectionState(
             topicId,
             link.element_id,
-            selectedElementIds,
+            selectionContext,
           );
           const isSelected = selectedElementIds.has(link.element_id);
           const isBlocked =
@@ -1186,6 +1178,26 @@ export default function TrajectoryGraphBuilder() {
     return result;
   }
 
+  function getSelectedElementIdsBeforeTopic(topicId: string) {
+    const topicIndex = selectedTopicIds.indexOf(topicId);
+    if (topicIndex <= 0) {
+      return new Set<string>();
+    }
+
+    return getSelectedElementIdsForTopics(selectedTopicIds.slice(0, topicIndex));
+  }
+
+  function buildSelectionContextForTopic(
+    topicId: string,
+    selectedElementIdsInTopic: Set<string>,
+  ) {
+    const selectionContext = getSelectedElementIdsBeforeTopic(topicId);
+    for (const elementId of selectedElementIdsInTopic) {
+      selectionContext.add(elementId);
+    }
+    return selectionContext;
+  }
+
   function getMissingRequiredElementsForTopic(
     topicId: string,
     previousTopicIds = selectedTopicIds,
@@ -1454,13 +1466,14 @@ export default function TrajectoryGraphBuilder() {
     const isAlreadySelected = selectedElementIds.has(elementId);
 
     if (!isAlreadySelected) {
-      const selectionState = getElementSelectionState(topicId, elementId, selectedElementIds);
+      const selectionContext = buildSelectionContextForTopic(topicId, selectedElementIds);
+      const selectionState = getElementSelectionState(topicId, elementId, selectionContext);
       const blockedReason = buildElementBlockedReason(selectionState);
 
       if (blockedReason) {
         pushNotification({
           kind: "error",
-          text: `Р­Р»РµРјРµРЅС‚ "${element.name}" РїРѕРєР° РЅРµР»СЊР·СЏ РІС‹Р±СЂР°С‚СЊ: ${blockedReason}`,
+          text: `Элемент "${element.name}" пока нельзя выбрать: ${blockedReason}`,
         });
         return;
       }
@@ -1484,7 +1497,7 @@ export default function TrajectoryGraphBuilder() {
 
       return {
         ...current,
-        [key]: 0,
+        [key]: MIN_ELEMENT_THRESHOLD,
       };
     });
   }
@@ -1505,7 +1518,8 @@ export default function TrajectoryGraphBuilder() {
         keepPruning = false;
 
         for (const elementId of [...nextSelectedSet]) {
-          const selectionState = getElementSelectionState(topicId, elementId, nextSelectedSet);
+          const selectionContext = buildSelectionContextForTopic(topicId, nextSelectedSet);
+          const selectionState = getElementSelectionState(topicId, elementId, selectionContext);
           if (!selectionState.isFormed || selectionState.missingDependencies.length > 0) {
             nextSelectedSet.delete(elementId);
             keepPruning = true;
@@ -1526,7 +1540,7 @@ export default function TrajectoryGraphBuilder() {
     for (const [topicId, elementIds] of Object.entries(nextSelectedElementsByTopic)) {
       for (const elementId of elementIds) {
         const key = buildElementKey(topicId, elementId);
-        nextElementThresholds[key] = elementThresholds[key] ?? 0;
+        nextElementThresholds[key] = elementThresholds[key] ?? MIN_ELEMENT_THRESHOLD;
       }
     }
 
@@ -1600,7 +1614,8 @@ export default function TrajectoryGraphBuilder() {
           threshold: 0,
           elements: (selectedElementsByTopic[topicId] ?? []).map((elementId) => ({
             element_id: elementId,
-            threshold: elementThresholds[buildElementKey(topicId, elementId)] ?? 0,
+            threshold:
+              elementThresholds[buildElementKey(topicId, elementId)] ?? MIN_ELEMENT_THRESHOLD,
           })),
         })),
       });
@@ -1703,12 +1718,12 @@ export default function TrajectoryGraphBuilder() {
                             </span>
                             <input
                               max={100}
-                              min={0}
+                              min={MIN_ELEMENT_THRESHOLD}
                               onChange={(event) =>
                                 updateElementThreshold(topicId, elementId, Number(event.target.value))
                               }
                               type="number"
-                              value={elementThresholds[key] ?? 0}
+                              value={elementThresholds[key] ?? MIN_ELEMENT_THRESHOLD}
                             />
                           </label>
                         );
