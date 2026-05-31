@@ -85,7 +85,11 @@ class TopicDependency(Base):
     id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
     relation_type: Mapped[TopicDependencyRelationType] = mapped_column(
-        Enum(TopicDependencyRelationType, name="relation_type_enum"),
+        Enum(
+            TopicDependencyRelationType,
+            name="topic_dependency_relation_type_enum",
+            values_callable=lambda enum_cls: [item.value for item in enum_cls],
+        ),
         nullable=False,
     )
     source: Mapped[TopicDependencySource] = mapped_column(
@@ -139,7 +143,11 @@ class KnowledgeElement(Base):
     subject_area_description: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     competence_type: Mapped[CompetenceType] = mapped_column(
-        Enum(CompetenceType, name="competence_type_enum"),
+        Enum(
+            CompetenceType,
+            name="competence_type_enum",
+            values_callable=lambda enum_cls: [item.value for item in enum_cls],
+        ),
         nullable=False,
     )
     operation_ref: Mapped[str | None] = mapped_column(String(255), nullable=True)
@@ -240,7 +248,11 @@ class Relation(Base):
     id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
 
     relation_type: Mapped[KnowledgeElementRelationType] = mapped_column(
-        Enum(KnowledgeElementRelationType, name="relation_type_enum"),
+        Enum(
+            KnowledgeElementRelationType,
+            name="knowledge_element_relation_type_enum",
+            values_callable=lambda enum_cls: [item.value for item in enum_cls],
+        ),
         nullable=False,
         unique=True,
     )
@@ -248,7 +260,8 @@ class Relation(Base):
     direction: Mapped[RelationDirectionType] = mapped_column(
         Enum(
             RelationDirectionType,
-            name="direction_enum",
+            name="knowledge_element_relation_direction_enum",
+            values_callable=lambda enum_cls: [item.value for item in enum_cls],
         ),
         nullable=False,
     )
