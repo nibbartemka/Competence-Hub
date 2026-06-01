@@ -11,6 +11,7 @@ from .core import init_db, settings
 from .core.db import get_async_session_maker
 from .models import Discipline
 from .models import *  # noqa: F401,F403 - ensure ORM models are registered
+from .services.object_storage import ensure_submission_bucket
 from .services.session_store import session_store
 from .services.topic_dependencies import sync_topic_dependencies_for_disciplines
 
@@ -18,6 +19,7 @@ from .services.topic_dependencies import sync_topic_dependencies_for_disciplines
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     await init_db()
+    await ensure_submission_bucket()
     async with get_async_session_maker()() as session:
         result = await session.execute(select(Discipline.id).order_by(Discipline.name))
         discipline_ids = list(result.scalars().all())
