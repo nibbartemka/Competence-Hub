@@ -7,6 +7,9 @@ case "${DB_SEED:-}" in
   "seed_christofides_first3_db")
     python seeds/seed_christofides_first3_db.py
     ;;
+  "seed_control_transition_demo")
+    python seeds/seed_control_transition_demo.py
+    ;;
   *)
     echo "Unknown DB_SEED value: ${DB_SEED}" >&2
     exit 1

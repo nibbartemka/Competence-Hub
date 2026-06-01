@@ -13,7 +13,6 @@ import {
   hasStructuredOperationContent,
   OperationAnswerEditor,
   OperationInputPreview,
-  OperationOutputPreview,
 } from "./components/OperationTaskSchemaViews";
 import StudentTaskDebugAnswerModal from "./components/StudentTaskDebugAnswerModal";
 import { getSessionHomePath, readSession, sessionMatches } from "./session";
@@ -415,7 +414,6 @@ export default function StudentTopicControlPage() {
             <p className="card__text">Операция: {task.content.contract_title}</p>
           ) : null}
           <OperationInputPreview payload={task.content.input_payload} schema={task.content.input_schema} />
-          {hasStructuredContent ? <OperationOutputPreview content={task.content} /> : null}
           {hasStructuredContent ? (
             <OperationAnswerEditor
               inputPayload={task.content.input_payload}
