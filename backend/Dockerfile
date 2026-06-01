@@ -8,7 +8,7 @@ WORKDIR /app
 COPY app ./app
 COPY seeds ./seeds
 COPY main.py ./main.py
-COPY pyproject.toml
+COPY pyproject.toml ./
 COPY docker-entrypoint.sh ./docker-entrypoint.sh
 
 RUN pip install --no-cache-dir .
