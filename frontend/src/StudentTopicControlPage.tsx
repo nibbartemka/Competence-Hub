@@ -551,12 +551,12 @@ export default function StudentTopicControlPage() {
       control.practice_stage === "master"
         ? "Ты остался в текущей теме и сейчас получаешь задания уровня Владеть. Решение отправляется файлом и проверяется преподавателем вручную."
         : control.practice_stage === "can" && canStartMaster
-          ? "По элементам Уметь порог уже пройден. Можно остаться в текущей теме и перейти к заданиям уровня Владеть."
+          ? "По элементам Уметь минимальный порог уже пройден. Верхний блок позволяет перейти на следующий этап, а в центре продолжат приходить новые задания текущего этапа для повышения освоения."
         : control.practice_stage === "can"
-          ? "Ты остался в текущей теме и сейчас получаешь задания уровня Уметь. Ошибка в таком задании может снизить освоение связанных элементов Знать."
+          ? "Ты уже работаешь на этапе Уметь. Новые задания будут подбираться автоматически, а переход на следующий этап остается доступен сверху."
         : nextTopicUnlocked && control.next_topic
-          ? `По формируемым элементам Знать порог пройден. Тема «${control.next_topic.topic_name}» уже доступна, но можно остаться здесь и перейти к заданиям уровня Уметь.`
-          : "По элементам Знать порог уже пройден. Можно остаться в текущей теме и перейти к заданиям уровня Уметь.";
+          ? `По элементам Знать минимальный порог пройден. Тема «${control.next_topic.topic_name}» уже доступна, а в центре продолжат автоматически приходить новые задания Знать до тех пор, пока ты не выберешь переход на следующий этап.`
+          : "По элементам Знать минимальный порог уже пройден. Верхний блок позволяет перейти на следующий этап, а в центре продолжат автоматически приходить новые задания Знать для повышения освоения.";
 
     return (
       <div className="student-control-notice">
@@ -573,7 +573,7 @@ export default function StudentTopicControlPage() {
               disabled={loading || saving}
               onClick={() => void reloadCurrentState(false, "can")}
             >
-              Остаться и перейти к Уметь
+              Переход на следующий этап
             </button>
           ) : null}
           {control.practice_stage === "can" && control.master_practice_available ? (
@@ -583,7 +583,7 @@ export default function StudentTopicControlPage() {
               disabled={loading || saving}
               onClick={() => void reloadCurrentState(false, "master")}
             >
-              Остаться и перейти к Владеть
+              Переход на следующий этап
             </button>
           ) : null}
           {control.next_topic?.is_unlocked ? (
@@ -611,14 +611,6 @@ export default function StudentTopicControlPage() {
     adaptiveStatus?.expected_duration_seconds ??
     (currentTask ? estimateExpectedDurationSeconds(currentTask, control?.practice_stage ?? "know") : null);
   const durationSignalsEnabled = (control?.practice_stage ?? "know") !== "master";
-  const currentDurationLimitSeconds =
-    durationSignalsEnabled && expectedDurationSeconds !== null
-      ? Math.max(expectedDurationSeconds, Math.round(expectedDurationSeconds * 1.6))
-      : null;
-  const durationProgressPercent =
-    currentDurationLimitSeconds && currentDurationLimitSeconds > 0
-      ? Math.min(100, Math.round((elapsedSeconds / currentDurationLimitSeconds) * 100))
-      : 0;
   const durationTone =
     expectedDurationSeconds === null
       ? "steady"
@@ -740,23 +732,13 @@ export default function StudentTopicControlPage() {
                   ? "Для текущего уровня Уметь в этой теме сейчас нет доступных заданий."
                   : control?.practice_stage === "master"
                     ? "Для текущего уровня Владеть в этой теме сейчас нет доступных заданий."
-                  : control?.is_extra_practice
-                    ? "Для этой темы больше не осталось подходящих заданий даже в режиме дополнительной практики."
-                    : control?.has_tasks
-                      ? "В обычном режиме минимальный порог уже достигнут. Можно перейти к следующей теме или остаться для дополнительной практики."
+                    : control?.is_extra_practice
+                      ? "Для этой темы больше не осталось подходящих заданий даже в режиме дополнительной практики."
+                      : control?.has_tasks
+                        ? "Для текущего этапа больше не осталось подходящих заданий."
                       : "Для этой темы пока нет заданий."}
               </p>
               <div className="student-task-card__actions">
-                {control?.continue_practice_available ? (
-                  <button
-                    className="primary-button"
-                    type="button"
-                    disabled={loading}
-                    onClick={() => void reloadCurrentState(true, practiceStage)}
-                  >
-                    Продолжить практику
-                  </button>
-                ) : null}
                 {control?.practice_stage === "know" && control?.skill_practice_available ? (
                   <button
                     className="ghost-button"
@@ -764,7 +746,7 @@ export default function StudentTopicControlPage() {
                     disabled={loading}
                     onClick={() => void reloadCurrentState(false, "can")}
                   >
-                    Перейти к Уметь
+                    Переход на следующий этап
                   </button>
                 ) : null}
                 {control?.practice_stage === "can" && control?.master_practice_available ? (
@@ -774,7 +756,7 @@ export default function StudentTopicControlPage() {
                     disabled={loading}
                     onClick={() => void reloadCurrentState(false, "master")}
                   >
-                    Перейти к Владеть
+                    Переход на следующий этап
                   </button>
                 ) : null}
               </div>
@@ -801,32 +783,16 @@ export default function StudentTopicControlPage() {
               </div>
             ) : null}
             {durationSignalsEnabled ? (
-              <>
-                <div className="student-control-adaptive-panel__metrics">
-                  <div className="student-control-adaptive-panel__metric">
-                    <span>Таймер текущего ответа</span>
-                    <strong>{formatDuration(elapsedSeconds)}</strong>
-                  </div>
-                  <div className="student-control-adaptive-panel__metric">
-                    <span>Ожидаемое время</span>
-                    <strong>{expectedDurationSeconds !== null ? formatDuration(expectedDurationSeconds) : "-"}</strong>
-                  </div>
+              <div className="student-control-adaptive-panel__metrics">
+                <div className="student-control-adaptive-panel__metric">
+                  <span>Таймер текущего ответа</span>
+                  <strong>{formatDuration(elapsedSeconds)}</strong>
                 </div>
-                <div className="student-control-adaptive-panel__timeline">
-                  <div className="student-control-adaptive-panel__timeline-bar">
-                    <i
-                      className={`student-control-adaptive-panel__timeline-fill student-control-adaptive-panel__timeline-fill--${durationTone}`}
-                      style={{ width: `${durationProgressPercent}%` }}
-                    />
-                  </div>
-                  <div className="student-control-adaptive-panel__timeline-labels">
-                    <span>Старт</span>
-                    <span>
-                      {currentDurationLimitSeconds !== null ? formatDuration(currentDurationLimitSeconds) : "Без лимита"}
-                    </span>
-                  </div>
+                <div className="student-control-adaptive-panel__metric">
+                  <span>Ожидаемое время</span>
+                  <strong>{expectedDurationSeconds !== null ? formatDuration(expectedDurationSeconds) : "-"}</strong>
                 </div>
-              </>
+              </div>
             ) : null}
             <div className="student-control-adaptive-panel__notes">
               <div className={`student-control-adaptive-panel__note student-control-adaptive-panel__note--${durationTone}`}>
@@ -889,20 +855,6 @@ export default function StudentTopicControlPage() {
                     ? `${Math.round(adaptiveStatus.recommendation_score * 100)}%`
                     : "-"}
                 </strong>
-              </div>
-            </div>
-            <div className="student-control-adaptive-panel__timeline">
-              <div className="student-control-adaptive-panel__timeline-bar">
-                <i
-                  className={`student-control-adaptive-panel__timeline-fill student-control-adaptive-panel__timeline-fill--${durationTone}`}
-                  style={{ width: `${durationProgressPercent}%` }}
-                />
-              </div>
-              <div className="student-control-adaptive-panel__timeline-labels">
-                <span>Старт</span>
-                <span>
-                  {currentDurationLimitSeconds !== null ? formatDuration(currentDurationLimitSeconds) : "Без лимита"}
-                </span>
               </div>
             </div>
             <div className="student-control-adaptive-panel__notes">

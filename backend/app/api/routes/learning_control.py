@@ -527,16 +527,22 @@ async def _build_student_topic_control(
     outgoing_by_source: dict[UUID, list[KnowledgeElementRelation]] = {}
     degree_by_element_id: dict[UUID, int] = {}
     candidate_pool: list[tuple[LearningTrajectoryTask, StudentTaskProgress | None]] = []
+    auto_continue_practice = continue_practice
     if has_tasks:
         outgoing_by_source, degree_by_element_id = await _load_control_relation_map(
             trajectory.discipline_id,
             session,
         )
         candidate_pool = _build_pool(ignore_target_mastery=continue_practice)
+        if not candidate_pool and not continue_practice:
+            extra_practice_pool = _build_pool(ignore_target_mastery=True)
+            if extra_practice_pool:
+                candidate_pool = extra_practice_pool
+                auto_continue_practice = True
     continue_practice_available = False
-    if not continue_practice and has_tasks and not candidate_pool:
+    if not auto_continue_practice and has_tasks and not candidate_pool:
         continue_practice_available = bool(_build_pool(ignore_target_mastery=True))
-    elif continue_practice:
+    elif auto_continue_practice:
         continue_practice_available = bool(candidate_pool)
 
     selected = select_next_task(
@@ -548,7 +554,7 @@ async def _build_student_topic_control(
         selected=selected,
         candidate_pool=candidate_pool,
         practice_stage=normalized_practice_stage,
-        continue_practice=continue_practice,
+        continue_practice=auto_continue_practice,
         continue_practice_available=continue_practice_available,
         has_tasks=has_tasks,
         show_next_topic_prompt=show_next_topic_prompt,
@@ -580,7 +586,7 @@ async def _build_student_topic_control(
         is_unlocked=is_unlocked,
         has_tasks=has_tasks,
         continue_practice_available=continue_practice_available,
-        is_extra_practice=continue_practice,
+        is_extra_practice=auto_continue_practice,
         practice_stage=normalized_practice_stage,
         knowledge_threshold_passed=knowledge_threshold_passed,
         skill_threshold_passed=skill_threshold_passed,
