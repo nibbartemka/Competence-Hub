@@ -15,6 +15,11 @@ services:
       POSTGRES__DB: ${POSTGRES_DB}
       REDIS__URL: ${REDIS_URL}
       REDIS__ENABLED: ${REDIS_ENABLED}
+      MINIO__ENDPOINT: ${MINIO_ENDPOINT}
+      MINIO__ACCESS_KEY: ${MINIO_ROOT_USER}
+      MINIO__SECRET_KEY: ${MINIO_ROOT_PASSWORD}
+      MINIO__BUCKET: ${MINIO_BUCKET}
+      MINIO__SECURE: ${MINIO_SECURE}
       BACKEND_CORS_ORIGINS: ${BACKEND_CORS_ORIGINS}
       DB_SEED: ${DB_SEED}
       COMPETENCE_HUB_DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@${POSTGRES_HOST}:${POSTGRES_PORT}/${POSTGRES_DB}
@@ -23,12 +28,13 @@ services:
       - "${BACKEND_PORT}:8000"
     volumes:
       - backend_data:/app/data
-      - backend_uploads:/app/uploads
     depends_on:
       postgres:
         condition: service_healthy
       redis:
         condition: service_healthy
+      minio:
+        condition: service_started
     restart: unless-stopped
 
   frontend:
@@ -85,8 +91,22 @@ services:
     volumes:
       - postgres_data:/var/lib/postgresql/data
 
+  minio:
+    image: minio/minio:RELEASE.2025-09-07T16-13-09Z
+    container_name: competence-hub-minio
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
+    ports:
+      - "${MINIO_API_PORT}:9000"
+      - "${MINIO_CONSOLE_PORT}:9001"
+    restart: unless-stopped
+    volumes:
+      - minio_data:/data
+
 volumes:
   backend_data:
-  backend_uploads:
   redis_data:
   postgres_data:
+  minio_data:

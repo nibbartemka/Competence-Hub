@@ -1299,44 +1299,6 @@ export function GraphEditor({
     );
   }
 
-  async function ensureMasterRelationsAfterCreate(
-    masterElementId: string,
-    topicId: string,
-    skillElementId: string,
-    knowledgeElementIds: string[],
-  ) {
-    const uniqueKnowledgeElementIds = [...new Set(knowledgeElementIds.filter(Boolean))];
-
-    async function ensureRelation(
-      relationId: string | null | undefined,
-      targetElementId: string,
-    ) {
-      if (!relationId) {
-        return;
-      }
-
-      try {
-        await createKnowledgeElementRelation({
-          topic_id: topicId,
-          source_element_id: masterElementId,
-          target_element_id: targetElementId,
-          relation_id: relationId,
-          description: "",
-        });
-      } catch (error) {
-        const message = extractErrorMessage(error);
-        if (message === "Operation violates database constraints.") {
-          return;
-        }
-        throw error;
-      }
-    }
-
-    await ensureRelation(automatesRelation?.id, skillElementId);
-    for (const knowledgeElementId of uniqueKnowledgeElementIds) {
-      await ensureRelation(reliesOnRelation?.id, knowledgeElementId);
-    }
-  }
   async function handleCreateTopic(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!disciplineId) {
@@ -1521,12 +1483,6 @@ export function GraphEditor({
             knowledge_element_id: item.knowledgeElementId,
           })),
         });
-        await ensureMasterRelationsAfterCreate(
-          createdElement.id,
-          elementCreateTopicId,
-          elementAutomatedSkillId,
-          elementMasterDomainObjects.map((item) => item.knowledgeElementId),
-        );
 
         setElementName("");
         setElementDescription("");

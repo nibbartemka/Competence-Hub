@@ -1121,16 +1121,40 @@ def build_student_task_content_from_snapshot(
                     "kind": "manual_review",
                 },
             }
+
+        operation_ref = str(content.get("operation_ref", "")).strip()
+        contract = get_operation_contract(operation_ref) if operation_ref else None
+        input_payload = content.get("input_payload", {})
+        input_schema = content.get("input_schema", {})
+        output_schema = content.get("output_schema", {})
+        contract_title = content.get("contract_title", "")
+        expected_output = content.get("expected_output")
+
+        if contract is not None:
+            if not isinstance(input_payload, dict):
+                input_payload = {}
+            if not isinstance(input_schema, dict) or not input_schema:
+                input_schema = contract.input_schema
+            if not isinstance(output_schema, dict) or not output_schema:
+                output_schema = contract.output_schema
+            if not str(contract_title).strip():
+                contract_title = contract.title
+            if expected_output is None:
+                try:
+                    expected_output = contract.executor(input_payload)
+                except ValueError:
+                    expected_output = None
+
         return {
             "placeholder": content.get("placeholder", ""),
-            "input_payload": content.get("input_payload", {}),
-            "contract_title": content.get("contract_title", ""),
-            "input_schema": content.get("input_schema", {}),
-            "output_schema": content.get("output_schema", {}),
+            "input_payload": input_payload,
+            "contract_title": contract_title,
+            "input_schema": input_schema,
+            "output_schema": output_schema,
             "manual_review": manual_review,
             "debug_solution": {
                 "kind": "text",
-                "expected_output": content.get("expected_output"),
+                "expected_output": expected_output,
                 "accepted_answers": content.get("accepted_answers", []),
             },
         }

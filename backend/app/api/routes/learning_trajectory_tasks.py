@@ -1,9 +1,10 @@
 from datetime import datetime
 from pathlib import Path
+from urllib.parse import quote
 from uuid import UUID, uuid4
 
 from fastapi import APIRouter, File, Form, Header, HTTPException, UploadFile, status
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, Response
 from sqlalchemy import and_, or_, select
 from sqlalchemy.orm import lazyload, load_only, selectinload
 
@@ -62,11 +63,16 @@ from app.services.learning_tasks import (
     TASK_CHECKED_RELATIONS,
     validate_task_payload,
 )
+from app.services.object_storage import (
+    ObjectStorageError,
+    download_student_submission,
+    upload_student_submission,
+)
 from app.services.session_store import session_store
 
 
 router = APIRouter(prefix="/learning-trajectory-tasks", tags=["Learning Trajectory Tasks"])
-UPLOAD_ROOT = Path(__file__).resolve().parents[3] / "uploads" / "student_task_submissions"
+LEGACY_UPLOAD_ROOT = Path(__file__).resolve().parents[3] / "uploads" / "student_task_submissions"
 
 
 def _safe_uploaded_filename(filename: str | None) -> str:
@@ -83,18 +89,28 @@ def _extract_submitted_file(answer_payload: dict | None) -> dict | None:
         return None
     if answer_payload.get("submission_kind") != "file":
         return None
-    stored_path = str(answer_payload.get("stored_path", "")).strip()
     original_name = str(answer_payload.get("original_name", "")).strip()
-    if not stored_path or not original_name:
+    if not original_name:
         return None
-    return {
+    result = {
         "submission_kind": "file",
-        "stored_path": stored_path,
         "original_name": original_name,
         "mime_type": str(answer_payload.get("mime_type", "")).strip(),
         "size_bytes": int(answer_payload.get("size_bytes") or 0),
         "uploaded_at": str(answer_payload.get("uploaded_at", "")).strip(),
     }
+    object_key = str(answer_payload.get("object_key", "")).strip()
+    bucket_name = str(answer_payload.get("bucket_name", "")).strip()
+    if object_key and bucket_name:
+        result["storage_provider"] = str(answer_payload.get("storage_provider", "minio")).strip() or "minio"
+        result["bucket_name"] = bucket_name
+        result["object_key"] = object_key
+        return result
+    stored_path = str(answer_payload.get("stored_path", "")).strip()
+    if stored_path:
+        result["stored_path"] = stored_path
+        return result
+    return None
 
 
 def _manual_review_feedback(message: str, **extra) -> dict:
@@ -1478,19 +1494,19 @@ async def submit_student_task_file(
         raise bad_request("Файл решения пустой.")
 
     safe_name = _safe_uploaded_filename(file.filename)
-    student_dir = UPLOAD_ROOT / str(task.id) / str(student.id)
-    student_dir.mkdir(parents=True, exist_ok=True)
-    stored_name = f"{uuid4().hex}_{safe_name}"
-    stored_path = student_dir / stored_name
-    stored_path.write_bytes(file_bytes)
-    answer_payload = {
-        "submission_kind": "file",
-        "stored_path": str(stored_path.relative_to(UPLOAD_ROOT.parent)),
-        "original_name": safe_name,
-        "mime_type": file.content_type or "application/octet-stream",
-        "size_bytes": len(file_bytes),
-        "uploaded_at": datetime.utcnow().isoformat(),
-    }
+    try:
+        answer_payload = await upload_student_submission(
+            task_id=task.id,
+            student_id=student.id,
+            original_name=safe_name,
+            file_bytes=file_bytes,
+            content_type=file.content_type or "application/octet-stream",
+        )
+    except ObjectStorageError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=str(exc),
+        ) from exc
     feedback = _manual_review_feedback(
         "Файл отправлен и ожидает проверки преподавателем.",
         pending_review=True,
@@ -1694,8 +1710,34 @@ async def download_student_task_submission_file(
     if submitted_file is None:
         raise not_found("Student task submission file", task_id)
 
-    uploads_root = UPLOAD_ROOT.parent.resolve()
-    file_path = (uploads_root / submitted_file["stored_path"]).resolve()
+    if submitted_file.get("object_key") and submitted_file.get("bucket_name"):
+        try:
+            file_bytes = await download_student_submission(
+                bucket_name=str(submitted_file["bucket_name"]),
+                object_key=str(submitted_file["object_key"]),
+            )
+        except FileNotFoundError as exc:
+            raise not_found("Student task submission file", task_id) from exc
+        except ObjectStorageError as exc:
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail=str(exc),
+            ) from exc
+        quoted_name = quote(str(submitted_file["original_name"]))
+        safe_download_name = _safe_uploaded_filename(str(submitted_file["original_name"]))
+        return Response(
+            content=file_bytes,
+            media_type=str(submitted_file["mime_type"] or "application/octet-stream"),
+            headers={
+                "Content-Disposition": (
+                    f"attachment; filename=\"{safe_download_name}\"; "
+                    f"filename*=UTF-8''{quoted_name}"
+                )
+            },
+        )
+
+    uploads_root = LEGACY_UPLOAD_ROOT.parent.resolve()
+    file_path = (uploads_root / str(submitted_file.get("stored_path", ""))).resolve()
     if uploads_root not in file_path.parents:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -1706,6 +1748,6 @@ async def download_student_task_submission_file(
 
     return FileResponse(
         path=file_path,
-        filename=submitted_file["original_name"],
-        media_type=submitted_file["mime_type"] or "application/octet-stream",
+        filename=str(submitted_file["original_name"]),
+        media_type=str(submitted_file["mime_type"] or "application/octet-stream"),
     )

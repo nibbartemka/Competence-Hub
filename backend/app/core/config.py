@@ -67,11 +67,20 @@ class RedisSettings(BaseModel):
     ENABLED: bool = True
 
 
+class MinIOSettings(BaseModel):
+    ENDPOINT: str = "minio:9000"
+    ACCESS_KEY: str = "minioadmin"
+    SECRET_KEY: str = "minioadmin"
+    BUCKET: str = "student-task-submissions"
+    SECURE: bool = False
+
+
 class Settings(BaseSettings):
     APP: AppSettings = AppSettings()
     SQLITE: SQLiteSettings = SQLiteSettings()
     POSTGRES: PostgresSettings = PostgresSettings()
     REDIS: RedisSettings = RedisSettings()
+    MINIO: MinIOSettings = MinIOSettings()
     BACKEND_CORS_ORIGINS: str = (
         "http://localhost:5173,"
         "http://127.0.0.1:5173,"

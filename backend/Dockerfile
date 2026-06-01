@@ -8,13 +8,13 @@ WORKDIR /app
 COPY app ./app
 COPY seeds ./seeds
 COPY main.py ./main.py
-COPY pyproject.toml README.md ./
+COPY pyproject.toml ./
 COPY docker-entrypoint.sh ./docker-entrypoint.sh
 
 RUN pip install --no-cache-dir .
 
-RUN mkdir -p /app/data /app/uploads
-RUN chmod +x /app/docker-entrypoint.sh
+RUN mkdir -p /app/data
+RUN sed -i 's/\r$//' /app/docker-entrypoint.sh && chmod +x /app/docker-entrypoint.sh
 
 EXPOSE 8000
 
