@@ -20,6 +20,27 @@ from app.services.topic_dependencies import sync_topic_dependencies_for_discipli
 router = APIRouter(prefix="/topic-knowledge-elements", tags=["Topic Knowledge Elements"])
 
 
+async def _find_other_formed_topics_for_element(
+    session: DbSession,
+    *,
+    discipline_id: UUID,
+    element_id: UUID,
+    exclude_topic_id: UUID,
+) -> list[Topic]:
+    result = await session.execute(
+        select(Topic)
+        .join(TopicKnowledgeElement, TopicKnowledgeElement.topic_id == Topic.id)
+        .where(
+            Topic.discipline_id == discipline_id,
+            TopicKnowledgeElement.element_id == element_id,
+            TopicKnowledgeElement.role == TopicKnowledgeElementRole.FORMED,
+            Topic.id != exclude_topic_id,
+        )
+        .order_by(Topic.name)
+    )
+    return list(result.scalars().all())
+
+
 @router.get("/", response_model=list[TopicKnowledgeElementRead])
 async def list_topic_knowledge_elements(
     session: DbSession,
@@ -70,6 +91,39 @@ async def create_topic_knowledge_element(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Knowledge element belongs to another discipline.",
         )
+
+    if payload.role == TopicKnowledgeElementRole.FORMED:
+        other_formed_topics = await _find_other_formed_topics_for_element(
+            session,
+            discipline_id=topic.discipline_id,
+            element_id=element.id,
+            exclude_topic_id=topic.id,
+        )
+        if other_formed_topics:
+            other_topic_names = ", ".join(other_topic.name for other_topic in other_formed_topics)
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=(
+                    "Элемент уже является формируемым в другой теме этой дисциплины: "
+                    f"{other_topic_names}. Формируемые элементы тем дисциплины не должны пересекаться."
+                ),
+            )
+
+    if payload.role == TopicKnowledgeElementRole.REQUIRED:
+        other_formed_topics = await _find_other_formed_topics_for_element(
+            session,
+            discipline_id=topic.discipline_id,
+            element_id=element.id,
+            exclude_topic_id=topic.id,
+        )
+        if not other_formed_topics:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=(
+                    "Элемент можно добавить как требуемый только если он уже является "
+                    "формируемым хотя бы в одной другой теме той же дисциплины."
+                ),
+            )
 
     topic_element = TopicKnowledgeElement(
         topic_id=payload.topic_id,

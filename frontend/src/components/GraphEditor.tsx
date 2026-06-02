@@ -358,6 +358,65 @@ function SearchableSelectField({
   );
 }
 
+function canAttachElementAsFormed(
+  formedTopicIdsByElementId: Map<string, string[]>,
+  {
+    elementId,
+    topicId,
+  }: {
+    elementId: string;
+    topicId: string;
+  },
+) {
+  return !(formedTopicIdsByElementId.get(elementId) ?? []).some(
+    (formedTopicId) => formedTopicId !== topicId,
+  );
+}
+
+function canAttachElementAsRequired(
+  formedTopicIdsByElementId: Map<string, string[]>,
+  {
+    elementId,
+    topicId,
+  }: {
+    elementId: string;
+    topicId?: string;
+  },
+) {
+  return (formedTopicIdsByElementId.get(elementId) ?? []).some(
+    (formedTopicId) => !topicId || formedTopicId !== topicId,
+  );
+}
+
+function getAttachableRolesForTopicElement(
+  formedTopicIdsByElementId: Map<string, string[]>,
+  {
+    elementId,
+    topicId,
+  }: {
+    elementId: string;
+    topicId?: string;
+  },
+): TopicKnowledgeElementRole[] {
+  if (!topicId) {
+    return [];
+  }
+
+  return TOPIC_LINK_ROLE_OPTIONS.filter((option) => {
+    if (option.value === "formed") {
+      return canAttachElementAsFormed(formedTopicIdsByElementId, {
+        elementId,
+        topicId,
+      });
+    }
+
+    return canAttachElementAsRequired(formedTopicIdsByElementId, {
+      elementId,
+      topicId,
+    });
+  }).map((option) => option.value);
+}
+
 function getRelationOptions(
   relations: Relation[],
   sourceType?: CompetenceType,
@@ -423,6 +482,35 @@ function resolveRelationElements(
     sourceElement: element1,
     targetElement: element2,
   };
+}
+
+function isDuplicateRelationDefinition(
+  relations: KnowledgeElementRelation[],
+  {
+    topicId,
+    sourceElementId,
+    targetElementId,
+    relationId,
+    excludeRelationId,
+  }: {
+    topicId: string;
+    sourceElementId: string;
+    targetElementId: string;
+    relationId: string;
+    excludeRelationId?: string;
+  },
+) {
+  return relations.some((relation) => {
+    if (excludeRelationId && relation.id === excludeRelationId) {
+      return false;
+    }
+    return (
+      relation.topic_id === topicId &&
+      relation.source_element_id === sourceElementId &&
+      relation.target_element_id === targetElementId &&
+      relation.relation_id === relationId
+    );
+  });
 }
 
 export function GraphEditor({
@@ -539,6 +627,17 @@ export function GraphEditor({
   const topicIdsByElementId = useMemo(() => {
     const result = new Map<string, string[]>();
     for (const link of topicKnowledgeElements) {
+      result.set(link.element_id, [...(result.get(link.element_id) ?? []), link.topic_id]);
+    }
+    return result;
+  }, [topicKnowledgeElements]);
+
+  const formedTopicIdsByElementId = useMemo(() => {
+    const result = new Map<string, string[]>();
+    for (const link of topicKnowledgeElements) {
+      if (link.role !== "formed") {
+        continue;
+      }
       result.set(link.element_id, [...(result.get(link.element_id) ?? []), link.topic_id]);
     }
     return result;
@@ -822,6 +921,43 @@ export function GraphEditor({
     );
   }, [editRelationSourceElementId, editRelationTargetElementId, topicById, topicIdsByElementId]);
 
+  const attachableElementsForTopic = useMemo(() => {
+    if (!topicElementTopicId) {
+      return [];
+    }
+
+    const linkedElementIds = new Set(
+      (topicKnowledgeElementsByTopicId.get(topicElementTopicId) ?? []).map(
+        (link) => link.element_id,
+      ),
+    );
+
+    return sortedAllElements.filter((element) => {
+      if (linkedElementIds.has(element.id)) {
+        return false;
+      }
+
+      return getAttachableRolesForTopicElement(formedTopicIdsByElementId, {
+        elementId: element.id,
+        topicId: topicElementTopicId,
+      }).length > 0;
+    });
+  }, [
+    formedTopicIdsByElementId,
+    sortedAllElements,
+    topicElementTopicId,
+    topicKnowledgeElementsByTopicId,
+  ]);
+
+  const attachableRolesForTopicElement = useMemo(
+    () =>
+      getAttachableRolesForTopicElement(formedTopicIdsByElementId, {
+        elementId: topicElementElementId,
+        topicId: topicElementTopicId,
+      }),
+    [formedTopicIdsByElementId, topicElementElementId, topicElementTopicId],
+  );
+
   useEffect(() => {
     const controller = new AbortController();
 
@@ -901,10 +1037,6 @@ export function GraphEditor({
       return;
     }
 
-    if (!sortedAllElements.some((element) => element.id === topicElementElementId)) {
-      setTopicElementElementId(sortedAllElements[0].id);
-    }
-
     setSelectedRequiredElementIds((current) =>
       current.filter((elementId) => sortedAllElements.some((element) => element.id === elementId)),
     );
@@ -916,7 +1048,31 @@ export function GraphEditor({
     if (!sortedAllElements.some((element) => element.id === deleteElementId)) {
       setDeleteElementId(sortedAllElements[0].id);
     }
-  }, [deleteElementId, editElementId, sortedAllElements, topicElementElementId]);
+  }, [deleteElementId, editElementId, sortedAllElements]);
+
+  useEffect(() => {
+    if (!attachableElementsForTopic.length) {
+      setTopicElementElementId("");
+      return;
+    }
+
+    if (
+      !attachableElementsForTopic.some((element) => element.id === topicElementElementId)
+    ) {
+      setTopicElementElementId(attachableElementsForTopic[0].id);
+    }
+  }, [attachableElementsForTopic, topicElementElementId]);
+
+  useEffect(() => {
+    if (!attachableRolesForTopicElement.length) {
+      setTopicElementRole("required");
+      return;
+    }
+
+    if (!attachableRolesForTopicElement.includes(topicElementRole)) {
+      setTopicElementRole(attachableRolesForTopicElement[0]);
+    }
+  }, [attachableRolesForTopicElement, topicElementRole]);
 
   useEffect(() => {
     const selectedElement = sortedAllElements.find((element) => element.id === editElementId);
@@ -1317,6 +1473,23 @@ export function GraphEditor({
       });
       return;
     }
+    const invalidRequiredElement = selectedRequiredElementIds.find(
+      (elementId) =>
+        !canAttachElementAsRequired(formedTopicIdsByElementId, {
+          elementId,
+        }),
+    );
+    if (invalidRequiredElement) {
+      const invalidElementName = elementById.get(invalidRequiredElement)?.name ?? "Выбранный элемент";
+      setFeedback({
+        kind: "error",
+        text: (
+          `${invalidElementName} нельзя добавить как требуемый: ` +
+          "он ещё не является формируемым ни в одной другой теме этой дисциплины."
+        ),
+      });
+      return;
+    }
 
     try {
       setBusyAction("topic-create");
@@ -1617,6 +1790,60 @@ export function GraphEditor({
   async function handleAttachElement(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
 
+    if (!topicElementTopicId || !topicElementElementId) {
+      setFeedback({ kind: "error", text: "Сначала выбери тему и элемент." });
+      return;
+    }
+
+    const alreadyLinked = topicKnowledgeElements.some(
+      (link) =>
+        link.topic_id === topicElementTopicId &&
+        link.element_id === topicElementElementId,
+    );
+    if (alreadyLinked) {
+      setFeedback({
+        kind: "error",
+        text: "Этот элемент уже прикреплён к выбранной теме.",
+      });
+      return;
+    }
+
+    if (
+      topicElementRole === "formed" &&
+      !canAttachElementAsFormed(formedTopicIdsByElementId, {
+        elementId: topicElementElementId,
+        topicId: topicElementTopicId,
+      })
+    ) {
+      const elementName = elementById.get(topicElementElementId)?.name ?? "Выбранный элемент";
+      setFeedback({
+        kind: "error",
+        text: (
+          `${elementName} нельзя прикрепить как формируемый: ` +
+          "он уже является формируемым в другой теме этой дисциплины."
+        ),
+      });
+      return;
+    }
+
+    if (
+      topicElementRole === "required" &&
+      !canAttachElementAsRequired(formedTopicIdsByElementId, {
+        elementId: topicElementElementId,
+        topicId: topicElementTopicId,
+      })
+    ) {
+      const elementName = elementById.get(topicElementElementId)?.name ?? "Выбранный элемент";
+      setFeedback({
+        kind: "error",
+        text: (
+          `${elementName} нельзя прикрепить как требуемый: ` +
+          "он ещё не является формируемым ни в одной другой теме этой дисциплины."
+        ),
+      });
+      return;
+    }
+
     try {
       setBusyAction("topic-element");
       setFeedback(null);
@@ -1710,6 +1937,20 @@ export function GraphEditor({
         relationTargetElementId,
         relationDirection,
       );
+      if (
+        isDuplicateRelationDefinition(knowledgeElementRelations, {
+          topicId: relationTopicId,
+          sourceElementId: resolvedEndpoints.sourceElementId,
+          targetElementId: resolvedEndpoints.targetElementId,
+          relationId: relationDefinitionId,
+        })
+      ) {
+        setFeedback({
+          kind: "error",
+          text: "Такая связь в выбранной теме уже существует.",
+        });
+        return;
+      }
       const createdRelation = await createKnowledgeElementRelation({
         topic_id: relationTopicId,
         source_element_id: resolvedEndpoints.sourceElementId,
@@ -1744,6 +1985,13 @@ export function GraphEditor({
       });
       return;
     }
+    if (!editRelationTopicId) {
+      setFeedback({
+        kind: "error",
+        text: "Для выбранной пары сейчас нет общей темы, в которой можно сохранить связь.",
+      });
+      return;
+    }
 
     try {
       setBusyAction("element-relation-update");
@@ -1753,6 +2001,21 @@ export function GraphEditor({
         editRelationTargetElementId,
         editRelationDirection,
       );
+      if (
+        isDuplicateRelationDefinition(knowledgeElementRelations, {
+          topicId: editRelationTopicId,
+          sourceElementId: resolvedEndpoints.sourceElementId,
+          targetElementId: resolvedEndpoints.targetElementId,
+          relationId: editRelationDefinitionId,
+          excludeRelationId: editRelationId,
+        })
+      ) {
+        setFeedback({
+          kind: "error",
+          text: "Такая связь в выбранной теме уже существует.",
+        });
+        return;
+      }
       await updateKnowledgeElementRelation(editRelationId, {
         topic_id: editRelationTopicId,
         source_element_id: resolvedEndpoints.sourceElementId,
@@ -2129,36 +2392,52 @@ export function GraphEditor({
               </label>
 
               <label className="field">
-                <span>Роль</span>
+                <span>Элемент</span>
                 <select
-                  value={topicElementRole}
-                  onChange={(event) =>
-                    setTopicElementRole(event.target.value as TopicKnowledgeElementRole)
-                  }
+                  value={topicElementElementId}
+                  onChange={(event) => setTopicElementElementId(event.target.value)}
+                  disabled={!attachableElementsForTopic.length}
                 >
-                  {TOPIC_LINK_ROLE_OPTIONS.map((option) => (
-                    <option key={option.value} value={option.value}>
-                      {option.label}
+                  {attachableElementsForTopic.map((element) => (
+                    <option key={element.id} value={element.id}>
+                      {element.name} ({competenceLabel(element.competence_type)})
                     </option>
                   ))}
                 </select>
               </label>
             </div>
 
+            {sortedAllElements.length && !attachableElementsForTopic.length ? (
+              <p className="editor-empty">
+                Для этой темы сейчас нет элементов, которые можно прикрепить.
+              </p>
+            ) : null}
+
             <label className="field">
-              <span>Элемент</span>
+              <span>Роль</span>
               <select
-                value={topicElementElementId}
-                onChange={(event) => setTopicElementElementId(event.target.value)}
-                disabled={!sortedAllElements.length}
+                value={topicElementRole}
+                onChange={(event) =>
+                  setTopicElementRole(event.target.value as TopicKnowledgeElementRole)
+                }
+                disabled={!attachableRolesForTopicElement.length}
               >
-                {sortedAllElements.map((element) => (
-                  <option key={element.id} value={element.id}>
-                    {element.name} ({competenceLabel(element.competence_type)})
-                  </option>
-                ))}
+                {attachableRolesForTopicElement.map((role) => {
+                  const option = TOPIC_LINK_ROLE_OPTIONS.find((item) => item.value === role);
+                  return (
+                    <option key={role} value={role}>
+                      {option?.label ?? role}
+                    </option>
+                  );
+                })}
               </select>
             </label>
+
+            {topicElementElementId && !attachableRolesForTopicElement.length ? (
+              <p className="editor-empty">
+                Для выбранного элемента в этой теме нет допустимых ролей.
+              </p>
+            ) : null}
 
             <label className="field">
               <span>Комментарий</span>
@@ -2172,7 +2451,12 @@ export function GraphEditor({
 
             <button
               className="primary-button"
-              disabled={!topicElementTopicId || !topicElementElementId || !!busyAction}
+              disabled={
+                !topicElementTopicId ||
+                !topicElementElementId ||
+                !attachableRolesForTopicElement.length ||
+                !!busyAction
+              }
             >
               {busyAction === "topic-element" ? "Сохраняю..." : "Привязать элемент"}
             </button>
@@ -2866,36 +3150,52 @@ export function GraphEditor({
               </label>
 
               <label className="field">
-                <span>Роль</span>
+                <span>Элемент</span>
                 <select
-                  value={topicElementRole}
-                  onChange={(event) =>
-                    setTopicElementRole(event.target.value as TopicKnowledgeElementRole)
-                  }
+                  value={topicElementElementId}
+                  onChange={(event) => setTopicElementElementId(event.target.value)}
+                  disabled={!attachableElementsForTopic.length}
                 >
-                  {TOPIC_LINK_ROLE_OPTIONS.map((option) => (
-                    <option key={option.value} value={option.value}>
-                      {option.label}
+                  {attachableElementsForTopic.map((element) => (
+                    <option key={element.id} value={element.id}>
+                      {element.name} ({competenceLabel(element.competence_type)})
                     </option>
                   ))}
                 </select>
               </label>
             </div>
 
+            {sortedAllElements.length && !attachableElementsForTopic.length ? (
+              <p className="editor-empty">
+                Для этой темы сейчас нет элементов, которые можно прикрепить.
+              </p>
+            ) : null}
+
             <label className="field">
-              <span>Элемент</span>
+              <span>Связь</span>
               <select
-                value={topicElementElementId}
-                onChange={(event) => setTopicElementElementId(event.target.value)}
-                disabled={!sortedAllElements.length}
+                value={topicElementRole}
+                onChange={(event) =>
+                  setTopicElementRole(event.target.value as TopicKnowledgeElementRole)
+                }
+                disabled={!attachableRolesForTopicElement.length}
               >
-                {sortedAllElements.map((element) => (
-                  <option key={element.id} value={element.id}>
-                    {element.name} ({competenceLabel(element.competence_type)})
-                  </option>
-                ))}
+                {attachableRolesForTopicElement.map((role) => {
+                  const option = TOPIC_LINK_ROLE_OPTIONS.find((item) => item.value === role);
+                  return (
+                    <option key={role} value={role}>
+                      {option?.label ?? role}
+                    </option>
+                  );
+                })}
               </select>
             </label>
+
+            {topicElementElementId && !attachableRolesForTopicElement.length ? (
+              <p className="editor-empty">
+                Для выбранного элемента в этой теме нет допустимых связей.
+              </p>
+            ) : null}
 
             <label className="field">
               <span>Комментарий</span>
@@ -2909,7 +3209,12 @@ export function GraphEditor({
 
             <button
               className="primary-button"
-              disabled={!topicElementTopicId || !topicElementElementId || !!busyAction}
+              disabled={
+                !topicElementTopicId ||
+                !topicElementElementId ||
+                !attachableRolesForTopicElement.length ||
+                !!busyAction
+              }
             >
               {busyAction === "topic-element" ? "Сохраняю..." : "Привязать элемент"}
             </button>
