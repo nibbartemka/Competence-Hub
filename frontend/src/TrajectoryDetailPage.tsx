@@ -1119,17 +1119,28 @@ export default function TrajectoryDetailPage() {
   }, [isStudentMode, trajectoryId]);
 
   useEffect(() => {
+    setView({ level: "topics" });
+    setStudentView({ level: "topics" });
+    setSelectedNodeId("");
+    setTopicOrderModalOpen(false);
+    setTasksModalOpen(false);
+  }, [trajectoryId]);
+
+  useEffect(() => {
     if (!disciplineId || !trajectoryId) return;
     const controller = new AbortController();
 
     async function load() {
       try {
         setLoading(true);
-        const [nextGraph, nextTrajectory, nextContracts] = await Promise.all([
-          fetchDisciplineKnowledgeGraph(disciplineId!, controller.signal),
+        const [nextTrajectory, nextContracts] = await Promise.all([
           fetchLearningTrajectory(trajectoryId!, controller.signal),
           fetchOperationContracts(controller.signal),
         ]);
+        const nextGraph = await fetchDisciplineKnowledgeGraph(
+          nextTrajectory.discipline_id,
+          controller.signal,
+        );
         const nextOrder = nextTrajectory.topics
           .slice()
           .sort((left, right) => left.position - right.position)
