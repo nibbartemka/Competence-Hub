@@ -503,13 +503,49 @@ export function updateKnowledgeElement(
   });
 }
 
+export function updateStructuredMasterKnowledgeElement(
+  elementId: string,
+  payload: {
+    name: string;
+    description: string;
+    topic_id: string;
+    subject_area_description: string;
+    automated_skill_element_ids: string[];
+    domain_objects: Array<{
+      object_name: string;
+      knowledge_element_id: string;
+    }>;
+  },
+) {
+  return request<KnowledgeElement>(`/knowledge-elements/${elementId}/master-structured`, {
+    method: "PUT",
+    body: payload,
+  });
+}
+
+export function updateStructuredSkillKnowledgeElement(
+  elementId: string,
+  payload: {
+    name: string;
+    description: string;
+    topic_id: string;
+    operation_ref: string;
+    realized_knowledge_element_ids: string[];
+  },
+) {
+  return request<KnowledgeElement>(`/knowledge-elements/${elementId}/skill-structured`, {
+    method: "PUT",
+    body: payload,
+  });
+}
+
 export function createStructuredMasterKnowledgeElement(payload: {
   name: string;
   description: string;
   discipline_id: string;
   topic_id: string;
   subject_area_description: string;
-  automated_skill_element_id: string;
+  automated_skill_element_ids: string[];
   domain_objects: Array<{
     object_name: string;
     knowledge_element_id: string;

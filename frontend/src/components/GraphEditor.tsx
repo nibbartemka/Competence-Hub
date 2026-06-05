@@ -14,6 +14,8 @@ import {
   fetchRelations,
   isAbortError,
   updateKnowledgeElement,
+  updateStructuredMasterKnowledgeElement,
+  updateStructuredSkillKnowledgeElement,
   updateKnowledgeElementRelation,
   updateTopic,
 } from "../api";
@@ -54,6 +56,11 @@ type ConfirmDeleteState =
       entityType: "topic" | "element" | "element-relation";
     }
   | null;
+
+type ConfirmCompetenceChangeState = {
+  nextCompetence: CompetenceType;
+  relationNames: string[];
+} | null;
 
 type TopicNewElementDraft = {
   clientId: string;
@@ -553,7 +560,7 @@ export function GraphEditor({
   const [elementCreateTopicId, setElementCreateTopicId] = useState("");
   const [elementRealizedKnowledgeIds, setElementRealizedKnowledgeIds] = useState<string[]>([]);
   const [elementSubjectAreaDescription, setElementSubjectAreaDescription] = useState("");
-  const [elementAutomatedSkillId, setElementAutomatedSkillId] = useState("");
+  const [elementAutomatedSkillIds, setElementAutomatedSkillIds] = useState<string[]>([]);
   const [elementMasterDomainObjects, setElementMasterDomainObjects] = useState<
     MasterDomainObjectDraft[]
   >([]);
@@ -567,9 +574,15 @@ export function GraphEditor({
   const [editElementDescription, setEditElementDescription] = useState("");
   const [editElementCompetence, setEditElementCompetence] =
     useState<CompetenceType>("know");
+  const [editElementTopicId, setEditElementTopicId] = useState("");
+  const [editElementRealizedKnowledgeIds, setEditElementRealizedKnowledgeIds] = useState<string[]>([]);
   const [editElementSubjectAreaDescription, setEditElementSubjectAreaDescription] =
     useState("");
   const [editElementOperationRef, setEditElementOperationRef] = useState("");
+  const [editElementAutomatedSkillIds, setEditElementAutomatedSkillIds] = useState<string[]>([]);
+  const [editElementMasterDomainObjects, setEditElementMasterDomainObjects] = useState<
+    MasterDomainObjectDraft[]
+  >([]);
   const [deleteElementId, setDeleteElementId] = useState("");
 
   const [relationSourceElementId, setRelationSourceElementId] = useState("");
@@ -595,6 +608,8 @@ export function GraphEditor({
   const [deleteRelationId, setDeleteRelationId] = useState("");
   const [deleteRelationFilter, setDeleteRelationFilter] = useState("");
   const [confirmDelete, setConfirmDelete] = useState<ConfirmDeleteState>(null);
+  const [confirmCompetenceChange, setConfirmCompetenceChange] =
+    useState<ConfirmCompetenceChangeState>(null);
 
   const sortedTopics = useMemo(
     () => topics.slice().sort((left, right) => left.name.localeCompare(right.name, "ru")),
@@ -672,6 +687,24 @@ export function GraphEditor({
       .sort((left, right) => left.name.localeCompare(right.name, "ru"));
   }, [elementById, elementCreateTopicId, topicKnowledgeElementsByTopicId]);
 
+  const editAvailableKnowledgeForSkillElement = useMemo(() => {
+    if (!editElementTopicId) {
+      return [];
+    }
+    const links = (topicKnowledgeElementsByTopicId.get(editElementTopicId) ?? []).filter(
+      (link) => link.role === "formed",
+    );
+    return links
+      .map((link) => elementById.get(link.element_id) ?? null)
+      .filter(
+        (element): element is KnowledgeElement =>
+          !!element &&
+          element.id !== editElementId &&
+          element.competence_type === "know",
+      )
+      .sort((left, right) => left.name.localeCompare(right.name, "ru"));
+  }, [editElementId, editElementTopicId, elementById, topicKnowledgeElementsByTopicId]);
+
   const availableSkillElementsForMaster = useMemo(() => {
     if (!elementCreateTopicId) {
       return [];
@@ -688,7 +721,7 @@ export function GraphEditor({
   }, [elementById, elementCreateTopicId, topicKnowledgeElementsByTopicId]);
 
   const requiredKnowledgeForMaster = useMemo(() => {
-    if (!elementCreateTopicId || !elementAutomatedSkillId || !implementsRelation) {
+    if (!elementCreateTopicId || !elementAutomatedSkillIds.length || !implementsRelation) {
       return [];
     }
 
@@ -697,23 +730,28 @@ export function GraphEditor({
         .map((link) => link.element_id),
     );
 
-    return knowledgeElementRelations
-      .filter(
-        (relation) =>
-          relation.topic_id === elementCreateTopicId &&
-          relation.source_element_id === elementAutomatedSkillId &&
-          relation.relation_id === implementsRelation.id,
-      )
-      .map((relation) => elementById.get(relation.target_element_id) ?? null)
-      .filter(
-        (element): element is KnowledgeElement =>
-          !!element &&
-          element.competence_type === "know" &&
-          topicKnowledgeIds.has(element.id),
-      )
-      .sort((left, right) => left.name.localeCompare(right.name, "ru"));
+    return Array.from(
+      new Map(
+        knowledgeElementRelations
+          .filter(
+            (relation) =>
+              relation.topic_id === elementCreateTopicId &&
+              elementAutomatedSkillIds.includes(relation.source_element_id) &&
+              relation.relation_id === implementsRelation.id,
+          )
+          .map((relation) => elementById.get(relation.target_element_id) ?? null)
+          .filter(
+            (element): element is KnowledgeElement =>
+              !!element &&
+              element.competence_type === "know" &&
+              topicKnowledgeIds.has(element.id),
+          )
+          .sort((left, right) => left.name.localeCompare(right.name, "ru"))
+          .map((element) => [element.id, element]),
+      ).values(),
+    );
   }, [
-    elementAutomatedSkillId,
+    elementAutomatedSkillIds,
     elementById,
     elementCreateTopicId,
     implementsRelation,
@@ -735,6 +773,76 @@ export function GraphEditor({
       .sort((left, right) => left.name.localeCompare(right.name, "ru"));
   }, [elementById, elementCreateTopicId, topicKnowledgeElementsByTopicId]);
 
+  const editAvailableSkillElementsForMaster = useMemo(() => {
+    if (!editElementTopicId) {
+      return [];
+    }
+    return (topicKnowledgeElementsByTopicId.get(editElementTopicId) ?? [])
+      .map((link) => elementById.get(link.element_id) ?? null)
+      .filter(
+        (element): element is KnowledgeElement =>
+          !!element &&
+          element.competence_type === "can" &&
+          !!element.operation_ref &&
+          element.id !== editElementId,
+      )
+      .sort((left, right) => left.name.localeCompare(right.name, "ru"));
+  }, [editElementId, editElementTopicId, elementById, topicKnowledgeElementsByTopicId]);
+
+  const editRequiredKnowledgeForMaster = useMemo(() => {
+    if (!editElementTopicId || !editElementAutomatedSkillIds.length || !implementsRelation) {
+      return [];
+    }
+
+    const topicKnowledgeIds = new Set(
+      (topicKnowledgeElementsByTopicId.get(editElementTopicId) ?? []).map(
+        (link) => link.element_id,
+      ),
+    );
+
+    return Array.from(
+      new Map(
+        knowledgeElementRelations
+          .filter(
+            (relation) =>
+              relation.topic_id === editElementTopicId &&
+              editElementAutomatedSkillIds.includes(relation.source_element_id) &&
+              relation.relation_id === implementsRelation.id,
+          )
+          .map((relation) => elementById.get(relation.target_element_id) ?? null)
+          .filter(
+            (element): element is KnowledgeElement =>
+              !!element &&
+              element.competence_type === "know" &&
+              topicKnowledgeIds.has(element.id),
+          )
+          .sort((left, right) => left.name.localeCompare(right.name, "ru"))
+          .map((element) => [element.id, element]),
+      ).values(),
+    );
+  }, [
+    editElementAutomatedSkillIds,
+    editElementTopicId,
+    elementById,
+    implementsRelation,
+    knowledgeElementRelations,
+    topicKnowledgeElementsByTopicId,
+  ]);
+
+  const editAvailableKnowledgeForMaster = useMemo(() => {
+    if (!editElementTopicId) {
+      return [];
+    }
+
+    return (topicKnowledgeElementsByTopicId.get(editElementTopicId) ?? [])
+      .map((link) => elementById.get(link.element_id) ?? null)
+      .filter(
+        (element): element is KnowledgeElement =>
+          !!element && element.competence_type === "know",
+      )
+      .sort((left, right) => left.name.localeCompare(right.name, "ru"));
+  }, [editElementTopicId, elementById, topicKnowledgeElementsByTopicId]);
+
   const uncoveredKnowledgeForMaster = useMemo(() => {
     const coveredKnowledgeIds = new Set(
       elementMasterDomainObjects
@@ -745,6 +853,17 @@ export function GraphEditor({
       (element) => !coveredKnowledgeIds.has(element.id),
     );
   }, [elementMasterDomainObjects, requiredKnowledgeForMaster]);
+
+  const editUncoveredKnowledgeForMaster = useMemo(() => {
+    const coveredKnowledgeIds = new Set(
+      editElementMasterDomainObjects
+        .map((item) => item.knowledgeElementId)
+        .filter((item) => item),
+    );
+    return editRequiredKnowledgeForMaster.filter(
+      (element) => !coveredKnowledgeIds.has(element.id),
+    );
+  }, [editElementMasterDomainObjects, editRequiredKnowledgeForMaster]);
 
   const duplicateMasterDomainObjectMappings = useMemo(() => {
     const counts = new Map<string, number>();
@@ -766,6 +885,27 @@ export function GraphEditor({
       return (counts.get(key) ?? 0) > 1;
     });
   }, [elementMasterDomainObjects]);
+
+  const editDuplicateMasterDomainObjectMappings = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const item of editElementMasterDomainObjects) {
+      const normalizedObjectName = item.objectName.trim().toLocaleLowerCase("ru");
+      if (!normalizedObjectName || !item.knowledgeElementId) {
+        continue;
+      }
+      const key = `${normalizedObjectName}::${item.knowledgeElementId}`;
+      counts.set(key, (counts.get(key) ?? 0) + 1);
+    }
+
+    return editElementMasterDomainObjects.filter((item) => {
+      const normalizedObjectName = item.objectName.trim().toLocaleLowerCase("ru");
+      if (!normalizedObjectName || !item.knowledgeElementId) {
+        return false;
+      }
+      const key = `${normalizedObjectName}::${item.knowledgeElementId}`;
+      return (counts.get(key) ?? 0) > 1;
+    });
+  }, [editElementMasterDomainObjects]);
 
   const relationElements = sortedAllElements;
   const relationElementOptions = useMemo(
@@ -819,6 +959,21 @@ export function GraphEditor({
       ),
     [deleteRelationFilter, elementById, sortedElementRelations],
   );
+
+  const editingElement = useMemo(
+    () => sortedAllElements.find((element) => element.id === editElementId) ?? null,
+    [editElementId, sortedAllElements],
+  );
+  const affectedRelationsOnCompetenceChange = useMemo(() => {
+    if (!editingElement || editingElement.competence_type === editElementCompetence) {
+      return [];
+    }
+    return knowledgeElementRelations.filter(
+      (relation) =>
+        relation.source_element_id === editingElement.id ||
+        relation.target_element_id === editingElement.id,
+    );
+  }, [editElementCompetence, editingElement, knowledgeElementRelations]);
 
   const relationSourceElement = useMemo(
     () => relationElements.find((element) => element.id === relationSourceElementId),
@@ -1076,16 +1231,39 @@ export function GraphEditor({
 
   useEffect(() => {
     const selectedElement = sortedAllElements.find((element) => element.id === editElementId);
+    const selectedElementTopicLinks = topicKnowledgeElements.filter(
+      (link) => link.element_id === editElementId,
+    );
+    const preferredTopicLink =
+      selectedElementTopicLinks.find((link) => link.role === "formed") ??
+      selectedElementTopicLinks[0] ??
+      null;
+
     setEditElementName(selectedElement?.name ?? "");
     setEditElementDescription(selectedElement?.description ?? "");
     setEditElementCompetence(selectedElement?.competence_type ?? "know");
     setEditElementSubjectAreaDescription(
       selectedElement?.subject_area_description ?? "",
     );
+    setEditElementTopicId(preferredTopicLink?.topic_id ?? "");
     setEditElementOperationRef(
       selectedElement?.competence_type === "can" ? selectedElement.operation_ref ?? "" : "",
     );
-  }, [editElementId, sortedAllElements]);
+    setEditElementRealizedKnowledgeIds(
+      selectedElement?.competence_type === "can"
+        ? knowledgeElementRelations
+            .filter(
+              (relation) =>
+                relation.topic_id === (preferredTopicLink?.topic_id ?? "") &&
+                relation.source_element_id === editElementId &&
+                relation.relation.relation_type === "implements",
+            )
+            .map((relation) => relation.target_element_id)
+        : [],
+    );
+    setEditElementAutomatedSkillIds([]);
+    setEditElementMasterDomainObjects([]);
+  }, [editElementId, knowledgeElementRelations, sortedAllElements, topicKnowledgeElements]);
 
   useEffect(() => {
     if (elementCompetence !== "can" && elementOperationRef) {
@@ -1123,8 +1301,8 @@ export function GraphEditor({
       if (elementSubjectAreaDescription) {
         setElementSubjectAreaDescription("");
       }
-      if (elementAutomatedSkillId) {
-        setElementAutomatedSkillId("");
+      if (elementAutomatedSkillIds.length) {
+        setElementAutomatedSkillIds([]);
       }
       if (elementMasterDomainObjects.length) {
         setElementMasterDomainObjects([]);
@@ -1132,15 +1310,13 @@ export function GraphEditor({
       return;
     }
 
-    if (
-      elementAutomatedSkillId &&
-      !availableSkillElementsForMaster.some((element) => element.id === elementAutomatedSkillId)
-    ) {
-      setElementAutomatedSkillId("");
-    }
+    const allowedSkillIds = new Set(availableSkillElementsForMaster.map((element) => element.id));
+    setElementAutomatedSkillIds((current) =>
+      current.filter((elementId) => allowedSkillIds.has(elementId)),
+    );
   }, [
     availableSkillElementsForMaster,
-    elementAutomatedSkillId,
+    elementAutomatedSkillIds.length,
     elementCompetence,
     elementMasterDomainObjects.length,
     elementSubjectAreaDescription,
@@ -1153,15 +1329,24 @@ export function GraphEditor({
 
     const allowedIds = new Set(availableKnowledgeForMaster.map((element) => element.id));
     setElementMasterDomainObjects((current) => {
+      const fallbackKnowledgeId =
+        requiredKnowledgeForMaster[0]?.id ?? availableKnowledgeForMaster[0]?.id ?? "";
       const next = current.map((item) => ({
         ...item,
         knowledgeElementId: allowedIds.has(item.knowledgeElementId)
           ? item.knowledgeElementId
-          : (requiredKnowledgeForMaster[0]?.id ?? availableKnowledgeForMaster[0]?.id ?? ""),
+          : fallbackKnowledgeId,
       }));
+      const coveredKnowledgeIds = new Set(
+        next.map((item) => item.knowledgeElementId).filter((item) => item),
+      );
 
-      if (!next.length && requiredKnowledgeForMaster.length) {
-        return [createMasterDomainObjectDraft(requiredKnowledgeForMaster[0].id)];
+      for (const knowledgeElement of requiredKnowledgeForMaster) {
+        if (coveredKnowledgeIds.has(knowledgeElement.id)) {
+          continue;
+        }
+        next.push(createMasterDomainObjectDraft(knowledgeElement.id));
+        coveredKnowledgeIds.add(knowledgeElement.id);
       }
 
       return next;
@@ -1173,6 +1358,104 @@ export function GraphEditor({
       setEditElementOperationRef("");
     }
   }, [editElementCompetence, editElementOperationRef]);
+
+  useEffect(() => {
+    if (editElementCompetence !== "can") {
+      if (editElementRealizedKnowledgeIds.length) {
+        setEditElementRealizedKnowledgeIds([]);
+      }
+      return;
+    }
+
+    if (!editElementTopicId && sortedTopics.length) {
+      setEditElementTopicId(sortedTopics[0].id);
+    }
+
+    const allowedIds = new Set(
+      editAvailableKnowledgeForSkillElement.map((element) => element.id),
+    );
+    setEditElementRealizedKnowledgeIds((current) =>
+      current.filter((elementId) => allowedIds.has(elementId)),
+    );
+  }, [
+    editAvailableKnowledgeForSkillElement,
+    editElementCompetence,
+    editElementRealizedKnowledgeIds.length,
+    editElementTopicId,
+    sortedTopics,
+  ]);
+
+  useEffect(() => {
+    if (editElementCompetence !== "master") {
+      if (editElementTopicId && editElementCompetence !== "can") {
+        setEditElementTopicId("");
+      }
+      if (editElementSubjectAreaDescription) {
+        setEditElementSubjectAreaDescription("");
+      }
+      if (editElementAutomatedSkillIds.length) {
+        setEditElementAutomatedSkillIds([]);
+      }
+      if (editElementMasterDomainObjects.length) {
+        setEditElementMasterDomainObjects([]);
+      }
+      return;
+    }
+
+    if (!editElementTopicId && sortedTopics.length) {
+      setEditElementTopicId(sortedTopics[0].id);
+    }
+
+    const allowedSkillIds = new Set(
+      editAvailableSkillElementsForMaster.map((element) => element.id),
+    );
+    setEditElementAutomatedSkillIds((current) =>
+      current.filter((elementId) => allowedSkillIds.has(elementId)),
+    );
+  }, [
+    editAvailableSkillElementsForMaster,
+    editElementAutomatedSkillIds.length,
+    editElementCompetence,
+    editElementMasterDomainObjects.length,
+    editElementSubjectAreaDescription,
+    editElementTopicId,
+    sortedTopics,
+  ]);
+
+  useEffect(() => {
+    if (editElementCompetence !== "master") {
+      return;
+    }
+
+    const allowedIds = new Set(editAvailableKnowledgeForMaster.map((element) => element.id));
+    setEditElementMasterDomainObjects((current) => {
+      const fallbackKnowledgeId =
+        editRequiredKnowledgeForMaster[0]?.id ?? editAvailableKnowledgeForMaster[0]?.id ?? "";
+      const next = current.map((item) => ({
+        ...item,
+        knowledgeElementId: allowedIds.has(item.knowledgeElementId)
+          ? item.knowledgeElementId
+          : fallbackKnowledgeId,
+      }));
+      const coveredKnowledgeIds = new Set(
+        next.map((item) => item.knowledgeElementId).filter((item) => item),
+      );
+
+      for (const knowledgeElement of editRequiredKnowledgeForMaster) {
+        if (coveredKnowledgeIds.has(knowledgeElement.id)) {
+          continue;
+        }
+        next.push(createMasterDomainObjectDraft(knowledgeElement.id));
+        coveredKnowledgeIds.add(knowledgeElement.id);
+      }
+
+      return next;
+    });
+  }, [
+    editAvailableKnowledgeForMaster,
+    editElementCompetence,
+    editRequiredKnowledgeForMaster,
+  ]);
 
 
   useEffect(() => {
@@ -1361,6 +1644,13 @@ export function GraphEditor({
     setConfirmDelete(null);
   }
 
+  function closeCompetenceChangeConfirmation() {
+    if (busyAction === "element-update") {
+      return;
+    }
+    setConfirmCompetenceChange(null);
+  }
+
   async function handleConfirmDelete() {
     if (!confirmDelete) {
       return;
@@ -1398,6 +1688,18 @@ export function GraphEditor({
     }
   }
 
+  async function handleConfirmCompetenceChange() {
+    if (!confirmCompetenceChange) {
+      return;
+    }
+    try {
+      await submitUpdateElement(true);
+      setConfirmCompetenceChange(null);
+    } catch {
+      // submitUpdateElement already reports errors through feedback
+    }
+  }
+
   function toggleRequiredElement(elementId: string) {
     setSelectedRequiredElementIds((current) =>
       current.includes(elementId)
@@ -1408,6 +1710,30 @@ export function GraphEditor({
 
   function toggleElementRealizedKnowledge(elementId: string) {
     setElementRealizedKnowledgeIds((current) =>
+      current.includes(elementId)
+        ? current.filter((item) => item !== elementId)
+        : [...current, elementId],
+    );
+  }
+
+  function toggleElementAutomatedSkill(elementId: string) {
+    setElementAutomatedSkillIds((current) =>
+      current.includes(elementId)
+        ? current.filter((item) => item !== elementId)
+        : [...current, elementId],
+    );
+  }
+
+  function toggleEditElementRealizedKnowledge(elementId: string) {
+    setEditElementRealizedKnowledgeIds((current) =>
+      current.includes(elementId)
+        ? current.filter((item) => item !== elementId)
+        : [...current, elementId],
+    );
+  }
+
+  function toggleEditElementAutomatedSkill(elementId: string) {
+    setEditElementAutomatedSkillIds((current) =>
       current.includes(elementId)
         ? current.filter((item) => item !== elementId)
         : [...current, elementId],
@@ -1434,6 +1760,30 @@ export function GraphEditor({
     patch: Partial<Omit<MasterDomainObjectDraft, "clientId">>,
   ) {
     setElementMasterDomainObjects((current) =>
+      current.map((item) => (item.clientId === clientId ? { ...item, ...patch } : item)),
+    );
+  }
+
+  function addEditMasterDomainObjectDraft() {
+    const fallbackKnowledgeId =
+      editRequiredKnowledgeForMaster[0]?.id ?? editAvailableKnowledgeForMaster[0]?.id ?? "";
+    setEditElementMasterDomainObjects((current) => [
+      ...current,
+      createMasterDomainObjectDraft(fallbackKnowledgeId),
+    ]);
+  }
+
+  function removeEditMasterDomainObjectDraft(clientId: string) {
+    setEditElementMasterDomainObjects((current) =>
+      current.filter((item) => item.clientId !== clientId),
+    );
+  }
+
+  function updateEditMasterDomainObjectDraft(
+    clientId: string,
+    patch: Partial<Omit<MasterDomainObjectDraft, "clientId">>,
+  ) {
+    setEditElementMasterDomainObjects((current) =>
       current.map((item) => (item.clientId === clientId ? { ...item, ...patch } : item)),
     );
   }
@@ -1598,17 +1948,17 @@ export function GraphEditor({
         });
         return;
       }
-      if (!elementAutomatedSkillId) {
+      if (!elementAutomatedSkillIds.length) {
         setFeedback({
           kind: "error",
-          text: "Для элемента уровня «Владеть» выбери связанный элемент уровня «Уметь».",
+          text: "Для элемента уровня «Владеть» выбери хотя бы один связанный элемент уровня «Уметь».",
         });
         return;
       }
       if (!requiredKnowledgeForMaster.length) {
         setFeedback({
           kind: "error",
-          text: "У выбранного элемента уровня «Уметь» в этой теме нет связанных элементов уровня «Знать» по связи «реализует».",
+          text: "У выбранных элементов уровня «Уметь» в этой теме нет связанных элементов уровня «Знать» по связи «реализует».",
         });
         return;
       }
@@ -1650,7 +2000,7 @@ export function GraphEditor({
           discipline_id: disciplineId,
           topic_id: elementCreateTopicId,
           subject_area_description: elementSubjectAreaDescription.trim(),
-          automated_skill_element_id: elementAutomatedSkillId,
+          automated_skill_element_ids: elementAutomatedSkillIds,
           domain_objects: elementMasterDomainObjects.map((item) => ({
             object_name: item.objectName.trim(),
             knowledge_element_id: item.knowledgeElementId,
@@ -1661,7 +2011,7 @@ export function GraphEditor({
         setElementDescription("");
         setElementCompetence("know");
         setElementSubjectAreaDescription("");
-        setElementAutomatedSkillId("");
+        setElementAutomatedSkillIds([]);
         setElementMasterDomainObjects([]);
         await syncAfterChange(true);
         setTopicElementElementId(createdElement.id);
@@ -1670,7 +2020,7 @@ export function GraphEditor({
         setRelationSourceElementId(createdElement.id);
         setFeedback({
           kind: "success",
-          text: "Элемент «Владеть» создан, привязан к теме и связан с выбранным элементом «Уметь».",
+          text: "Элемент «Владеть» создан, привязан к теме и связан с выбранными элементами «Уметь».",
         });
       } catch (error) {
         setFeedback({ kind: "error", text: extractErrorMessage(error) });
@@ -1750,7 +2100,7 @@ export function GraphEditor({
       setElementOperationRef("");
       setElementRealizedKnowledgeIds([]);
       setElementSubjectAreaDescription("");
-      setElementAutomatedSkillId("");
+      setElementAutomatedSkillIds([]);
       setElementMasterDomainObjects([]);
       await syncAfterChange(true);
       setTopicElementElementId(createdElement.id);
@@ -1863,25 +2213,139 @@ export function GraphEditor({
     }
   }
 
-  async function handleUpdateElement(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
+  async function submitUpdateElement(forceCompetenceChange = false) {
     if (!editElementId) {
+      return;
+    }
+
+    if (editElementCompetence === "master") {
+      if (!editElementTopicId) {
+        setFeedback({
+          kind: "error",
+          text: "Для элемента уровня «Владеть» сначала выбери тему.",
+        });
+        return;
+      }
+      if (!editElementSubjectAreaDescription.trim()) {
+        setFeedback({
+          kind: "error",
+          text: "Для элемента уровня «Владеть» заполни описание предметной области.",
+        });
+        return;
+      }
+      if (!editElementAutomatedSkillIds.length) {
+        setFeedback({
+          kind: "error",
+          text: "Для элемента уровня «Владеть» выбери хотя бы один связанный элемент уровня «Уметь».",
+        });
+        return;
+      }
+      if (!editRequiredKnowledgeForMaster.length) {
+        setFeedback({
+          kind: "error",
+          text: "У выбранных элементов уровня «Уметь» в этой теме нет связанных элементов уровня «Знать» по связи «реализует».",
+        });
+        return;
+      }
+      if (
+        editElementMasterDomainObjects.some(
+          (item) => !item.objectName.trim() || !item.knowledgeElementId,
+        )
+      ) {
+        setFeedback({
+          kind: "error",
+          text: "Заполни все объекты предметной области и укажи для каждого элемент уровня «Знать».",
+        });
+        return;
+      }
+      if (editUncoveredKnowledgeForMaster.length) {
+        setFeedback({
+          kind: "error",
+          text: `Нужно покрыть все связанные элементы уровня «Знать»: ${editUncoveredKnowledgeForMaster
+            .map((item) => item.name)
+            .join(", ")}.`,
+        });
+        return;
+      }
+      if (editDuplicateMasterDomainObjectMappings.length) {
+        setFeedback({
+          kind: "error",
+          text: "Убери дублирующиеся сопоставления объекта предметной области с одним и тем же элементом «Знать».",
+        });
+        return;
+      }
+    }
+
+    if (editElementCompetence === "can") {
+      if (!editElementTopicId) {
+        setFeedback({
+          kind: "error",
+          text: "Для элемента уровня «Уметь» сначала выбери тему.",
+        });
+        return;
+      }
+      if (!editElementOperationRef) {
+        setFeedback({
+          kind: "error",
+          text: "Для элемента уровня «Уметь» выбери операцию алгоритмической библиотеки.",
+        });
+        return;
+      }
+      if (!editElementRealizedKnowledgeIds.length) {
+        setFeedback({
+          kind: "error",
+          text: "Для элемента уровня «Уметь» выбери хотя бы один связанный элемент уровня «Знать».",
+        });
+        return;
+      }
+    }
+
+    if (
+      !forceCompetenceChange &&
+      affectedRelationsOnCompetenceChange.length &&
+      editingElement &&
+      editingElement.competence_type !== editElementCompetence
+    ) {
+      setConfirmCompetenceChange({
+        nextCompetence: editElementCompetence,
+        relationNames: affectedRelationsOnCompetenceChange.map(getElementRelationName),
+      });
       return;
     }
 
     try {
       setBusyAction("element-update");
       setFeedback(null);
-      await updateKnowledgeElement(editElementId, {
-        name: editElementName.trim(),
-        description: editElementDescription.trim(),
-        competence_type: editElementCompetence,
-        subject_area_description:
-          editElementCompetence === "master"
-            ? editElementSubjectAreaDescription.trim()
-            : null,
-        operation_ref: editElementCompetence === "can" ? editElementOperationRef || null : null,
-      });
+
+      if (editElementCompetence === "master") {
+        await updateStructuredMasterKnowledgeElement(editElementId, {
+          name: editElementName.trim(),
+          description: editElementDescription.trim(),
+          topic_id: editElementTopicId,
+          subject_area_description: editElementSubjectAreaDescription.trim(),
+          automated_skill_element_ids: editElementAutomatedSkillIds,
+          domain_objects: editElementMasterDomainObjects.map((item) => ({
+            object_name: item.objectName.trim(),
+            knowledge_element_id: item.knowledgeElementId,
+          })),
+        });
+      } else if (editElementCompetence === "can") {
+        await updateStructuredSkillKnowledgeElement(editElementId, {
+          name: editElementName.trim(),
+          description: editElementDescription.trim(),
+          topic_id: editElementTopicId,
+          operation_ref: editElementOperationRef,
+          realized_knowledge_element_ids: editElementRealizedKnowledgeIds,
+        });
+      } else {
+        await updateKnowledgeElement(editElementId, {
+          name: editElementName.trim(),
+          description: editElementDescription.trim(),
+          competence_type: editElementCompetence,
+          subject_area_description: null,
+          operation_ref: null,
+        });
+      }
       await syncAfterChange(true);
       setFeedback({ kind: "success", text: "Элемент обновлен." });
     } catch (error) {
@@ -1889,6 +2353,11 @@ export function GraphEditor({
     } finally {
       setBusyAction("");
     }
+  }
+
+  async function handleUpdateElement(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    await submitUpdateElement();
   }
 
   async function handleDeleteElement(event: FormEvent<HTMLFormElement>) {
@@ -2970,21 +3439,29 @@ export function GraphEditor({
                     />
                   </label>
 
-                  <label className="field">
-                    <span>Элемент уровня «Уметь» для связи «Автоматизирует»</span>
-                    <select
-                      value={elementAutomatedSkillId}
-                      onChange={(event) => setElementAutomatedSkillId(event.target.value)}
-                      disabled={!availableSkillElementsForMaster.length}
-                    >
-                      <option value="">Выбери элемент «Уметь»</option>
+                  <div className="editor-subsection">
+                    <div className="editor-subsection__header">
+                      <div>
+                        <strong>Элементы уровня «Уметь» для связи «Автоматизирует»</strong>
+                      </div>
+                    </div>
+
+                    <div className="editor-checklist">
                       {availableSkillElementsForMaster.map((element) => (
-                        <option key={element.id} value={element.id}>
-                          {element.name}
-                        </option>
+                        <label className="editor-checklist__item" key={element.id}>
+                          <input
+                            type="checkbox"
+                            checked={elementAutomatedSkillIds.includes(element.id)}
+                            onChange={() => toggleElementAutomatedSkill(element.id)}
+                          />
+                          <span>
+                            <strong>{element.name}</strong>
+                            <small>{element.description || "Описание пока не заполнено"}</small>
+                          </span>
+                        </label>
                       ))}
-                    </select>
-                  </label>
+                    </div>
+                  </div>
 
                   {!availableSkillElementsForMaster.length ? (
                     <p className="editor-empty">
@@ -2993,7 +3470,7 @@ export function GraphEditor({
                     </p>
                   ) : null}
 
-                  {elementAutomatedSkillId ? (
+                  {elementAutomatedSkillIds.length ? (
                     requiredKnowledgeForMaster.length ? (
                       <div className="editor-subsection">
                         <div className="editor-subsection__header">
@@ -3090,7 +3567,7 @@ export function GraphEditor({
                       </div>
                     ) : (
                       <p className="editor-empty">
-                        У выбранного элемента «Уметь» нет связанных знаний уровня
+                        У выбранных элементов «Уметь» нет связанных знаний уровня
                         «Знать» в этой теме.
                       </p>
                     )
@@ -3107,7 +3584,7 @@ export function GraphEditor({
                 (elementCompetence === "master" &&
                   (!elementCreateTopicId ||
                     !elementSubjectAreaDescription.trim() ||
-                    !elementAutomatedSkillId ||
+                    !elementAutomatedSkillIds.length ||
                     !requiredKnowledgeForMaster.length ||
                     !elementMasterDomainObjects.length ||
                     elementMasterDomainObjects.some(
@@ -3302,12 +3779,249 @@ export function GraphEditor({
               />
             </label>
 
+            {editElementCompetence === "can" ? (
+              <>
+                <label className="field">
+                  <span>Тема элемента</span>
+                  <select
+                    value={editElementTopicId}
+                    onChange={(event) => setEditElementTopicId(event.target.value)}
+                    disabled={!sortedTopics.length}
+                  >
+                    <option value="">Выбери тему</option>
+                    {sortedTopics.map((topic) => (
+                      <option key={topic.id} value={topic.id}>
+                        {topic.name}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+
+                {editElementTopicId ? (
+                  editAvailableKnowledgeForSkillElement.length ? (
+                    <div className="editor-subsection">
+                      <div className="editor-subsection__header">
+                        <div>
+                          <strong>Связанные элементы «Знать»</strong>
+                        </div>
+                      </div>
+
+                      <div className="editor-checklist">
+                        {editAvailableKnowledgeForSkillElement.map((element) => (
+                          <label className="editor-checklist__item" key={element.id}>
+                            <input
+                              type="checkbox"
+                              checked={editElementRealizedKnowledgeIds.includes(element.id)}
+                              onChange={() => toggleEditElementRealizedKnowledge(element.id)}
+                            />
+                            <span>
+                              <strong>{element.name}</strong>
+                              <small>{element.description || "Описание пока не заполнено"}</small>
+                            </span>
+                          </label>
+                        ))}
+                      </div>
+                    </div>
+                  ) : (
+                    <p className="editor-empty">
+                      В выбранной теме пока нет элементов уровня «Знать» для связи «Реализует».
+                    </p>
+                  )
+                ) : null}
+              </>
+            ) : null}
+
+            {editElementCompetence === "master" ? (
+              <>
+                <label className="field">
+                  <span>Тема элемента</span>
+                  <select
+                    value={editElementTopicId}
+                    onChange={(event) => setEditElementTopicId(event.target.value)}
+                    disabled={!sortedTopics.length}
+                  >
+                    <option value="">Выбери тему</option>
+                    {sortedTopics.map((topic) => (
+                      <option key={topic.id} value={topic.id}>
+                        {topic.name}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+
+                <label className="field">
+                  <span>Описание предметной области</span>
+                  <textarea
+                    rows={3}
+                    value={editElementSubjectAreaDescription}
+                    onChange={(event) =>
+                      setEditElementSubjectAreaDescription(event.target.value)
+                    }
+                    placeholder="Опиши предметную область и контекст применения этого элемента"
+                    disabled={!sortedTopics.length}
+                  />
+                </label>
+
+                {editElementTopicId ? (
+                  <>
+                    <div className="editor-subsection">
+                      <div className="editor-subsection__header">
+                        <div>
+                          <strong>Элементы уровня «Уметь» для связи «Автоматизирует»</strong>
+                        </div>
+                      </div>
+
+                      <div className="editor-checklist">
+                        {editAvailableSkillElementsForMaster.map((element) => (
+                          <label className="editor-checklist__item" key={element.id}>
+                            <input
+                              type="checkbox"
+                              checked={editElementAutomatedSkillIds.includes(element.id)}
+                              onChange={() => toggleEditElementAutomatedSkill(element.id)}
+                            />
+                            <span>
+                              <strong>{element.name}</strong>
+                              <small>{element.description || "Описание пока не заполнено"}</small>
+                            </span>
+                          </label>
+                        ))}
+                      </div>
+                    </div>
+
+                    {!editAvailableSkillElementsForMaster.length ? (
+                      <p className="editor-empty">
+                        В выбранной теме пока нет элементов уровня «Уметь», связанных с
+                        алгоритмом.
+                      </p>
+                    ) : null}
+
+                    {editElementAutomatedSkillIds.length ? (
+                      editRequiredKnowledgeForMaster.length ? (
+                        <div className="editor-subsection">
+                          <div className="editor-subsection__header">
+                            <div>
+                              <strong>Объекты предметной области и связи «Опирается на»</strong>
+                            </div>
+
+                            <button
+                              className="secondary-button"
+                              onClick={addEditMasterDomainObjectDraft}
+                              type="button"
+                            >
+                              + Добавить объект
+                            </button>
+                          </div>
+
+                          <div className="editor-chips">
+                            {editRequiredKnowledgeForMaster.map((element) => (
+                              <span className="tag tag--muted" key={element.id}>
+                                {editUncoveredKnowledgeForMaster.some(
+                                  (item) => item.id === element.id,
+                                )
+                                  ? `Нужно покрыть: ${element.name}`
+                                  : `Покрыто: ${element.name}`}
+                              </span>
+                            ))}
+                          </div>
+
+                          {editDuplicateMasterDomainObjectMappings.length ? (
+                            <p className="editor-empty">
+                              Найдены дублирующиеся сопоставления. Один и тот же объект нельзя
+                              дважды связать с одним и тем же элементом «Знать».
+                            </p>
+                          ) : null}
+
+                          {editElementMasterDomainObjects.length ? (
+                            <div className="editor-domain-objects">
+                              {editElementMasterDomainObjects.map((item, index) => (
+                                <div className="editor-domain-object" key={item.clientId}>
+                                  <div className="editor-subsection__header">
+                                    <strong>Объект {index + 1}</strong>
+                                    <button
+                                      className="secondary-button secondary-button--danger"
+                                      onClick={() =>
+                                        removeEditMasterDomainObjectDraft(item.clientId)
+                                      }
+                                      type="button"
+                                    >
+                                      Удалить
+                                    </button>
+                                  </div>
+
+                                  <div className="editor-form__grid">
+                                    <label className="field">
+                                      <span>Наименование объекта</span>
+                                      <input
+                                        value={item.objectName}
+                                        onChange={(event) =>
+                                          updateEditMasterDomainObjectDraft(item.clientId, {
+                                            objectName: event.target.value,
+                                          })
+                                        }
+                                        placeholder="Например: матрица смежности"
+                                      />
+                                    </label>
+
+                                    <label className="field">
+                                      <span>Элемент уровня «Знать»</span>
+                                      <select
+                                        value={item.knowledgeElementId}
+                                        onChange={(event) =>
+                                          updateEditMasterDomainObjectDraft(item.clientId, {
+                                            knowledgeElementId: event.target.value,
+                                          })
+                                        }
+                                      >
+                                        <option value="">Выбери элемент «Знать»</option>
+                                        {editAvailableKnowledgeForMaster.map((element) => (
+                                          <option key={element.id} value={element.id}>
+                                            {element.name}
+                                          </option>
+                                        ))}
+                                      </select>
+                                    </label>
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          ) : (
+                            <p className="editor-empty">
+                              Добавь хотя бы один объект предметной области.
+                            </p>
+                          )}
+                        </div>
+                      ) : (
+                        <p className="editor-empty">
+                          У выбранных элементов «Уметь» нет связанных знаний уровня
+                          «Знать» в этой теме.
+                        </p>
+                      )
+                    ) : null}
+                  </>
+                ) : null}
+              </>
+            ) : null}
+
             <button
               className="primary-button"
               disabled={
                 !editElementId ||
                 !editElementName.trim() ||
-                (editElementCompetence === "can" && !editElementOperationRef) ||
+                (editElementCompetence === "can" &&
+                  (!editElementTopicId ||
+                    !editElementOperationRef ||
+                    !editElementRealizedKnowledgeIds.length)) ||
+                (editElementCompetence === "master" &&
+                  (!editElementTopicId ||
+                    !editElementSubjectAreaDescription.trim() ||
+                    !editElementAutomatedSkillIds.length ||
+                    !editRequiredKnowledgeForMaster.length ||
+                    !editElementMasterDomainObjects.length ||
+                    editElementMasterDomainObjects.some(
+                      (item) => !item.objectName.trim() || !item.knowledgeElementId,
+                    ) ||
+                    !!editDuplicateMasterDomainObjectMappings.length ||
+                    !!editUncoveredKnowledgeForMaster.length)) ||
                 !!busyAction
               }
             >
@@ -3739,6 +4453,65 @@ export function GraphEditor({
                 busyAction === "element-relation-delete"
                   ? "Удаляю..."
                   : "Удалить"}
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {confirmCompetenceChange ? (
+        <div
+          className="editor-confirm-backdrop"
+          onClick={closeCompetenceChangeConfirmation}
+          role="presentation"
+        >
+          <div
+            className="editor-confirm-dialog"
+            onClick={(event) => event.stopPropagation()}
+            role="dialog"
+            aria-modal="true"
+            aria-label="Подтверждение смены компетенции"
+          >
+            <div className="editor-confirm-dialog__header">
+              <p className="card__eyebrow">Подтверждение</p>
+              <h4>Изменить компетенцию элемента?</h4>
+            </div>
+
+            <p className="editor-confirm-dialog__text">
+              При смене компетенции на «{competenceLabel(confirmCompetenceChange.nextCompetence)}»
+              будут удалены все текущие связи этого элемента. Проверь список ниже и подтверди изменение.
+            </p>
+
+            <div className="editor-subsection">
+              <div className="editor-subsection__header">
+                <div>
+                  <strong>Будут удалены связи</strong>
+                </div>
+              </div>
+
+              <ul className="editor-list">
+                {confirmCompetenceChange.relationNames.map((relationName, index) => (
+                  <li key={`${relationName}-${index}`}>{relationName}</li>
+                ))}
+              </ul>
+            </div>
+
+            <div className="editor-confirm-dialog__actions">
+              <button
+                className="ghost-button"
+                onClick={closeCompetenceChangeConfirmation}
+                type="button"
+                disabled={busyAction === "element-update"}
+              >
+                Отмена
+              </button>
+              <button
+                className="secondary-button secondary-button--danger"
+                onClick={() => void handleConfirmCompetenceChange()}
+                type="button"
+                disabled={busyAction === "element-update"}
+              >
+                {busyAction === "element-update" ? "Сохраняю..." : "Подтвердить"}
               </button>
             </div>
           </div>
