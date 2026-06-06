@@ -28,6 +28,7 @@ import type {
   OperationContract,
   Relation,
   Topic,
+  TopicDependency,
   TopicKnowledgeElement,
   TopicKnowledgeElementRole,
 } from "../types";
@@ -38,6 +39,7 @@ type GraphEditorProps = {
   initialTab?: EditorTab;
   knowledgeElementRelations: KnowledgeElementRelation[];
   onDataChanged: () => Promise<void>;
+  topicDependencies: TopicDependency[];
   topicKnowledgeElements: TopicKnowledgeElement[];
   topics: Topic[];
 };
@@ -54,6 +56,8 @@ type ConfirmDeleteState =
       entityId: string;
       entityName: string;
       entityType: "topic" | "element" | "element-relation";
+      relationNames?: string[];
+      text?: string;
     }
   | null;
 
@@ -168,6 +172,39 @@ function relationTypeLabel(value: KnowledgeElementRelationType) {
       ...MASTER_TO_CAN_RELATION_OPTIONS,
       ...MASTER_TO_KNOW_RELATION_OPTIONS,
     ].find((option) => option.value === value)?.label ?? value
+  );
+}
+
+function topicDependencyRelationLabel(value: TopicDependency["relation_type"]) {
+  if (value === "requires") {
+    return "Требует";
+  }
+  if (value === "possible_flow") {
+    return "Возможный переход";
+  }
+  return value;
+}
+
+function isDeletionBlockedByRelation(
+  element: KnowledgeElement,
+  relation: KnowledgeElementRelation,
+  elementById: Map<string, KnowledgeElement>,
+) {
+  if (relation.target_element_id !== element.id) {
+    return false;
+  }
+
+  const sourceElement = elementById.get(relation.source_element_id);
+  if (!sourceElement) {
+    return false;
+  }
+
+  return (
+    (element.competence_type === "know" &&
+      (sourceElement.competence_type === "can" ||
+        sourceElement.competence_type === "master")) ||
+    (element.competence_type === "can" &&
+      sourceElement.competence_type === "master")
   );
 }
 
@@ -526,6 +563,7 @@ export function GraphEditor({
   initialTab = "topics",
   knowledgeElementRelations,
   onDataChanged,
+  topicDependencies,
   topicKnowledgeElements,
   topics,
 }: GraphEditorProps) {
@@ -1598,10 +1636,47 @@ export function GraphEditor({
         return;
       }
 
+      const linkedElements = (topicKnowledgeElementsByTopicId.get(entityId) ?? [])
+        .map((link) => {
+          const element = elementById.get(link.element_id);
+          if (!element) {
+            return null;
+          }
+          const roleLabel =
+            TOPIC_LINK_ROLE_OPTIONS.find((option) => option.value === link.role)?.label ??
+            link.role;
+          return `${element.name} (${competenceLabel(element.competence_type)}, ${roleLabel})`;
+        })
+        .filter((item): item is string => !!item);
+
+      const linkedDependencies = topicDependencies
+        .filter(
+          (dependency) =>
+            dependency.prerequisite_topic_id === entityId ||
+            dependency.dependent_topic_id === entityId,
+        )
+        .map((dependency) => {
+          const prerequisiteName =
+            topicById.get(dependency.prerequisite_topic_id)?.name ?? "Тема";
+          const dependentName = topicById.get(dependency.dependent_topic_id)?.name ?? "Тема";
+          return `${prerequisiteName} -> ${dependentName} (${topicDependencyRelationLabel(
+            dependency.relation_type,
+          )})`;
+        });
+
+      const details = [
+        ...linkedElements.map((name) => `Привязка элемента: ${name}`),
+        ...linkedDependencies.map((name) => `Зависимость темы: ${name}`),
+      ];
+
       setConfirmDelete({
         entityId,
         entityName: selectedTopic.name,
         entityType,
+        relationNames: details,
+        text: details.length
+          ? `Тема "${selectedTopic.name}" будет удалена вместе с ${linkedElements.length} привязками элементов и ${linkedDependencies.length} зависимостями темы.`
+          : `Тема "${selectedTopic.name}" будет удалена.`,
       });
       return;
     }
@@ -1625,10 +1700,51 @@ export function GraphEditor({
       return;
     }
 
+    const relatedRelations = knowledgeElementRelations.filter(
+      (relation) =>
+        relation.source_element_id === entityId || relation.target_element_id === entityId,
+    );
+    const blockingRelations = relatedRelations.filter((relation) =>
+      isDeletionBlockedByRelation(selectedElement, relation, elementById),
+    );
+    if (blockingRelations.length) {
+      const blockingRelationNames = blockingRelations.map(getElementRelationName);
+      setFeedback({
+        kind: "error",
+        text:
+          `Элемент "${selectedElement.name}" нельзя удалить, потому что на него опираются элементы более высокого уровня: ` +
+          blockingRelationNames.join(", "),
+      });
+      return;
+    }
+
+    const sameLevelRelations = relatedRelations.filter((relation) => {
+      const sourceElement = elementById.get(relation.source_element_id);
+      const targetElement = elementById.get(relation.target_element_id);
+      return (
+        sourceElement?.competence_type === targetElement?.competence_type &&
+        (relation.source_element_id === entityId || relation.target_element_id === entityId)
+      );
+    });
+    const crossLevelRelations = relatedRelations.filter((relation) => {
+      const sourceElement = elementById.get(relation.source_element_id);
+      const targetElement = elementById.get(relation.target_element_id);
+      return (
+        sourceElement?.competence_type !== targetElement?.competence_type &&
+        (relation.source_element_id === entityId || relation.target_element_id === entityId)
+      );
+    });
+
     setConfirmDelete({
       entityId,
       entityName: selectedElement.name,
       entityType,
+      relationNames: relatedRelations.map(getElementRelationName),
+      text: relatedRelations.length
+        ? crossLevelRelations.length
+          ? `Элемент "${selectedElement.name}" будет удален вместе со связями с другими элементами. Будут удалены ${crossLevelRelations.length} межуровневых и ${sameLevelRelations.length} связей в рамках одного уровня компетенции.`
+          : `Элемент "${selectedElement.name}" будет удален вместе со ${sameLevelRelations.length} связями в рамках одного уровня компетенции.`
+        : `Элемент "${selectedElement.name}" будет удален.`,
     });
   }
 
@@ -4419,11 +4535,34 @@ export function GraphEditor({
 
             <p className="editor-confirm-dialog__text">
               {confirmDelete.entityType === "topic"
-                ? `Тема "${confirmDelete.entityName}" будет удалена вместе со связанными зависимостями и привязками.`
+                ? (confirmDelete.text ??
+                  `Тема "${confirmDelete.entityName}" будет удалена вместе со связанными зависимостями и привязками.`)
                 : confirmDelete.entityType === "element-relation"
                   ? `Связь "${confirmDelete.entityName}" будет удалена из графа элементов.`
-                  : `Элемент "${confirmDelete.entityName}" будет удален вместе со связями и привязками к темам.`}
+                  : (confirmDelete.text ??
+                    `Элемент "${confirmDelete.entityName}" будет удален вместе со связями и привязками к темам.`)}
             </p>
+
+            {(confirmDelete.entityType === "element" || confirmDelete.entityType === "topic") &&
+            confirmDelete.relationNames?.length ? (
+              <div className="editor-subsection">
+                <div className="editor-subsection__header">
+                  <div>
+                    <strong>
+                      {confirmDelete.entityType === "topic"
+                        ? "Будут удалены привязки и зависимости"
+                        : "Будут удалены связи"}
+                    </strong>
+                  </div>
+                </div>
+
+                <ul className="editor-list">
+                  {confirmDelete.relationNames.map((relationName, index) => (
+                    <li key={`${relationName}-${index}`}>{relationName}</li>
+                  ))}
+                </ul>
+              </div>
+            ) : null}
 
             <div className="editor-confirm-dialog__actions">
               <button
