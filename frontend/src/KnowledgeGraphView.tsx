@@ -1088,6 +1088,7 @@ export function KnowledgeGraphView({ disciplineId }: KnowledgeGraphViewProps) {
                                 disciplineId={resolvedDisciplineId || disciplineId}
                                 initialTab={requestedEditorTab ?? "topics"}
                                 topics={graphData?.topics ?? []}
+                                topicDependencies={graphData?.topic_dependencies ?? []}
                                 disciplineElements={graphData?.knowledge_elements ?? []}
                                 knowledgeElementRelations={
                                     graphData?.knowledge_element_relations ?? []

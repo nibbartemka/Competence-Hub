@@ -840,6 +840,7 @@ export default function App() {
               <GraphEditor
                 disciplineId={activeDisciplineId}
                 topics={graphData?.topics ?? []}
+                topicDependencies={graphData?.topic_dependencies ?? []}
                 disciplineElements={graphData?.knowledge_elements ?? []}
                 knowledgeElementRelations={graphData?.knowledge_element_relations ?? []}
                 topicKnowledgeElements={graphData?.topic_knowledge_elements ?? []}
