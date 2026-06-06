@@ -18,7 +18,7 @@ from app.models import (
     Topic,
     TopicKnowledgeElement,
 )
-from app.models.enums import KnowledgeElementRelationType, LearningTrajectoryStatus
+from app.models.enums import CompetenceType, KnowledgeElementRelationType, LearningTrajectoryStatus
 from app.services.topic_dependencies import get_topic_dependency_cycle_for_discipline
 
 
@@ -214,13 +214,78 @@ async def ensure_element_can_be_removed(session: AsyncSession, element_id: UUID)
         .limit(1)
     )
     trajectory_name = linked_topic_result.scalar_one_or_none()
-    if trajectory_name is None:
+    if trajectory_name is not None:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=(
+                f"Knowledge element belongs to a topic used by active learning trajectory "
+                f"'{trajectory_name}'. Archive the trajectory before changing this element."
+            ),
+        )
+
+    relation_result = await session.execute(
+        select(KnowledgeElementRelation).where(
+            (KnowledgeElementRelation.source_element_id == element_id)
+            | (KnowledgeElementRelation.target_element_id == element_id)
+        )
+    )
+    relations = list(relation_result.scalars().all())
+    if not relations:
         return
 
+    element_result = await session.execute(
+        select(KnowledgeElement).where(KnowledgeElement.id == element_id)
+    )
+    element = element_result.scalar_one_or_none()
+    if element is None:
+        return
+
+    related_element_ids = {
+        relation.source_element_id
+        for relation in relations
+        if relation.source_element_id != element_id
+    } | {
+        relation.target_element_id
+        for relation in relations
+        if relation.target_element_id != element_id
+    }
+    if not related_element_ids:
+        return
+
+    related_elements_result = await session.execute(
+        select(KnowledgeElement).where(KnowledgeElement.id.in_(related_element_ids))
+    )
+    related_elements_by_id = {
+        related_element.id: related_element
+        for related_element in related_elements_result.scalars().all()
+    }
+
+    blocking_source_names: list[str] = []
+    for relation in relations:
+        if relation.target_element_id != element_id:
+            continue
+
+        source_element = related_elements_by_id.get(relation.source_element_id)
+        if source_element is None:
+            continue
+
+        if (
+            element.competence_type == CompetenceType.KNOW
+            and source_element.competence_type in {CompetenceType.CAN, CompetenceType.MASTER}
+        ) or (
+            element.competence_type == CompetenceType.CAN
+            and source_element.competence_type == CompetenceType.MASTER
+        ):
+            blocking_source_names.append(source_element.name)
+
+    if not blocking_source_names:
+        return
+
+    blocking_names = ", ".join(dict.fromkeys(blocking_source_names))
     raise HTTPException(
         status_code=status.HTTP_409_CONFLICT,
         detail=(
-            f"Knowledge element belongs to a topic used by active learning trajectory "
-            f"'{trajectory_name}'. Archive the trajectory before changing this element."
+            "Knowledge element cannot be removed because higher-level elements depend on it: "
+            f"{blocking_names}."
         ),
     )
