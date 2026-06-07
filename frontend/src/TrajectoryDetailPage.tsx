@@ -431,6 +431,143 @@ function getAvailableKnowTemplateKinds(
   return availableTemplateKinds.length ? availableTemplateKinds : ["manual"];
 }
 
+function resolveTaskType(
+  templateKind: LearningTrajectoryTaskTemplateKind,
+  taskType: LearningTrajectoryTaskType,
+) {
+  return templateKind === "manual" ? taskType : TASK_TEMPLATE_TYPE[templateKind];
+}
+
+function formatTaskElementList(names: string[]) {
+  const uniqueNames = [...new Set(names.map((name) => name.trim()).filter(Boolean))];
+  if (!uniqueNames.length) return "";
+  if (uniqueNames.length === 1) return uniqueNames[0];
+  if (uniqueNames.length === 2) return `${uniqueNames[0]} и ${uniqueNames[1]}`;
+  if (uniqueNames.length <= 4) {
+    return `${uniqueNames.slice(0, -1).join(", ")} и ${uniqueNames[uniqueNames.length - 1]}`;
+  }
+  return `${uniqueNames.slice(0, 3).join(", ")} и еще ${uniqueNames.length - 3}`;
+}
+
+function buildAutoTaskDraft(params: {
+  competenceTab: TaskCompetenceTab;
+  topicName: string;
+  primaryElement: KnowledgeElement;
+  templateKind: LearningTrajectoryTaskTemplateKind;
+  taskType: LearningTrajectoryTaskType;
+  operationTitle: string;
+  knowNames: string[];
+  masterSkillNames: string[];
+  masterKnowledgeNames: string[];
+}) {
+  const {
+    competenceTab,
+    topicName,
+    primaryElement,
+    templateKind,
+    taskType,
+    operationTitle,
+    knowNames,
+    masterSkillNames,
+    masterKnowledgeNames,
+  } = params;
+  const primaryName = primaryElement.name.trim() || "Ключевой элемент";
+  const topicPart = topicName ? ` по теме «${topicName}»` : "";
+  const primaryDescription = primaryElement.description?.trim() ?? "";
+  const relatedKnowPart = formatTaskElementList(knowNames);
+  const relatedSkillPart = formatTaskElementList(masterSkillNames);
+  const relatedKnowledgePart = formatTaskElementList(masterKnowledgeNames);
+
+  if (competenceTab === "can") {
+    const actionTitle = operationTitle || primaryName;
+    const title = `Уметь: ${actionTitle}`;
+    const promptParts = [
+      `Выполни задание${topicPart} по элементу «${primaryName}».`,
+      operationTitle ? `Используй алгоритм «${operationTitle}».` : "Дай ответ в ожидаемом формате для этого элемента.",
+      relatedKnowPart ? `При решении опирайся на знания: ${relatedKnowPart}.` : "",
+      "Ответ должен соответствовать форме, которую система покажет студенту.",
+    ].filter(Boolean);
+    return { title, prompt: promptParts.join(" ") };
+  }
+
+  if (competenceTab === "master") {
+    const title = `Владеть: ${primaryName}`;
+    const promptParts = [
+      `Подготовь практическое решение${topicPart} по элементу «${primaryName}».`,
+      relatedSkillPart ? `Используй умения: ${relatedSkillPart}.` : "",
+      relatedKnowledgePart ? `Опирайся на знания: ${relatedKnowledgePart}.` : "",
+      "Загрузи итоговый файл с решением и результатом.",
+    ].filter(Boolean);
+    return { title, prompt: promptParts.join(" ") };
+  }
+
+  if (templateKind === "definition_choice") {
+    return {
+      title: `Определение: ${primaryName}`,
+      prompt: `Выбери верное определение для понятия «${primaryName}»${topicPart}.`,
+    };
+  }
+
+  if (templateKind === "term_choice") {
+    return {
+      title: `Понятие по определению: ${primaryName}`,
+      prompt: `Выбери понятие, которое соответствует определению элемента «${primaryName}»${topicPart}.`,
+    };
+  }
+
+  if (templateKind === "property_multiple") {
+    return {
+      title: `Свойства: ${primaryName}`,
+      prompt: `Выбери все характеристики, которые относятся к элементу «${primaryName}»${topicPart}.`,
+    };
+  }
+
+  if (templateKind === "contains_multiple") {
+    return {
+      title: `Состав: ${primaryName}`,
+      prompt: `Выбери все части или составляющие элемента «${primaryName}»${topicPart}.`,
+    };
+  }
+
+  if (templateKind === "matching_definition") {
+    return {
+      title: `Сопоставление: ${primaryName}`,
+      prompt: `Сопоставь понятия и определения${topicPart}, включая элемент «${primaryName}».`,
+    };
+  }
+
+  const resolvedType = resolveTaskType(templateKind, taskType);
+  if (resolvedType === "multiple_choice") {
+    return {
+      title: `Несколько выборов: ${primaryName}`,
+      prompt: `Выбери все корректные варианты по элементу «${primaryName}»${topicPart}.`,
+    };
+  }
+  if (resolvedType === "matching") {
+    return {
+      title: `Сопоставление: ${primaryName}`,
+      prompt: `Сопоставь связанные элементы${topicPart} для «${primaryName}».`,
+    };
+  }
+  if (resolvedType === "ordering") {
+    return {
+      title: `Порядок: ${primaryName}`,
+      prompt: `Расположи элементы в правильном порядке${topicPart}, начиная с «${primaryName}».`,
+    };
+  }
+  if (resolvedType === "text") {
+    return {
+      title: `Текстовый ответ: ${primaryName}`,
+      prompt: `Подготовь текстовый ответ${topicPart} по элементу «${primaryName}».`,
+    };
+  }
+
+  return {
+    title: `Один выбор: ${primaryName}`,
+    prompt: `Выбери один верный вариант${topicPart} по элементу «${primaryName}».`,
+  };
+}
+
 function statusLabel(status: LearningTrajectory["status"]) {
   if (status === "active") return "Активна";
   if (status === "archived") return "Архив";
@@ -1012,6 +1149,7 @@ export default function TrajectoryDetailPage() {
   const [taskDistractorElementIds, setTaskDistractorElementIds] = useState<string[]>([]);
   const [taskTitle, setTaskTitle] = useState("");
   const [taskPrompt, setTaskPrompt] = useState("");
+  const autoTaskDraftRef = useRef({ title: "", prompt: "" });
   const [taskDifficulty, setTaskDifficulty] = useState(30);
   const [taskType, setTaskType] = useState<LearningTrajectoryTaskType>("single_choice");
   const [taskPreviewOpen, setTaskPreviewOpen] = useState(false);
@@ -1119,17 +1257,28 @@ export default function TrajectoryDetailPage() {
   }, [isStudentMode, trajectoryId]);
 
   useEffect(() => {
+    setView({ level: "topics" });
+    setStudentView({ level: "topics" });
+    setSelectedNodeId("");
+    setTopicOrderModalOpen(false);
+    setTasksModalOpen(false);
+  }, [trajectoryId]);
+
+  useEffect(() => {
     if (!disciplineId || !trajectoryId) return;
     const controller = new AbortController();
 
     async function load() {
       try {
         setLoading(true);
-        const [nextGraph, nextTrajectory, nextContracts] = await Promise.all([
-          fetchDisciplineKnowledgeGraph(disciplineId!, controller.signal),
+        const [nextTrajectory, nextContracts] = await Promise.all([
           fetchLearningTrajectory(trajectoryId!, controller.signal),
           fetchOperationContracts(controller.signal),
         ]);
+        const nextGraph = await fetchDisciplineKnowledgeGraph(
+          nextTrajectory.discipline_id,
+          controller.signal,
+        );
         const nextOrder = nextTrajectory.topics
           .slice()
           .sort((left, right) => left.position - right.position)
@@ -1655,6 +1804,10 @@ export default function TrajectoryDetailPage() {
       getAvailableKnowTemplateKinds(graph, taskPrimaryElementId, availableTaskElements),
     [availableTaskElements, graph, taskPrimaryElementId],
   );
+  const currentTaskTopicName = useMemo(
+    () => (taskTopicId ? topicName(topicById, taskTopicId) : ""),
+    [taskTopicId, topicById],
+  );
   const selectedTaskElementIds = useMemo(() => {
     return new Set([taskPrimaryElementId, ...taskRelatedElementIds].filter(Boolean));
   }, [
@@ -1844,6 +1997,7 @@ export default function TrajectoryDetailPage() {
   }
 
   function resetTaskForm() {
+    autoTaskDraftRef.current = { title: "", prompt: "" };
     setEditingTaskId("");
     setTaskCompetenceTab("know");
     setTaskTemplateKind("definition_choice");
@@ -1867,8 +2021,29 @@ export default function TrajectoryDetailPage() {
       (trajectoryElementsByTopicId.get(firstTopicId) ?? []).find(
         (element) => element.competence_type === "know",
       )?.id ?? "";
+    const firstPrimaryElement =
+      (trajectoryElementsByTopicId.get(firstTopicId) ?? []).find(
+        (element) => element.id === firstPrimaryElementId,
+      ) ?? null;
     setTaskPrimaryElementId(firstPrimaryElementId);
     setTaskSingleCorrectElementId(firstPrimaryElementId);
+
+    if (firstPrimaryElement) {
+      const nextDraft = buildAutoTaskDraft({
+        competenceTab: "know",
+        topicName: topicName(topicById, firstTopicId),
+        primaryElement: firstPrimaryElement,
+        templateKind: "definition_choice",
+        taskType: "single_choice",
+        operationTitle: "",
+        knowNames: [],
+        masterSkillNames: [],
+        masterKnowledgeNames: [],
+      });
+      autoTaskDraftRef.current = nextDraft;
+      setTaskTitle(nextDraft.title);
+      setTaskPrompt(nextDraft.prompt);
+    }
   }
 
   function buildTaskContentPayload(): LearningTrajectoryTaskContent {
@@ -2167,6 +2342,53 @@ export default function TrajectoryDetailPage() {
     );
   }, [selectedPrimaryElement]);
 
+  useEffect(() => {
+    if (editingTaskId || !selectedPrimaryElement) {
+      return;
+    }
+
+    const nextDraft = buildAutoTaskDraft({
+      competenceTab: taskCompetenceTab,
+      topicName: currentTaskTopicName,
+      primaryElement: selectedPrimaryElement,
+      templateKind: taskTemplateKind,
+      taskType,
+      operationTitle: selectedPrimaryOperation?.title ?? "",
+      knowNames: availableSkillKnowledgeElements.map((element) => element.name),
+      masterSkillNames: availableMasterSkillElements.map((element) => element.name),
+      masterKnowledgeNames: availableMasterKnowledgeElements.map((element) => element.name),
+    });
+    const previousDraft = autoTaskDraftRef.current;
+
+    setTaskTitle((current) => {
+      if (!nextDraft.title) return current;
+      if (!current.trim() || current === previousDraft.title) {
+        return nextDraft.title;
+      }
+      return current;
+    });
+    setTaskPrompt((current) => {
+      if (!nextDraft.prompt) return current;
+      if (!current.trim() || current === previousDraft.prompt) {
+        return nextDraft.prompt;
+      }
+      return current;
+    });
+
+    autoTaskDraftRef.current = nextDraft;
+  }, [
+    availableMasterKnowledgeElements,
+    availableMasterSkillElements,
+    availableSkillKnowledgeElements,
+    currentTaskTopicName,
+    editingTaskId,
+    selectedPrimaryElement,
+    selectedPrimaryOperation,
+    taskCompetenceTab,
+    taskTemplateKind,
+    taskType,
+  ]);
+
   async function persistTopicOrder(nextOrder: string[]) {
     if (!graph || !trajectory || !trajectoryId) return;
     if (!canEditTrajectory) {
@@ -2284,6 +2506,7 @@ export default function TrajectoryDetailPage() {
   }
 
   function startTaskEditing(task: LearningTrajectoryTask) {
+    autoTaskDraftRef.current = { title: task.title, prompt: task.prompt };
     setEditingTaskId(task.id);
     setTaskPreviewOpen(false);
     setTasksModalSection("create");
@@ -2313,6 +2536,12 @@ export default function TrajectoryDetailPage() {
     setTaskAcceptedAnswers(task.content.accepted_answers?.length ? task.content.accepted_answers : [""]);
     setTaskTextPlaceholder(task.content.placeholder ?? "");
     setTaskSkillInputPayload(task.content.input_payload ?? {});
+  }
+
+  function openTasksCreateModal() {
+    resetTaskForm();
+    setTasksModalSection("create");
+    setTasksModalOpen(true);
   }
 
   function toggleTaskRelatedElement(elementId: string) {
@@ -3218,7 +3447,12 @@ export default function TrajectoryDetailPage() {
           </button>
           <button
             className={`editor-tab ${tasksModalSection === "create" ? "editor-tab--active" : ""}`}
-            onClick={() => setTasksModalSection("create")}
+            onClick={() => {
+              if (!editingTaskId) {
+                resetTaskForm();
+              }
+              setTasksModalSection("create");
+            }}
             type="button"
           >
             Создание
@@ -3301,224 +3535,171 @@ export default function TrajectoryDetailPage() {
                       ))}
                     </select>
                   </label>
-                  {taskCompetenceTab === "know" ? (
-                    <label className="field trajectory-task-editor__field--template">
-                      <span>Шаблон задания</span>
-                      <select
-                        value={taskTemplateKind}
-                        onChange={(event) =>
-                          handleTaskTemplateKindChange(event.target.value as LearningTrajectoryTaskTemplateKind)
-                        }
-                        disabled={saving}
-                      >
-                        {availableKnowTemplateKinds.map((value) => (
-                          <option key={value} value={value}>
-                            {TASK_TEMPLATE_LABELS[value]}
-                          </option>
-                        ))}
-                      </select>
-                    </label>
-                  ) : null}
                 </div>
                 </section>
 
                 <section className="trajectory-task-step">
                   <div className="trajectory-task-step__header">
                     <span className="trajectory-task-step__eyebrow">Шаг 2</span>
-                    <strong>Формулировка задания</strong>
+                    <strong>Параметры по типу компетенции</strong>
                   </div>
-                <div className="trajectory-task-editor__grid">
                   {taskCompetenceTab === "know" ? (
-                    <label className="field trajectory-task-editor__field--task-type">
-                      <span>Тип задания</span>
-                      {taskTemplateKind === "manual" ? (
+                    <div className="trajectory-task-editor__grid trajectory-task-editor__grid--two">
+                      <label className="field">
+                        <span>Шаблон задания</span>
                         <select
-                          value={taskType}
-                          onChange={(event) => resetTaskTemplate(event.target.value as LearningTrajectoryTaskType)}
+                          value={taskTemplateKind}
+                          onChange={(event) =>
+                            handleTaskTemplateKindChange(event.target.value as LearningTrajectoryTaskTemplateKind)
+                          }
                           disabled={saving}
                         >
-                          {MANUAL_TASK_TYPE_OPTIONS.map((value) => (
+                          {availableKnowTemplateKinds.map((value) => (
                             <option key={value} value={value}>
-                              {TASK_TYPE_LABELS[value]}
+                              {TASK_TEMPLATE_LABELS[value]}
                             </option>
                           ))}
                         </select>
-                      ) : (
-                        <input
-                          value={TASK_TYPE_LABELS[TASK_TEMPLATE_TYPE[taskTemplateKind]]}
-                          disabled
-                          readOnly
-                        />
-                      )}
-                    </label>
+                      </label>
+                      <label className="field">
+                        <span>Тип задания</span>
+                        {taskTemplateKind === "manual" ? (
+                          <select
+                            value={taskType}
+                            onChange={(event) => resetTaskTemplate(event.target.value as LearningTrajectoryTaskType)}
+                            disabled={saving}
+                          >
+                            {MANUAL_TASK_TYPE_OPTIONS.map((value) => (
+                              <option key={value} value={value}>
+                                {TASK_TYPE_LABELS[value]}
+                              </option>
+                            ))}
+                          </select>
+                        ) : (
+                          <input
+                            value={TASK_TYPE_LABELS[TASK_TEMPLATE_TYPE[taskTemplateKind]]}
+                            disabled
+                            readOnly
+                          />
+                        )}
+                      </label>
+                    </div>
                   ) : null}
-                  <label className="field">
-                    <span>Заголовок задания</span>
-                    <input
-                      value={taskTitle}
-                      onChange={(event) => setTaskTitle(event.target.value)}
-                      placeholder="Например: Определение базового понятия"
-                      disabled={saving}
-                    />
-                  </label>
-                  <label className="field trajectory-task-editor__field--difficulty-inline">
-                    <span>Сложность</span>
-                    <input
-                      min={TASK_DIFFICULTY_MIN}
-                      max={TASK_DIFFICULTY_MAX}
-                      step={1}
-                      type="number"
-                      value={taskDifficulty}
-                      onChange={(event) =>
-                        setTaskDifficulty(clampTaskDifficulty(Number(event.target.value)))
-                      }
-                      disabled={saving}
-                    />
-                  </label>
-                </div>
-                <label className="field">
-                  <span>Текст задания</span>
-                  <textarea
-                    rows={4}
-                    value={taskPrompt}
-                    onChange={(event) => setTaskPrompt(event.target.value)}
-                    placeholder="Опиши задание для студента"
-                    disabled={saving}
-                  />
-                </label>
+                  {taskCompetenceTab === "can" ? (
+                    <div className="trajectory-task-related">
+                      <strong>Настройка задания уровня «Уметь»</strong>
+                      {!availablePrimaryElements.length ? (
+                        <p className="form-error">
+                          В выбранной теме траектории пока нет элементов «Уметь».
+                        </p>
+                      ) : selectedPrimaryOperation ? (
+                        <p className="card__text">Операция: {selectedPrimaryOperation.title}</p>
+                      ) : (
+                        <p className="form-error">У выбранного элемента «Уметь» не найдена операция алгоритмической библиотеки.</p>
+                      )}
+                      <div className="trajectory-task-related">
+                        <strong>Входные значения</strong>
+                        {selectedPrimaryOperation ? (
+                          <OperationInputEditor
+                            disabled={saving}
+                            onChange={setTaskSkillInputPayload}
+                            schema={selectedPrimaryOperation.input_schema}
+                            value={taskSkillInputPayload}
+                          />
+                        ) : null}
+                      </div>
+                      <label className="field">
+                        <span>Подсказка в поле ответа</span>
+                        <input
+                          value={taskTextPlaceholder}
+                          onChange={(event) => setTaskTextPlaceholder(event.target.value)}
+                          placeholder="Например: Введите ответ в формате JSON"
+                          disabled={saving}
+                        />
+                      </label>
+                      <div className="trajectory-task-preview__items">
+                        {availableSkillKnowledgeElements.map((element) => (
+                          <span className="trajectory-task-preview__item trajectory-task-preview__item--correct" key={element.id}>
+                            {element.name}
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                  ) : null}
+                  {taskCompetenceTab === "master" ? (
+                    <div className="trajectory-task-related">
+                      <strong>Настройка задания уровня «Владеть»</strong>
+                      <label className="field">
+                        <span>Подсказка в поле ответа</span>
+                        <input
+                          value={taskTextPlaceholder}
+                          onChange={(event) => setTaskTextPlaceholder(event.target.value)}
+                          placeholder="Например: Опиши решение и результат"
+                          disabled={saving}
+                        />
+                      </label>
+                      <strong>Обязательные элементы «Уметь»</strong>
+                      <div className="trajectory-task-preview__items">
+                        {availableMasterSkillElements.length ? (
+                          availableMasterSkillElements.map((element) => (
+                            <span className="trajectory-task-preview__item trajectory-task-preview__item--correct" key={`master-skill-${element.id}`}>
+                              {element.name}
+                            </span>
+                          ))
+                        ) : (
+                          <p className="card__text">
+                            Для выбранного элемента пока не найдено обязательных связей «автоматизирует» с элементами «Уметь».
+                          </p>
+                        )}
+                      </div>
+                      <strong>Обязательные элементы «Знать»</strong>
+                      <div className="trajectory-task-preview__items">
+                        {availableMasterKnowledgeElements.length ? (
+                          availableMasterKnowledgeElements.map((element) => (
+                            <span className="trajectory-task-preview__item trajectory-task-preview__item--correct" key={`master-know-${element.id}`}>
+                              {element.name}
+                            </span>
+                          ))
+                        ) : (
+                          <p className="card__text">
+                            Для выбранного элемента пока не найдено обязательных связей «опирается на» с элементами «Знать».
+                          </p>
+                        )}
+                      </div>
+                    </div>
+                  ) : null}
                 </section>
+
                 <section className="trajectory-task-step">
                   <div className="trajectory-task-step__header">
                     <span className="trajectory-task-step__eyebrow">Шаг 3</span>
-                    <strong>Параметры по типу компетенции</strong>
+                    <strong>Формулировка задания</strong>
                   </div>
-                {taskCompetenceTab === "know" ? (
-                  <div className="trajectory-task-editor__grid trajectory-task-editor__grid--two">
+                  <div className="trajectory-task-editor__grid trajectory-task-editor__grid--single-two">
                     <label className="field">
-                      <span>Шаблон задания</span>
-                      <select
-                        value={taskTemplateKind}
-                        onChange={(event) =>
-                          handleTaskTemplateKindChange(event.target.value as LearningTrajectoryTaskTemplateKind)
-                        }
-                        disabled={saving}
-                      >
-                        {availableKnowTemplateKinds.map((value) => (
-                          <option key={value} value={value}>
-                            {TASK_TEMPLATE_LABELS[value]}
-                          </option>
-                        ))}
-                      </select>
-                    </label>
-                    <label className="field">
-                      <span>Тип задания</span>
-                      {taskTemplateKind === "manual" ? (
-                        <select
-                          value={taskType}
-                          onChange={(event) => resetTaskTemplate(event.target.value as LearningTrajectoryTaskType)}
-                          disabled={saving}
-                        >
-                          {MANUAL_TASK_TYPE_OPTIONS.map((value) => (
-                            <option key={value} value={value}>
-                              {TASK_TYPE_LABELS[value]}
-                            </option>
-                          ))}
-                        </select>
-                      ) : (
-                        <input
-                          value={TASK_TYPE_LABELS[TASK_TEMPLATE_TYPE[taskTemplateKind]]}
-                          disabled
-                          readOnly
-                        />
-                      )}
-                    </label>
-                  </div>
-                ) : null}
-                {taskCompetenceTab === "can" ? (
-                  <div className="trajectory-task-related">
-                    <strong>Настройка задания уровня «Уметь»</strong>
-                    {!availablePrimaryElements.length ? (
-                      <p className="form-error">
-                        В выбранной теме траектории пока нет элементов «Уметь».
-                      </p>
-                    ) : selectedPrimaryOperation ? (
-                      <p className="card__text">Операция: {selectedPrimaryOperation.title}</p>
-                    ) : (
-                      <p className="form-error">У выбранного элемента «Уметь» не найдена операция алгоритмической библиотеки.</p>
-                    )}
-                    <div className="trajectory-task-related">
-                      <strong>Входные значения</strong>
-                      {selectedPrimaryOperation ? (
-                        <OperationInputEditor
-                          disabled={saving}
-                          onChange={setTaskSkillInputPayload}
-                          schema={selectedPrimaryOperation.input_schema}
-                          value={taskSkillInputPayload}
-                        />
-                      ) : null}
-                    </div>
-                    <label className="field">
-                      <span>Подсказка в поле ответа</span>
+                      <span>Заголовок задания</span>
                       <input
-                        value={taskTextPlaceholder}
-                        onChange={(event) => setTaskTextPlaceholder(event.target.value)}
-                        placeholder="Например: Введите ответ в формате JSON"
+                        value={taskTitle}
+                        onChange={(event) => setTaskTitle(event.target.value)}
+                        placeholder="Заголовок будет подставлен автоматически"
                         disabled={saving}
                       />
                     </label>
-                    <div className="trajectory-task-preview__items">
-                      {availableSkillKnowledgeElements.map((element) => (
-                        <span className="trajectory-task-preview__item trajectory-task-preview__item--correct" key={element.id}>
-                          {element.name}
-                        </span>
-                      ))}
-                    </div>
                   </div>
-                ) : null}
-                {taskCompetenceTab === "master" ? (
-                  <div className="trajectory-task-related">
-                    <strong>Настройка задания уровня «Владеть»</strong>
-                    <label className="field">
-                      <span>Подсказка в поле ответа</span>
-                      <input
-                        value={taskTextPlaceholder}
-                        onChange={(event) => setTaskTextPlaceholder(event.target.value)}
-                        placeholder="Например: Опиши решение и результат"
-                        disabled={saving}
-                      />
-                    </label>
-                    <strong>Обязательные элементы «Уметь»</strong>
-                    <div className="trajectory-task-preview__items">
-                      {availableMasterSkillElements.length ? (
-                        availableMasterSkillElements.map((element) => (
-                          <span className="trajectory-task-preview__item trajectory-task-preview__item--correct" key={`master-skill-${element.id}`}>
-                            {element.name}
-                          </span>
-                        ))
-                      ) : (
-                        <p className="card__text">
-                          Для выбранного элемента пока не найдено обязательных связей «автоматизирует» с элементами «Уметь».
-                        </p>
-                      )}
-                    </div>
-                    <strong>Обязательные элементы «Знать»</strong>
-                    <div className="trajectory-task-preview__items">
-                      {availableMasterKnowledgeElements.length ? (
-                        availableMasterKnowledgeElements.map((element) => (
-                          <span className="trajectory-task-preview__item trajectory-task-preview__item--correct" key={`master-know-${element.id}`}>
-                            {element.name}
-                          </span>
-                        ))
-                      ) : (
-                        <p className="card__text">
-                          Для выбранного элемента пока не найдено обязательных связей «опирается на» с элементами «Знать».
-                        </p>
-                      )}
-                    </div>
-                  </div>
-                ) : null}
+                  <label className="field">
+                    <span>Текст задания</span>
+                    <textarea
+                      rows={4}
+                      value={taskPrompt}
+                      onChange={(event) => setTaskPrompt(event.target.value)}
+                      placeholder="Текст будет подставлен автоматически по выбранным параметрам"
+                      disabled={saving}
+                    />
+                  </label>
+                  <p className="card__text">
+                    Заголовок и текст заполняются автоматически по типу задания, ключевому элементу и шаблону. При необходимости их можно отредактировать вручную.
+                  </p>
                 </section>
-
                 <section className="trajectory-task-step">
                   <div className="trajectory-task-step__header">
                     <span className="trajectory-task-step__eyebrow">Шаг 4</span>
@@ -3958,7 +4139,7 @@ export default function TrajectoryDetailPage() {
               </button>
               <button
                 className="ghost-button"
-                onClick={() => setTasksModalOpen(true)}
+                onClick={openTasksCreateModal}
                 type="button"
               >
                 Задания
@@ -4372,7 +4553,7 @@ export default function TrajectoryDetailPage() {
                 <input
                   value={taskTitle}
                   onChange={(event) => setTaskTitle(event.target.value)}
-                  placeholder="Например: Определение базового понятия"
+                  placeholder="Заголовок будет подставлен автоматически"
                   disabled={saving}
                 />
               </label>
@@ -4383,10 +4564,14 @@ export default function TrajectoryDetailPage() {
                   rows={4}
                   value={taskPrompt}
                   onChange={(event) => setTaskPrompt(event.target.value)}
-                  placeholder="Опиши задание для студента"
+                  placeholder="Текст будет подставлен автоматически по выбранным параметрам"
                   disabled={saving}
                 />
               </label>
+
+              <p className="card__text">
+                Заголовок и текст заполняются автоматически по типу задания, ключевому элементу и шаблону. При необходимости их можно отредактировать вручную.
+              </p>
 
               {taskCompetenceTab === "know" ? (
               <div className="trajectory-task-template">

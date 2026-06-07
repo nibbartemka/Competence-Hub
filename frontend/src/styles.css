@@ -16,6 +16,26 @@
   --master: #8e3f2f;
   --relation: #b96b2f;
   --line: #456187;
+  --panel-shell-border: rgba(122, 163, 220, 0.28);
+  --panel-shell-bg:
+    radial-gradient(circle at top right, rgba(131, 185, 255, 0.14), transparent 34%),
+    linear-gradient(180deg, rgba(244, 249, 255, 0.97), rgba(235, 243, 252, 0.93)),
+    #eef5fd;
+  --panel-shell-bg-strong:
+    radial-gradient(circle at top right, rgba(131, 185, 255, 0.18), transparent 32%),
+    radial-gradient(circle at top left, rgba(255, 255, 255, 0.62), transparent 30%),
+    linear-gradient(180deg, rgba(244, 249, 255, 0.98), rgba(232, 241, 252, 0.94)),
+    #eef5fd;
+  --panel-shell-bg-soft:
+    radial-gradient(circle at top right, rgba(131, 185, 255, 0.1), transparent 36%),
+    linear-gradient(180deg, rgba(248, 251, 255, 0.98), rgba(239, 246, 253, 0.94)),
+    #f4f8fd;
+  --panel-shell-shadow:
+    0 22px 52px rgba(67, 109, 176, 0.14),
+    inset 0 1px 0 rgba(255, 255, 255, 0.7);
+  --panel-shell-shadow-soft:
+    0 14px 30px rgba(67, 109, 176, 0.1),
+    inset 0 1px 0 rgba(255, 255, 255, 0.76);
   --page-side-gutter: clamp(24px, 8vw, 220px);
   --page-max-width: 1440px;
   --page-content-width: min(var(--page-max-width), calc(100vw - (var(--page-side-gutter) * 2)));
@@ -222,12 +242,10 @@ body:has(.session-profile-header) .home-shell {
   justify-content: space-between;
   gap: 24px;
   padding: 28px 32px;
-  border: 1px solid rgba(32, 56, 84, 0.12);
+  border: 1px solid var(--panel-shell-border);
   border-radius: 28px;
-  background:
-    linear-gradient(135deg, rgba(255, 248, 234, 0.95), rgba(223, 236, 243, 0.88)),
-    rgba(255, 255, 255, 0.7);
-  box-shadow: var(--card-shadow);
+  background: var(--panel-shell-bg-strong);
+  box-shadow: var(--panel-shell-shadow);
   backdrop-filter: blur(12px);
   animation: fadeUp 0.55s ease;
 }
@@ -378,17 +396,15 @@ body:has(.session-profile-header) .home-shell {
 .card {
   padding: 24px;
   border-radius: 24px;
-  border: 1px solid var(--card-border);
-  background: var(--card-bg);
-  box-shadow: var(--card-shadow);
+  border: 1px solid var(--panel-shell-border);
+  background: var(--panel-shell-bg);
+  box-shadow: var(--panel-shell-shadow);
   backdrop-filter: blur(12px);
   animation: fadeUp 0.45s ease;
 }
 
 .card--soft {
-  background:
-    linear-gradient(180deg, rgba(255, 255, 255, 0.92), rgba(244, 248, 251, 0.84)),
-    var(--card-bg);
+  background: var(--panel-shell-bg);
 }
 
 .card--accent {
@@ -396,9 +412,7 @@ body:has(.session-profile-header) .home-shell {
 }
 
 .card--editor {
-  background:
-    linear-gradient(180deg, rgba(255, 255, 255, 0.96), rgba(244, 248, 252, 0.9)),
-    var(--card-bg);
+  background: var(--panel-shell-bg-soft);
 }
 
 .card__header,
@@ -1005,9 +1019,9 @@ body:has(.session-profile-header) .home-shell {
   grid-template-rows: auto minmax(0, 1fr);
   min-height: 720px;
   border-radius: 28px;
-  border: 1px solid rgba(30, 56, 84, 0.12);
-  background: rgba(255, 255, 255, 0.7);
-  box-shadow: var(--card-shadow);
+  border: 1px solid var(--panel-shell-border);
+  background: var(--panel-shell-bg-strong);
+  box-shadow: var(--panel-shell-shadow);
   overflow: hidden;
   backdrop-filter: blur(12px);
   animation: fadeUp 0.6s ease;
@@ -1020,8 +1034,7 @@ body:has(.session-profile-header) .home-shell {
   gap: 18px;
   padding: 24px 26px 18px;
   border-bottom: 1px solid rgba(39, 63, 93, 0.08);
-  background:
-    linear-gradient(180deg, rgba(255, 253, 247, 0.95), rgba(255, 255, 255, 0.76));
+  background: var(--panel-shell-bg-soft);
 }
 
 .graph-toolbar__actions {
@@ -2116,21 +2129,16 @@ body:has(.session-profile-header) .home-shell {
 }
 
 .home-card {
-  border: 1px solid rgba(53, 83, 121, 0.12);
+  border: 1px solid var(--panel-shell-border);
   border-radius: 28px;
   padding: 22px;
-  background:
-    linear-gradient(145deg, rgba(255, 255, 255, 0.94), rgba(238, 246, 248, 0.9)),
-    #fff;
-  box-shadow: 0 24px 70px rgba(29, 51, 82, 0.12);
+  background: var(--panel-shell-bg);
+  box-shadow: var(--panel-shell-shadow);
   transform-origin: center top;
 }
 
 .home-card--spotlight {
-  background:
-    radial-gradient(circle at top right, rgba(84, 145, 255, 0.12), transparent 34%),
-    linear-gradient(145deg, rgba(255, 255, 255, 0.95), rgba(238, 246, 248, 0.92)),
-    #fff;
+  background: var(--panel-shell-bg-strong);
 }
 
 .home-card--wide {
@@ -2264,7 +2272,9 @@ body:has(.session-profile-header) .home-shell {
   margin-top: 8px;
   border-radius: 18px;
   padding: 12px;
-  background: rgba(255, 255, 255, 0.78);
+  border: 1px solid rgba(122, 163, 220, 0.2);
+  background: var(--panel-shell-bg-soft);
+  box-shadow: var(--panel-shell-shadow-soft);
 }
 
 .teacher-card strong {
@@ -3996,11 +4006,10 @@ body:has(.session-profile-header) .home-shell {
 
 .trajectory-graph-panel,
 .trajectory-side-panel {
-  border: 1px solid rgba(53, 83, 121, 0.12);
+  border: 1px solid var(--panel-shell-border);
   border-radius: 24px;
-  background:
-    radial-gradient(circle at 15% 0%, rgba(36, 80, 184, 0.08), transparent 34%),
-    linear-gradient(145deg, rgba(255, 255, 255, 0.9), rgba(236, 245, 249, 0.82));
+  background: var(--panel-shell-bg-strong);
+  box-shadow: var(--panel-shell-shadow);
   padding: 18px;
 }
 
@@ -4024,10 +4033,10 @@ body:has(.session-profile-header) .home-shell {
 
 .trajectory-topic-node {
   position: relative;
-  border: 1px solid rgba(36, 80, 184, 0.16);
+  border: 1px solid rgba(122, 163, 220, 0.24);
   border-radius: 24px;
-  background: rgba(255, 255, 255, 0.78);
-  box-shadow: 0 18px 38px rgba(32, 56, 84, 0.1);
+  background: var(--panel-shell-bg-soft);
+  box-shadow: var(--panel-shell-shadow-soft);
   overflow: hidden;
   transition: transform 0.18s ease, box-shadow 0.18s ease, border-color 0.18s ease;
 }
@@ -4122,8 +4131,8 @@ body:has(.session-profile-header) .home-shell {
   gap: 10px;
   align-items: center;
   border-radius: 18px;
-  border: 1px solid rgba(31, 55, 84, 0.1);
-  background: rgba(255, 255, 255, 0.78);
+  border: 1px solid rgba(122, 163, 220, 0.2);
+  background: var(--panel-shell-bg-soft);
   padding: 10px;
 }
 
@@ -4192,8 +4201,9 @@ body:has(.session-profile-header) .home-shell {
   border-radius: 18px;
   padding: 12px;
   text-align: left;
-  background: rgba(255, 255, 255, 0.78);
-  border: 1px solid rgba(31, 55, 84, 0.1);
+  background: var(--panel-shell-bg-soft);
+  border: 1px solid rgba(122, 163, 220, 0.2);
+  box-shadow: var(--panel-shell-shadow-soft);
 }
 
 .trajectory-sequence strong,
@@ -5042,12 +5052,10 @@ body:has(.session-profile-header) .home-shell {
   grid-template-columns: minmax(0, 1fr) auto;
   gap: 24px;
   padding: 28px 32px;
-  border: 1px solid rgba(32, 56, 84, 0.12);
+  border: 1px solid var(--panel-shell-border);
   border-radius: 28px;
-  background:
-    linear-gradient(135deg, rgba(255, 248, 234, 0.95), rgba(223, 236, 243, 0.88)),
-    rgba(255, 255, 255, 0.72);
-  box-shadow: var(--card-shadow);
+  background: var(--panel-shell-bg-strong);
+  box-shadow: var(--panel-shell-shadow);
   backdrop-filter: blur(12px);
 }
 
@@ -5074,8 +5082,9 @@ body:has(.session-profile-header) .home-shell {
   gap: 6px;
   padding: 18px 20px;
   border-radius: 22px;
-  border: 1px solid rgba(31, 55, 84, 0.1);
-  background: rgba(255, 255, 255, 0.82);
+  border: 1px solid rgba(122, 163, 220, 0.2);
+  background: var(--panel-shell-bg-soft);
+  box-shadow: var(--panel-shell-shadow-soft);
 }
 
 .student-profile-card {
@@ -5150,8 +5159,9 @@ body:has(.session-profile-header) .home-shell {
   gap: 6px;
   padding: 16px 18px;
   border-radius: 18px;
-  border: 1px solid rgba(31, 55, 84, 0.08);
-  background: rgba(244, 248, 255, 0.86);
+  border: 1px solid rgba(122, 163, 220, 0.2);
+  background: var(--panel-shell-bg-soft);
+  box-shadow: var(--panel-shell-shadow-soft);
 }
 
 .student-metric-card span {
@@ -5188,11 +5198,11 @@ body:has(.session-profile-header) .home-shell {
   gap: 14px;
   padding: 18px;
   border-radius: 22px;
-  border: 1px solid rgba(31, 55, 84, 0.1);
-  background: rgba(255, 255, 255, 0.84);
+  border: 1px solid rgba(122, 163, 220, 0.2);
+  background: var(--panel-shell-bg-soft);
   text-decoration: none;
   color: inherit;
-  box-shadow: 0 16px 32px rgba(31, 55, 84, 0.08);
+  box-shadow: var(--panel-shell-shadow-soft);
 }
 
 .student-trajectory-card--readonly {
@@ -5382,12 +5392,10 @@ body:has(.session-profile-header) .home-shell {
   gap: 12px;
   min-width: 0;
   padding: 18px;
-  border: 1px solid rgba(31, 55, 84, 0.1);
+  border: 1px solid rgba(122, 163, 220, 0.22);
   border-radius: 22px;
-  background:
-    linear-gradient(135deg, rgba(255, 255, 255, 0.92), rgba(244, 249, 255, 0.82)),
-    rgba(255, 255, 255, 0.76);
-  box-shadow: 0 18px 34px rgba(31, 55, 84, 0.08);
+  background: var(--panel-shell-bg-soft);
+  box-shadow: var(--panel-shell-shadow-soft);
 }
 
 .role-feature-card--wide {
@@ -5458,8 +5466,9 @@ body:has(.session-profile-header) .home-shell {
   gap: 14px;
   padding: 16px 18px;
   border-radius: 18px;
-  background: rgba(244, 248, 255, 0.84);
-  border: 1px solid rgba(31, 55, 84, 0.08);
+  background: var(--panel-shell-bg-soft);
+  border: 1px solid rgba(122, 163, 220, 0.2);
+  box-shadow: var(--panel-shell-shadow-soft);
 }
 
 .teacher-summary-metrics {
@@ -5473,11 +5482,9 @@ body:has(.session-profile-header) .home-shell {
   gap: 8px;
   padding: 18px;
   border-radius: 22px;
-  border: 1px solid rgba(57, 96, 161, 0.14);
-  background:
-    linear-gradient(180deg, rgba(255, 255, 255, 0.98), rgba(235, 244, 255, 0.9)),
-    rgba(255, 255, 255, 0.8);
-  box-shadow: 0 18px 30px rgba(50, 84, 140, 0.08);
+  border: 1px solid rgba(122, 163, 220, 0.22);
+  background: var(--panel-shell-bg-soft);
+  box-shadow: var(--panel-shell-shadow-soft);
 }
 
 .teacher-summary-metric--accent {
@@ -5509,18 +5516,14 @@ body:has(.session-profile-header) .home-shell {
   gap: 16px;
   padding: 18px;
   border-radius: 24px;
-  border: 1px solid rgba(57, 96, 161, 0.12);
-  background:
-    radial-gradient(circle at top right, rgba(61, 100, 217, 0.12), transparent 32%),
-    linear-gradient(180deg, rgba(255, 255, 255, 0.98), rgba(237, 245, 255, 0.92));
-  box-shadow: 0 18px 34px rgba(50, 84, 140, 0.08);
+  border: 1px solid rgba(122, 163, 220, 0.24);
+  background: var(--panel-shell-bg);
+  box-shadow: var(--panel-shell-shadow-soft);
 }
 
 .teacher-summary-card--wide {
   grid-column: 1 / -1;
-  background:
-    radial-gradient(circle at top right, rgba(61, 100, 217, 0.14), transparent 28%),
-    linear-gradient(180deg, rgba(255, 255, 255, 0.98), rgba(236, 244, 255, 0.94));
+  background: var(--panel-shell-bg-strong);
 }
 
 .teacher-summary-card__header {
@@ -5665,10 +5668,8 @@ body:has(.session-profile-header) .home-shell {
 
 .teacher-review-toolbar {
   gap: 18px;
-  border-color: rgba(66, 104, 171, 0.16);
-  background:
-    radial-gradient(circle at top right, rgba(88, 148, 255, 0.11), transparent 34%),
-    linear-gradient(180deg, rgba(255, 255, 255, 0.96), rgba(239, 246, 255, 0.92));
+  border-color: var(--panel-shell-border);
+  background: var(--panel-shell-bg-strong);
 }
 
 .teacher-review-workspace {
@@ -5681,9 +5682,8 @@ body:has(.session-profile-header) .home-shell {
 .teacher-review-queue,
 .teacher-review-detail {
   min-height: 760px;
-  border-color: rgba(62, 95, 152, 0.16);
-  background:
-    linear-gradient(180deg, rgba(255, 255, 255, 0.97), rgba(239, 246, 255, 0.93));
+  border-color: var(--panel-shell-border);
+  background: var(--panel-shell-bg);
 }
 
 .teacher-review-queue {
@@ -5691,9 +5691,7 @@ body:has(.session-profile-header) .home-shell {
   gap: 18px;
   position: sticky;
   top: calc(var(--session-profile-safe-top) + 16px);
-  background:
-    radial-gradient(circle at top left, rgba(72, 132, 238, 0.12), transparent 30%),
-    linear-gradient(180deg, rgba(244, 248, 255, 0.98), rgba(233, 241, 255, 0.95));
+  background: var(--panel-shell-bg-strong);
 }
 
 .teacher-review-queue__header,
@@ -5741,10 +5739,9 @@ body:has(.session-profile-header) .home-shell {
   gap: 12px;
   width: 100%;
   padding: 16px;
-  border: 1px solid rgba(69, 103, 162, 0.12);
+  border: 1px solid rgba(122, 163, 220, 0.22);
   border-radius: 18px;
-  background:
-    linear-gradient(180deg, rgba(248, 251, 255, 0.98), rgba(236, 243, 255, 0.94));
+  background: var(--panel-shell-bg-soft);
   color: inherit;
   text-align: left;
   cursor: pointer;
@@ -6946,18 +6943,14 @@ body:has(.session-profile-header) .home-shell {
 
 .admin-discipline-card,
 .admin-system-card {
+  display: grid;
   gap: 24px;
 }
 
 .admin-system-card {
-  border-color: rgba(122, 163, 220, 0.28);
-  background:
-    radial-gradient(circle at top right, rgba(131, 185, 255, 0.14), transparent 34%),
-    linear-gradient(180deg, rgba(244, 249, 255, 0.97), rgba(235, 243, 252, 0.93)),
-    #eef5fd;
-  box-shadow:
-    0 22px 52px rgba(67, 109, 176, 0.14),
-    inset 0 1px 0 rgba(255, 255, 255, 0.7);
+  border-color: var(--panel-shell-border);
+  background: var(--panel-shell-bg);
+  box-shadow: var(--panel-shell-shadow);
 }
 
 .admin-admin-stack {
@@ -6985,10 +6978,10 @@ body:has(.session-profile-header) .home-shell {
   display: grid;
   gap: 16px;
   padding: 18px;
-  border: 1px solid rgba(129, 151, 187, 0.18);
+  border: 1px solid rgba(122, 163, 220, 0.22);
   border-radius: 24px;
-  background: rgba(255, 255, 255, 0.9);
-  box-shadow: 0 12px 30px rgba(76, 112, 168, 0.08);
+  background: var(--panel-shell-bg-soft);
+  box-shadow: var(--panel-shell-shadow-soft);
 }
 
 .admin-panel-block__heading {
@@ -7225,9 +7218,9 @@ body:has(.session-profile-header) .home-shell {
 .expert-panel-card,
 .expert-validation-item,
 .expert-entity-row {
-  border: 1px solid rgba(125, 148, 186, 0.14);
-  background: linear-gradient(180deg, rgba(255, 255, 255, 0.96), rgba(246, 250, 255, 0.88));
-  box-shadow: 0 12px 28px rgba(81, 111, 160, 0.07);
+  border: 1px solid rgba(122, 163, 220, 0.22);
+  background: var(--panel-shell-bg-soft);
+  box-shadow: var(--panel-shell-shadow-soft);
 }
 
 .expert-discipline-card,
@@ -8136,8 +8129,9 @@ body:has(.session-profile-header) .home-shell {
 .student-home-trajectories {
   padding: 16px 18px;
   border-radius: 20px;
-  border: 1px solid rgba(122, 149, 184, 0.16);
-  background: rgba(247, 250, 255, 0.9);
+  border: 1px solid rgba(122, 163, 220, 0.22);
+  background: var(--panel-shell-bg-soft);
+  box-shadow: var(--panel-shell-shadow-soft);
   display: grid;
   gap: 6px;
 }
