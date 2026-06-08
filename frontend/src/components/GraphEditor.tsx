@@ -1636,6 +1636,24 @@ export function GraphEditor({
         return;
       }
 
+      const blockingDependencies = topicDependencies.filter(
+        (dependency) =>
+          dependency.prerequisite_topic_id === entityId && dependency.relation_type === "requires",
+      );
+      if (blockingDependencies.length) {
+        const dependentTopicNames = blockingDependencies
+          .map((dependency) => topicById.get(dependency.dependent_topic_id)?.name ?? "Тема")
+          .sort((left, right) => left.localeCompare(right, "ru"))
+          .join(", ");
+        setFeedback({
+          kind: "error",
+          text:
+            `Тему "${selectedTopic.name}" нельзя удалить, потому что она требуется другим темам: ` +
+            dependentTopicNames,
+        });
+        return;
+      }
+
       const linkedElements = (topicKnowledgeElementsByTopicId.get(entityId) ?? [])
         .map((link) => {
           const element = elementById.get(link.element_id);
