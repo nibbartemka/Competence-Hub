@@ -16,9 +16,15 @@ from app.models import (
     MasterElementDomainObject,
     Relation,
     Topic,
+    TopicDependency,
     TopicKnowledgeElement,
 )
-from app.models.enums import CompetenceType, KnowledgeElementRelationType, LearningTrajectoryStatus
+from app.models.enums import (
+    CompetenceType,
+    KnowledgeElementRelationType,
+    LearningTrajectoryStatus,
+    TopicDependencyRelationType,
+)
 from app.services.topic_dependencies import get_topic_dependency_cycle_for_discipline
 
 
@@ -150,6 +156,26 @@ async def assert_no_topic_dependency_cycle(
 
 
 async def ensure_topic_can_be_removed(session: AsyncSession, topic_id: UUID) -> None:
+    dependency_result = await session.execute(
+        select(Topic.name)
+        .join(TopicDependency, TopicDependency.dependent_topic_id == Topic.id)
+        .where(
+            TopicDependency.prerequisite_topic_id == topic_id,
+            TopicDependency.relation_type == TopicDependencyRelationType.REQUIRES,
+        )
+        .order_by(Topic.name)
+    )
+    dependent_topic_names = list(dependency_result.scalars().all())
+    if dependent_topic_names:
+        dependent_topics = ", ".join(dependent_topic_names)
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=(
+                "Topic cannot be removed because it is required by other topics: "
+                f"{dependent_topics}."
+            ),
+        )
+
     result = await session.execute(
         select(LearningTrajectory.name)
         .join(LearningTrajectoryTopic, LearningTrajectoryTopic.trajectory_id == LearningTrajectory.id)
