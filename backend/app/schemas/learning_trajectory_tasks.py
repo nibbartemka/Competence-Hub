@@ -20,6 +20,7 @@ class LearningTrajectoryTaskCreate(BaseModel):
     title: str = Field(default="", max_length=500)
     prompt: str = Field(min_length=1, max_length=5000)
     difficulty: int = Field(ge=0, le=100)
+    expected_duration_seconds: int | None = Field(default=None, ge=1)
     task_type: LearningTrajectoryTaskType
     template_kind: LearningTrajectoryTaskTemplateKind = LearningTrajectoryTaskTemplateKind.MANUAL
     content: dict[str, Any] = Field(default_factory=dict)
@@ -33,6 +34,7 @@ class LearningTrajectoryTaskUpdate(BaseModel):
     title: str = Field(default="", max_length=500)
     prompt: str = Field(min_length=1, max_length=5000)
     difficulty: int = Field(ge=0, le=100)
+    expected_duration_seconds: int | None = Field(default=None, ge=1)
     task_type: LearningTrajectoryTaskType
     template_kind: LearningTrajectoryTaskTemplateKind = LearningTrajectoryTaskTemplateKind.MANUAL
     content: dict[str, Any] = Field(default_factory=dict)
@@ -62,6 +64,7 @@ class LearningTrajectoryTaskRead(BaseModel):
     title: str
     prompt: str
     difficulty: int
+    expected_duration_seconds: int | None
     task_type: LearningTrajectoryTaskType
     template_kind: LearningTrajectoryTaskTemplateKind
     content: dict[str, Any] = Field(default_factory=dict)
@@ -112,6 +115,7 @@ class StudentAssignedTaskRead(BaseModel):
     title: str
     prompt: str
     difficulty: int
+    expected_duration_seconds: int | None = None
     task_type: LearningTrajectoryTaskType
     template_kind: LearningTrajectoryTaskTemplateKind
     content: dict[str, Any] = Field(default_factory=dict)

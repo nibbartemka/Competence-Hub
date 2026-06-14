@@ -67,11 +67,15 @@ type ConfirmCompetenceChangeState = {
 } | null;
 
 type TopicNewElementDraft = {
+  automatedSkillDraftIds: string[];
   clientId: string;
   competenceType: CompetenceType;
   description: string;
+  masterDomainObjects: MasterDomainObjectDraft[];
   name: string;
   operationRef: string;
+  realizedKnowledgeDraftIds: string[];
+  subjectAreaDescription: string;
 };
 
 type MasterDomainObjectDraft = {
@@ -247,11 +251,15 @@ function uniqueElements(
 
 function createDraft(): TopicNewElementDraft {
   return {
+    automatedSkillDraftIds: [],
     clientId: `${Date.now()}-${Math.random().toString(16).slice(2)}`,
     competenceType: "know",
     description: "",
+    masterDomainObjects: [],
     name: "",
     operationRef: "",
+    realizedKnowledgeDraftIds: [],
+    subjectAreaDescription: "",
   };
 }
 
@@ -263,6 +271,16 @@ function createMasterDomainObjectDraft(
     knowledgeElementId,
     objectName: "",
   };
+}
+
+function topicDraftOptionLabel(draft: TopicNewElementDraft) {
+  const fallbackName = draft.competenceType === "know"
+    ? "Новое знание"
+    : draft.competenceType === "can"
+      ? "Новое умение"
+      : "Новый элемент владения";
+
+  return draft.name.trim() || fallbackName;
 }
 
 function uniqueTopicOptions(topicsList: Topic[]) {
@@ -945,6 +963,131 @@ export function GraphEditor({
     });
   }, [editElementMasterDomainObjects]);
 
+  const topicNewElementById = useMemo(
+    () => new Map(topicNewElements.map((draft) => [draft.clientId, draft])),
+    [topicNewElements],
+  );
+
+  const topicDraftKnowledgeOptionsById = useMemo(() => {
+    const result = new Map<string, TopicNewElementDraft[]>();
+    for (const draft of topicNewElements) {
+      const options = topicNewElements
+        .filter(
+          (item) =>
+            item.clientId !== draft.clientId &&
+            item.competenceType === "know" &&
+            item.name.trim(),
+        )
+        .sort((left, right) => left.name.localeCompare(right.name, "ru"));
+      result.set(draft.clientId, options);
+    }
+    return result;
+  }, [topicNewElements]);
+
+  const topicDraftSkillOptionsById = useMemo(() => {
+    const result = new Map<string, TopicNewElementDraft[]>();
+    for (const draft of topicNewElements) {
+      const options = topicNewElements
+        .filter(
+          (item) =>
+            item.clientId !== draft.clientId &&
+            item.competenceType === "can" &&
+            item.name.trim() &&
+            item.operationRef,
+        )
+        .sort((left, right) => left.name.localeCompare(right.name, "ru"));
+      result.set(draft.clientId, options);
+    }
+    return result;
+  }, [topicNewElements]);
+
+  const topicDraftRequiredKnowledgeById = useMemo(() => {
+    const result = new Map<string, TopicNewElementDraft[]>();
+
+    for (const draft of topicNewElements) {
+      if (draft.competenceType !== "master") {
+        result.set(draft.clientId, []);
+        continue;
+      }
+
+      const requiredKnowledge = Array.from(
+        new Map(
+          draft.automatedSkillDraftIds
+            .map((skillDraftId) => topicNewElementById.get(skillDraftId) ?? null)
+            .filter((skillDraft): skillDraft is TopicNewElementDraft => Boolean(skillDraft))
+            .flatMap((skillDraft) => skillDraft.realizedKnowledgeDraftIds)
+            .map((knowledgeDraftId) => topicNewElementById.get(knowledgeDraftId) ?? null)
+            .filter(
+              (knowledgeDraft): knowledgeDraft is TopicNewElementDraft => {
+                if (!knowledgeDraft) {
+                  return false;
+                }
+                return (
+                  knowledgeDraft.competenceType === "know" &&
+                  Boolean(knowledgeDraft.name.trim())
+                );
+              },
+            )
+            .sort((left, right) => left.name.localeCompare(right.name, "ru"))
+            .map((knowledgeDraft) => [knowledgeDraft.clientId, knowledgeDraft]),
+        ).values(),
+      );
+
+      result.set(draft.clientId, requiredKnowledge);
+    }
+
+    return result;
+  }, [topicNewElementById, topicNewElements]);
+
+  const topicDraftDuplicateMasterDomainMappingsById = useMemo(() => {
+    const result = new Map<string, MasterDomainObjectDraft[]>();
+
+    for (const draft of topicNewElements) {
+      const counts = new Map<string, number>();
+      for (const item of draft.masterDomainObjects) {
+        const normalizedObjectName = item.objectName.trim().toLocaleLowerCase("ru");
+        if (!normalizedObjectName || !item.knowledgeElementId) {
+          continue;
+        }
+        const key = `${normalizedObjectName}::${item.knowledgeElementId}`;
+        counts.set(key, (counts.get(key) ?? 0) + 1);
+      }
+
+      result.set(
+        draft.clientId,
+        draft.masterDomainObjects.filter((item) => {
+          const normalizedObjectName = item.objectName.trim().toLocaleLowerCase("ru");
+          if (!normalizedObjectName || !item.knowledgeElementId) {
+            return false;
+          }
+          const key = `${normalizedObjectName}::${item.knowledgeElementId}`;
+          return (counts.get(key) ?? 0) > 1;
+        }),
+      );
+    }
+
+    return result;
+  }, [topicNewElements]);
+
+  const topicDraftUncoveredKnowledgeById = useMemo(() => {
+    const result = new Map<string, TopicNewElementDraft[]>();
+
+    for (const draft of topicNewElements) {
+      const requiredKnowledge = topicDraftRequiredKnowledgeById.get(draft.clientId) ?? [];
+      const coveredKnowledgeIds = new Set(
+        draft.masterDomainObjects
+          .map((item) => item.knowledgeElementId)
+          .filter((item) => item),
+      );
+      result.set(
+        draft.clientId,
+        requiredKnowledge.filter((knowledgeDraft) => !coveredKnowledgeIds.has(knowledgeDraft.clientId)),
+      );
+    }
+
+    return result;
+  }, [topicDraftRequiredKnowledgeById, topicNewElements]);
+
   const relationElements = sortedAllElements;
   const relationElementOptions = useMemo(
     () =>
@@ -1495,6 +1638,134 @@ export function GraphEditor({
     editRequiredKnowledgeForMaster,
   ]);
 
+  useEffect(() => {
+    setTopicNewElements((current) => {
+      let changed = false;
+
+      const next = current.map((draft) => {
+        const availableKnowledgeDrafts = topicDraftKnowledgeOptionsById.get(draft.clientId) ?? [];
+        const availableSkillDrafts = topicDraftSkillOptionsById.get(draft.clientId) ?? [];
+        const requiredKnowledgeDrafts = topicDraftRequiredKnowledgeById.get(draft.clientId) ?? [];
+
+        let nextDraft = draft;
+
+        if (draft.competenceType !== "can") {
+          if (draft.operationRef || draft.realizedKnowledgeDraftIds.length) {
+            nextDraft = {
+              ...nextDraft,
+              operationRef: "",
+              realizedKnowledgeDraftIds: [],
+            };
+            changed = true;
+          }
+        } else {
+          const allowedKnowledgeIds = new Set(availableKnowledgeDrafts.map((item) => item.clientId));
+          const nextRealizedKnowledgeDraftIds = draft.realizedKnowledgeDraftIds.filter((item) =>
+            allowedKnowledgeIds.has(item),
+          );
+          if (
+            nextRealizedKnowledgeDraftIds.length !== draft.realizedKnowledgeDraftIds.length ||
+            nextRealizedKnowledgeDraftIds.some(
+              (item, index) => item !== draft.realizedKnowledgeDraftIds[index],
+            )
+          ) {
+            nextDraft = {
+              ...nextDraft,
+              realizedKnowledgeDraftIds: nextRealizedKnowledgeDraftIds,
+            };
+            changed = true;
+          }
+        }
+
+        if (draft.competenceType !== "master") {
+          if (
+            draft.subjectAreaDescription ||
+            draft.automatedSkillDraftIds.length ||
+            draft.masterDomainObjects.length
+          ) {
+            nextDraft = {
+              ...nextDraft,
+              subjectAreaDescription: "",
+              automatedSkillDraftIds: [],
+              masterDomainObjects: [],
+            };
+            changed = true;
+          }
+          return nextDraft;
+        }
+
+        const allowedSkillIds = new Set(availableSkillDrafts.map((item) => item.clientId));
+        const nextAutomatedSkillDraftIds = draft.automatedSkillDraftIds.filter((item) =>
+          allowedSkillIds.has(item),
+        );
+        if (
+          nextAutomatedSkillDraftIds.length !== draft.automatedSkillDraftIds.length ||
+          nextAutomatedSkillDraftIds.some(
+            (item, index) => item !== draft.automatedSkillDraftIds[index],
+          )
+        ) {
+          nextDraft = {
+            ...nextDraft,
+            automatedSkillDraftIds: nextAutomatedSkillDraftIds,
+          };
+          changed = true;
+        }
+
+        const allowedKnowledgeIds = new Set(availableKnowledgeDrafts.map((item) => item.clientId));
+        const fallbackKnowledgeId =
+          requiredKnowledgeDrafts[0]?.clientId ?? availableKnowledgeDrafts[0]?.clientId ?? "";
+        let nextMasterDomainObjects = nextDraft.masterDomainObjects
+          .filter((item) => !item.knowledgeElementId || allowedKnowledgeIds.has(item.knowledgeElementId))
+          .map((item) => ({
+            ...item,
+            knowledgeElementId: item.knowledgeElementId || fallbackKnowledgeId,
+          }));
+
+        const coveredKnowledgeIds = new Set(
+          nextMasterDomainObjects.map((item) => item.knowledgeElementId).filter((item) => item),
+        );
+
+        for (const knowledgeDraft of requiredKnowledgeDrafts) {
+          if (coveredKnowledgeIds.has(knowledgeDraft.clientId)) {
+            continue;
+          }
+          nextMasterDomainObjects = [
+            ...nextMasterDomainObjects,
+            createMasterDomainObjectDraft(knowledgeDraft.clientId),
+          ];
+          coveredKnowledgeIds.add(knowledgeDraft.clientId);
+        }
+
+        if (
+          nextMasterDomainObjects.length !== nextDraft.masterDomainObjects.length ||
+          nextMasterDomainObjects.some((item, index) => {
+            const currentItem = nextDraft.masterDomainObjects[index];
+            return (
+              !currentItem ||
+              currentItem.clientId !== item.clientId ||
+              currentItem.knowledgeElementId !== item.knowledgeElementId ||
+              currentItem.objectName !== item.objectName
+            );
+          })
+        ) {
+          nextDraft = {
+            ...nextDraft,
+            masterDomainObjects: nextMasterDomainObjects,
+          };
+          changed = true;
+        }
+
+        return nextDraft;
+      });
+
+      return changed ? next : current;
+    });
+  }, [
+    topicDraftKnowledgeOptionsById,
+    topicDraftRequiredKnowledgeById,
+    topicDraftSkillOptionsById,
+  ]);
+
 
   useEffect(() => {
     if (!relationElements.length) {
@@ -1939,7 +2210,100 @@ export function GraphEditor({
     );
   }
 
-  async function handleCreateTopic(event: FormEvent<HTMLFormElement>) {
+  function toggleTopicDraftRealizedKnowledge(
+    draftClientId: string,
+    knowledgeDraftClientId: string,
+  ) {
+    setTopicNewElements((current) =>
+      current.map((item) =>
+        item.clientId !== draftClientId
+          ? item
+          : {
+              ...item,
+              realizedKnowledgeDraftIds: item.realizedKnowledgeDraftIds.includes(knowledgeDraftClientId)
+                ? item.realizedKnowledgeDraftIds.filter((id) => id !== knowledgeDraftClientId)
+                : [...item.realizedKnowledgeDraftIds, knowledgeDraftClientId],
+            },
+      ),
+    );
+  }
+
+  function toggleTopicDraftAutomatedSkill(
+    draftClientId: string,
+    skillDraftClientId: string,
+  ) {
+    setTopicNewElements((current) =>
+      current.map((item) =>
+        item.clientId !== draftClientId
+          ? item
+          : {
+              ...item,
+              automatedSkillDraftIds: item.automatedSkillDraftIds.includes(skillDraftClientId)
+                ? item.automatedSkillDraftIds.filter((id) => id !== skillDraftClientId)
+                : [...item.automatedSkillDraftIds, skillDraftClientId],
+            },
+      ),
+    );
+  }
+
+  function addTopicDraftMasterDomainObject(draftClientId: string) {
+    setTopicNewElements((current) =>
+      current.map((item) => {
+        if (item.clientId !== draftClientId) {
+          return item;
+        }
+        const requiredKnowledgeDrafts = topicDraftRequiredKnowledgeById.get(draftClientId) ?? [];
+        const availableKnowledgeDrafts = topicDraftKnowledgeOptionsById.get(draftClientId) ?? [];
+        const fallbackKnowledgeId =
+          requiredKnowledgeDrafts[0]?.clientId ?? availableKnowledgeDrafts[0]?.clientId ?? "";
+        return {
+          ...item,
+          masterDomainObjects: [
+            ...item.masterDomainObjects,
+            createMasterDomainObjectDraft(fallbackKnowledgeId),
+          ],
+        };
+      }),
+    );
+  }
+
+  function removeTopicDraftMasterDomainObject(draftClientId: string, objectClientId: string) {
+    setTopicNewElements((current) =>
+      current.map((item) =>
+        item.clientId !== draftClientId
+          ? item
+          : {
+              ...item,
+              masterDomainObjects: item.masterDomainObjects.filter(
+                (objectDraft) => objectDraft.clientId !== objectClientId,
+              ),
+            },
+      ),
+    );
+  }
+
+  function updateTopicDraftMasterDomainObject(
+    draftClientId: string,
+    objectClientId: string,
+    patch: Partial<Omit<MasterDomainObjectDraft, "clientId">>,
+  ) {
+    setTopicNewElements((current) =>
+      current.map((item) =>
+        item.clientId !== draftClientId
+          ? item
+          : {
+              ...item,
+              masterDomainObjects: item.masterDomainObjects.map((objectDraft) =>
+                objectDraft.clientId === objectClientId
+                  ? { ...objectDraft, ...patch }
+                  : objectDraft,
+              ),
+            },
+      ),
+    );
+  }
+
+  async function legacyHandleCreateTopic(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!disciplineId) {
       return;
@@ -2025,6 +2389,264 @@ export function GraphEditor({
       setEditTopicId(createdTopic.id);
       setDeleteTopicId(createdTopic.id);
       setFeedback({ kind: "success", text: "Тема создана." });
+    } catch (error) {
+      setFeedback({ kind: "error", text: extractErrorMessage(error) });
+    } finally {
+      setBusyAction("");
+    }
+  }
+
+  async function handleCreateTopic(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!disciplineId) {
+      return;
+    }
+
+    const invalidRequiredElement = selectedRequiredElementIds.find(
+      (elementId) =>
+        !canAttachElementAsRequired(formedTopicIdsByElementId, {
+          elementId,
+        }),
+    );
+    if (invalidRequiredElement) {
+      const invalidElementName =
+        elementById.get(invalidRequiredElement)?.name ?? "Выбранный элемент";
+      setFeedback({
+        kind: "error",
+        text:
+          `${invalidElementName} нельзя добавить как требуемый: ` +
+          "он еще не является формируемым ни в одной другой теме этой дисциплины.",
+      });
+      return;
+    }
+
+    const activeDrafts = topicNewElements.filter((draft) => draft.name.trim());
+    const knowledgeDrafts = activeDrafts.filter((draft) => draft.competenceType === "know");
+    const skillDrafts = activeDrafts.filter((draft) => draft.competenceType === "can");
+    const masterDrafts = activeDrafts.filter((draft) => draft.competenceType === "master");
+
+    if (skillDrafts.length && !implementsRelation) {
+      setFeedback({
+        kind: "error",
+        text: "Не найдена связь «Реализует» для элементов уровня «Уметь».",
+      });
+      return;
+    }
+
+    for (const draft of skillDrafts) {
+      if (!draft.operationRef) {
+        setFeedback({
+          kind: "error",
+          text: `Для элемента «${topicDraftOptionLabel(draft)}» выбери операцию алгоритмической библиотеки.`,
+        });
+        return;
+      }
+      if (!draft.realizedKnowledgeDraftIds.length) {
+        setFeedback({
+          kind: "error",
+          text: `Для элемента «${topicDraftOptionLabel(draft)}» выбери хотя бы одно знание, которое он реализует.`,
+        });
+        return;
+      }
+    }
+
+    for (const draft of masterDrafts) {
+      const requiredKnowledgeDrafts = topicDraftRequiredKnowledgeById.get(draft.clientId) ?? [];
+      const uncoveredKnowledgeDrafts = topicDraftUncoveredKnowledgeById.get(draft.clientId) ?? [];
+      const duplicateDomainMappings =
+        topicDraftDuplicateMasterDomainMappingsById.get(draft.clientId) ?? [];
+
+      if (!draft.subjectAreaDescription.trim()) {
+        setFeedback({
+          kind: "error",
+          text: `Для элемента «${topicDraftOptionLabel(draft)}» заполни описание предметной области.`,
+        });
+        return;
+      }
+      if (!draft.automatedSkillDraftIds.length) {
+        setFeedback({
+          kind: "error",
+          text: `Для элемента «${topicDraftOptionLabel(draft)}» выбери хотя бы один элемент уровня «Уметь».`,
+        });
+        return;
+      }
+      if (!requiredKnowledgeDrafts.length) {
+        setFeedback({
+          kind: "error",
+          text:
+            `У выбранных навыков для элемента «${topicDraftOptionLabel(draft)}» ` +
+            "нет связанных знаний уровня «Знать».",
+        });
+        return;
+      }
+      if (!draft.masterDomainObjects.length) {
+        setFeedback({
+          kind: "error",
+          text: `Для элемента «${topicDraftOptionLabel(draft)}» добавь хотя бы один объект предметной области.`,
+        });
+        return;
+      }
+      if (
+        draft.masterDomainObjects.some(
+          (item) => !item.objectName.trim() || !item.knowledgeElementId,
+        )
+      ) {
+        setFeedback({
+          kind: "error",
+          text:
+            `Для элемента «${topicDraftOptionLabel(draft)}» заполни все объекты предметной области ` +
+            "и выбери знание для каждого объекта.",
+        });
+        return;
+      }
+      if (uncoveredKnowledgeDrafts.length) {
+        setFeedback({
+          kind: "error",
+          text:
+            `Для элемента «${topicDraftOptionLabel(draft)}» нужно покрыть все связанные знания: ` +
+            uncoveredKnowledgeDrafts.map((item) => topicDraftOptionLabel(item)).join(", ") +
+            ".",
+        });
+        return;
+      }
+      if (duplicateDomainMappings.length) {
+        setFeedback({
+          kind: "error",
+          text:
+            `Для элемента «${topicDraftOptionLabel(draft)}» убери дублирующиеся сопоставления ` +
+            "объекта предметной области с одним и тем же знанием.",
+        });
+        return;
+      }
+    }
+
+    try {
+      setBusyAction("topic-create");
+      setFeedback(null);
+
+      const createdTopic = await createTopic({
+        name: topicName.trim(),
+        description: topicDescription.trim(),
+        discipline_id: disciplineId,
+      });
+
+      for (const elementId of selectedRequiredElementIds) {
+        await createTopicKnowledgeElement({
+          topic_id: createdTopic.id,
+          element_id: elementId,
+          role: "required",
+          note: "",
+        });
+      }
+
+      const createdDraftElementIds = new Map<string, string>();
+
+      for (const draft of knowledgeDrafts) {
+        const createdElement = await createKnowledgeElement({
+          name: draft.name.trim(),
+          description: draft.description.trim(),
+          competence_type: "know",
+          discipline_id: disciplineId,
+          subject_area_description: null,
+          operation_ref: null,
+        });
+
+        createdDraftElementIds.set(draft.clientId, createdElement.id);
+
+        await createTopicKnowledgeElement({
+          topic_id: createdTopic.id,
+          element_id: createdElement.id,
+          role: "formed",
+          note: "",
+        });
+      }
+
+      for (const draft of skillDrafts) {
+        const createdElement = await createKnowledgeElement({
+          name: draft.name.trim(),
+          description: draft.description.trim(),
+          competence_type: "can",
+          discipline_id: disciplineId,
+          subject_area_description: null,
+          operation_ref: draft.operationRef || null,
+        });
+
+        createdDraftElementIds.set(draft.clientId, createdElement.id);
+
+        await createTopicKnowledgeElement({
+          topic_id: createdTopic.id,
+          element_id: createdElement.id,
+          role: "formed",
+          note: "",
+        });
+
+        for (const knowledgeDraftId of draft.realizedKnowledgeDraftIds) {
+          const knowledgeElementId = createdDraftElementIds.get(knowledgeDraftId);
+          if (!knowledgeElementId || !implementsRelation) {
+            throw new Error(
+              `Не удалось связать элемент «${topicDraftOptionLabel(draft)}» с выбранными знаниями.`,
+            );
+          }
+
+          await createKnowledgeElementRelation({
+            topic_id: createdTopic.id,
+            source_element_id: createdElement.id,
+            target_element_id: knowledgeElementId,
+            relation_id: implementsRelation.id,
+            description: "",
+          });
+        }
+      }
+
+      for (const draft of masterDrafts) {
+        const automatedSkillElementIds = draft.automatedSkillDraftIds.map((skillDraftId) => {
+          const skillElementId = createdDraftElementIds.get(skillDraftId);
+          if (!skillElementId) {
+            throw new Error(
+              `Не удалось найти созданный навык для элемента «${topicDraftOptionLabel(draft)}».`,
+            );
+          }
+          return skillElementId;
+        });
+
+        const domainObjects = draft.masterDomainObjects.map((item) => {
+          const knowledgeElementId = createdDraftElementIds.get(item.knowledgeElementId);
+          if (!knowledgeElementId) {
+            throw new Error(
+              `Не удалось найти выбранное знание для элемента «${topicDraftOptionLabel(draft)}».`,
+            );
+          }
+          return {
+            object_name: item.objectName.trim(),
+            knowledge_element_id: knowledgeElementId,
+          };
+        });
+
+        const createdElement = await createStructuredMasterKnowledgeElement({
+          name: draft.name.trim(),
+          description: draft.description.trim(),
+          discipline_id: disciplineId,
+          topic_id: createdTopic.id,
+          subject_area_description: draft.subjectAreaDescription.trim(),
+          automated_skill_element_ids: automatedSkillElementIds,
+          domain_objects: domainObjects,
+        });
+
+        createdDraftElementIds.set(draft.clientId, createdElement.id);
+      }
+
+      setTopicName("");
+      setTopicDescription("");
+      setSelectedRequiredElementIds([]);
+      setTopicNewElements([]);
+      await syncAfterChange(true);
+      setTopicElementTopicId(createdTopic.id);
+      setEditTopicId(createdTopic.id);
+      setDeleteTopicId(createdTopic.id);
+      setFeedback({
+        kind: "success",
+        text: activeDrafts.length ? "Тема и связанные элементы созданы." : "Тема создана.",
+      });
     } catch (error) {
       setFeedback({ kind: "error", text: extractErrorMessage(error) });
     } finally {
@@ -2645,7 +3267,7 @@ export function GraphEditor({
     openDeleteConfirmation("element-relation", deleteRelationId);
   }
 
-  function legacyRenderTopicTab() {
+  function legacyRenderTopicTabBeforeElements() {
     return (
       <div className="editor-accordion">
         <details className="editor-block" open>
@@ -3246,6 +3868,502 @@ export function GraphEditor({
 
               {topicNewElements.length ? (
                 <div className="editor-drafts">
+                  {topicNewElements.map((draft, index) => {
+                    const knowledgeDraftOptions =
+                      topicDraftKnowledgeOptionsById.get(draft.clientId) ?? [];
+                    const skillDraftOptions = topicDraftSkillOptionsById.get(draft.clientId) ?? [];
+                    const requiredKnowledgeDrafts =
+                      topicDraftRequiredKnowledgeById.get(draft.clientId) ?? [];
+                    const uncoveredKnowledgeDrafts =
+                      topicDraftUncoveredKnowledgeById.get(draft.clientId) ?? [];
+                    const duplicateDomainMappings =
+                      topicDraftDuplicateMasterDomainMappingsById.get(draft.clientId) ?? [];
+
+                    return (
+                      <div className="editor-draft-card" key={draft.clientId}>
+                        <div className="editor-draft-card__header">
+                          <strong>Новый элемент {index + 1}</strong>
+                          <button
+                            className="secondary-button secondary-button--danger"
+                            onClick={() => removeTopicNewElementDraft(draft.clientId)}
+                            type="button"
+                          >
+                            Удалить
+                          </button>
+                        </div>
+
+                        <div className="editor-form__grid">
+                          <label className="field">
+                            <span>Название</span>
+                            <input
+                              value={draft.name}
+                              onChange={(event) =>
+                                updateTopicNewElementDraft(draft.clientId, {
+                                  name: event.target.value,
+                                })
+                              }
+                              placeholder="Название нового элемента"
+                            />
+                          </label>
+
+                          <label className="field">
+                            <span>Компетенция</span>
+                            <select
+                              value={draft.competenceType}
+                              onChange={(event) =>
+                                updateTopicNewElementDraft(draft.clientId, {
+                                  competenceType: event.target.value as CompetenceType,
+                                })
+                              }
+                            >
+                              {COMPETENCE_OPTIONS.map((option) => (
+                                <option key={option.value} value={option.value}>
+                                  {option.label}
+                                </option>
+                              ))}
+                            </select>
+                          </label>
+                        </div>
+
+                        <label className="field">
+                          <span>Описание</span>
+                          <textarea
+                            rows={2}
+                            value={draft.description}
+                            onChange={(event) =>
+                              updateTopicNewElementDraft(draft.clientId, {
+                                description: event.target.value,
+                              })
+                            }
+                            placeholder="Краткое описание нового элемента"
+                          />
+                        </label>
+
+                        {draft.competenceType === "can" ? (
+                          <>
+                            <label className="field">
+                              <span>Операция алгоритмической библиотеки</span>
+                              <select
+                                value={draft.operationRef}
+                                onChange={(event) =>
+                                  updateTopicNewElementDraft(draft.clientId, {
+                                    operationRef: event.target.value,
+                                  })
+                                }
+                              >
+                                <option value="">Выбери операцию</option>
+                                {operationContracts.map((contract) => (
+                                  <option key={contract.id} value={contract.id}>
+                                    {contract.title}
+                                  </option>
+                                ))}
+                              </select>
+                            </label>
+
+                            {knowledgeDraftOptions.length ? (
+                              <div className="editor-subsection">
+                                <div className="editor-subsection__header">
+                                  <div>
+                                    <strong>Знания для связи «Реализует»</strong>
+                                  </div>
+                                </div>
+
+                                <div className="editor-checklist">
+                                  {knowledgeDraftOptions.map((knowledgeDraft) => (
+                                    <label
+                                      className="editor-checklist__item"
+                                      key={knowledgeDraft.clientId}
+                                    >
+                                      <input
+                                        type="checkbox"
+                                        checked={draft.realizedKnowledgeDraftIds.includes(
+                                          knowledgeDraft.clientId,
+                                        )}
+                                        onChange={() =>
+                                          toggleTopicDraftRealizedKnowledge(
+                                            draft.clientId,
+                                            knowledgeDraft.clientId,
+                                          )
+                                        }
+                                      />
+                                      <span>
+                                        <strong>{topicDraftOptionLabel(knowledgeDraft)}</strong>
+                                        <small>
+                                          {knowledgeDraft.description ||
+                                            "Описание пока не заполнено"}
+                                        </small>
+                                      </span>
+                                    </label>
+                                  ))}
+                                </div>
+                              </div>
+                            ) : (
+                              <p className="editor-empty">
+                                Сначала добавь хотя бы один элемент уровня «Знать», чтобы связать
+                                его с этим навыком.
+                              </p>
+                            )}
+                          </>
+                        ) : null}
+
+                        {draft.competenceType === "master" ? (
+                          <>
+                            <label className="field">
+                              <span>Описание предметной области</span>
+                              <textarea
+                                rows={3}
+                                value={draft.subjectAreaDescription}
+                                onChange={(event) =>
+                                  updateTopicNewElementDraft(draft.clientId, {
+                                    subjectAreaDescription: event.target.value,
+                                  })
+                                }
+                                placeholder="Опиши предметную область и контекст применения элемента"
+                              />
+                            </label>
+
+                            {skillDraftOptions.length ? (
+                              <div className="editor-subsection">
+                                <div className="editor-subsection__header">
+                                  <div>
+                                    <strong>
+                                      Элементы уровня «Уметь» для связи «Автоматизирует»
+                                    </strong>
+                                  </div>
+                                </div>
+
+                                <div className="editor-checklist">
+                                  {skillDraftOptions.map((skillDraft) => (
+                                    <label
+                                      className="editor-checklist__item"
+                                      key={skillDraft.clientId}
+                                    >
+                                      <input
+                                        type="checkbox"
+                                        checked={draft.automatedSkillDraftIds.includes(
+                                          skillDraft.clientId,
+                                        )}
+                                        onChange={() =>
+                                          toggleTopicDraftAutomatedSkill(
+                                            draft.clientId,
+                                            skillDraft.clientId,
+                                          )
+                                        }
+                                      />
+                                      <span>
+                                        <strong>{topicDraftOptionLabel(skillDraft)}</strong>
+                                        <small>
+                                          {skillDraft.description || "Описание пока не заполнено"}
+                                        </small>
+                                      </span>
+                                    </label>
+                                  ))}
+                                </div>
+                              </div>
+                            ) : (
+                              <p className="editor-empty">
+                                Сначала добавь хотя бы один корректно заполненный элемент уровня
+                                «Уметь».
+                              </p>
+                            )}
+
+                            {draft.automatedSkillDraftIds.length ? (
+                              requiredKnowledgeDrafts.length ? (
+                                <div className="editor-subsection">
+                                  <div className="editor-subsection__header">
+                                    <div>
+                                      <strong>
+                                        Объекты предметной области и связи «Опирается на»
+                                      </strong>
+                                    </div>
+
+                                    <button
+                                      className="secondary-button"
+                                      onClick={() =>
+                                        addTopicDraftMasterDomainObject(draft.clientId)
+                                      }
+                                      type="button"
+                                    >
+                                      + Добавить объект
+                                    </button>
+                                  </div>
+
+                                  <div className="editor-chips">
+                                    {requiredKnowledgeDrafts.map((knowledgeDraft) => (
+                                      <span className="tag tag--muted" key={knowledgeDraft.clientId}>
+                                        {uncoveredKnowledgeDrafts.some(
+                                          (item) => item.clientId === knowledgeDraft.clientId,
+                                        )
+                                          ? `Нужно покрыть: ${topicDraftOptionLabel(knowledgeDraft)}`
+                                          : `Покрыто: ${topicDraftOptionLabel(knowledgeDraft)}`}
+                                      </span>
+                                    ))}
+                                  </div>
+
+                                  {duplicateDomainMappings.length ? (
+                                    <p className="editor-empty">
+                                      Найдены дублирующиеся сопоставления объекта предметной области
+                                      с одним и тем же знанием.
+                                    </p>
+                                  ) : null}
+
+                                  {draft.masterDomainObjects.length ? (
+                                    <div className="editor-domain-objects">
+                                      {draft.masterDomainObjects.map((item, objectIndex) => (
+                                        <div className="editor-domain-object" key={item.clientId}>
+                                          <div className="editor-subsection__header">
+                                            <strong>Объект {objectIndex + 1}</strong>
+                                            <button
+                                              className="secondary-button secondary-button--danger"
+                                              onClick={() =>
+                                                removeTopicDraftMasterDomainObject(
+                                                  draft.clientId,
+                                                  item.clientId,
+                                                )
+                                              }
+                                              type="button"
+                                            >
+                                              Удалить
+                                            </button>
+                                          </div>
+
+                                          <div className="editor-form__grid">
+                                            <label className="field">
+                                              <span>Наименование объекта</span>
+                                              <input
+                                                value={item.objectName}
+                                                onChange={(event) =>
+                                                  updateTopicDraftMasterDomainObject(
+                                                    draft.clientId,
+                                                    item.clientId,
+                                                    {
+                                                      objectName: event.target.value,
+                                                    },
+                                                  )
+                                                }
+                                                placeholder="Например: матрица смежности"
+                                              />
+                                            </label>
+
+                                            <label className="field">
+                                              <span>Элемент уровня «Знать»</span>
+                                              <select
+                                                value={item.knowledgeElementId}
+                                                onChange={(event) =>
+                                                  updateTopicDraftMasterDomainObject(
+                                                    draft.clientId,
+                                                    item.clientId,
+                                                    {
+                                                      knowledgeElementId: event.target.value,
+                                                    },
+                                                  )
+                                                }
+                                              >
+                                                <option value="">Выбери элемент «Знать»</option>
+                                                {knowledgeDraftOptions.map((knowledgeDraft) => (
+                                                  <option
+                                                    key={knowledgeDraft.clientId}
+                                                    value={knowledgeDraft.clientId}
+                                                  >
+                                                    {topicDraftOptionLabel(knowledgeDraft)}
+                                                  </option>
+                                                ))}
+                                              </select>
+                                            </label>
+                                          </div>
+                                        </div>
+                                      ))}
+                                    </div>
+                                  ) : (
+                                    <p className="editor-empty">
+                                      Добавь хотя бы один объект предметной области.
+                                    </p>
+                                  )}
+                                </div>
+                              ) : (
+                                <p className="editor-empty">
+                                  У выбранных элементов «Уметь» пока нет связанных знаний уровня
+                                  «Знать».
+                                </p>
+                              )
+                            ) : null}
+                          </>
+                        ) : null}
+                      </div>
+                    );
+                  })}
+                </div>
+              ) : (
+                <p className="editor-empty">Пока не добавлено ни одного нового элемента.</p>
+              )}
+            </div>
+
+            <button className="primary-button" disabled={!topicName.trim() || !!busyAction}>
+              {busyAction === "topic-create" ? "Сохраняю..." : "Создать тему"}
+            </button>
+          </form>
+        </details>
+
+        <details className="editor-block">
+          <summary>Редактировать тему</summary>
+          <form className="editor-form" onSubmit={handleUpdateTopic}>
+            <label className="field">
+              <span>Тема</span>
+              <select
+                value={editTopicId}
+                onChange={(event) => setEditTopicId(event.target.value)}
+                disabled={!sortedTopics.length}
+              >
+                {sortedTopics.map((topic) => (
+                  <option key={topic.id} value={topic.id}>
+                    {topic.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+
+            {!sortedTopics.length ? (
+              <p className="editor-empty">Сначала создай хотя бы одну тему.</p>
+            ) : null}
+
+            <label className="field">
+              <span>Название</span>
+              <input
+                value={editTopicName}
+                onChange={(event) => setEditTopicName(event.target.value)}
+                placeholder="Название темы"
+                disabled={!sortedTopics.length}
+                required
+              />
+            </label>
+
+            <label className="field">
+              <span>Описание</span>
+              <textarea
+                rows={3}
+                value={editTopicDescription}
+                onChange={(event) => setEditTopicDescription(event.target.value)}
+                placeholder="Описание темы"
+                disabled={!sortedTopics.length}
+              />
+            </label>
+
+            <button
+              className="primary-button"
+              disabled={!editTopicId || !editTopicName.trim() || !!busyAction}
+            >
+              {busyAction === "topic-update" ? "Сохраняю..." : "Сохранить тему"}
+            </button>
+          </form>
+        </details>
+
+        <details className="editor-block">
+          <summary>Удалить тему</summary>
+          <form className="editor-form" onSubmit={handleDeleteTopic}>
+            <label className="field">
+              <span>Тема</span>
+              <select
+                value={deleteTopicId}
+                onChange={(event) => setDeleteTopicId(event.target.value)}
+                disabled={!sortedTopics.length}
+              >
+                {sortedTopics.map((topic) => (
+                  <option key={topic.id} value={topic.id}>
+                    {topic.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+
+            {!sortedTopics.length ? (
+              <p className="editor-empty">Сейчас нет тем для удаления.</p>
+            ) : null}
+
+            <button
+              className="secondary-button secondary-button--danger"
+              disabled={!deleteTopicId || !!busyAction}
+            >
+              {busyAction === "topic-delete" ? "Удаляю..." : "Удалить тему"}
+            </button>
+          </form>
+        </details>
+      </div>
+    );
+  }
+
+  function legacyRenderTopicTabAfterElements() {
+    return (
+      <div className="editor-accordion">
+        <details className="editor-block" open>
+          <summary>Создать тему</summary>
+          <form className="editor-form" onSubmit={handleCreateTopic}>
+            <label className="field">
+              <span>Название</span>
+              <input
+                value={topicName}
+                onChange={(event) => setTopicName(event.target.value)}
+                placeholder="Название темы"
+                required
+              />
+            </label>
+
+            <label className="field">
+              <span>Описание</span>
+              <textarea
+                rows={3}
+                value={topicDescription}
+                onChange={(event) => setTopicDescription(event.target.value)}
+                placeholder="Краткое описание темы"
+              />
+            </label>
+
+            <div className="editor-subsection">
+              <div className="editor-subsection__header">
+                <div>
+                  <strong>Требуемые элементы</strong>
+                  <p>Выбери существующие элементы, которые нужны до начала темы.</p>
+                </div>
+              </div>
+
+              {sortedAllElements.length ? (
+                <div className="editor-checklist">
+                  {sortedAllElements.map((element) => (
+                    <label className="editor-checklist__item" key={element.id}>
+                      <input
+                        type="checkbox"
+                        checked={selectedRequiredElementIds.includes(element.id)}
+                        onChange={() => toggleRequiredElement(element.id)}
+                      />
+                      <span>
+                        <strong>{element.name}</strong>
+                        <small>{competenceLabel(element.competence_type)}</small>
+                      </span>
+                    </label>
+                  ))}
+                </div>
+              ) : (
+                <p className="editor-empty">Пока нет элементов для выбора.</p>
+              )}
+            </div>
+
+            <div className="editor-subsection">
+              <div className="editor-subsection__header">
+                <div>
+                  <strong>Новые элементы</strong>
+                  <p>Добавь элементы, которые будут сформированы в результате изучения темы.</p>
+                </div>
+
+                <button
+                  className="secondary-button"
+                  onClick={addTopicNewElementDraft}
+                  type="button"
+                >
+                  + Добавить элемент
+                </button>
+              </div>
+
+              {topicNewElements.length ? (
+                <div className="editor-drafts">
                   {topicNewElements.map((draft, index) => (
                     <div className="editor-draft-card" key={draft.clientId}>
                       <div className="editor-draft-card__header">
@@ -3280,8 +4398,6 @@ export function GraphEditor({
                             onChange={(event) =>
                               updateTopicNewElementDraft(draft.clientId, {
                                 competenceType: event.target.value as CompetenceType,
-                                operationRef:
-                                  event.target.value === "can" ? draft.operationRef : "",
                               })
                             }
                           >

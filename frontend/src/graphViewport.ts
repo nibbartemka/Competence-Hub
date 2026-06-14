@@ -261,39 +261,60 @@ export function usePersistedGraphViewport({
   }, [enabled, scopeId, scopeType]);
 
   useEffect(() => {
-    if (!scene || !graphRef.current || layoutLoading) {
+    if (!scene || layoutLoading) {
       return;
     }
 
-    const graphComponent = graphRef.current;
-    const graphInstance = graphComponent.getInstance();
-    const previousSceneKey = currentSceneKeyRef.current;
-    const nextSceneStructureSignature = buildSceneStructureSignature(scene);
-    const persistenceEnabled = enabled && Boolean(scopeId);
+    let cancelled = false;
+    let frameId: number | null = null;
 
-    if (previousSceneKey) {
-      runtimeLayoutsRef.current.set(
-        previousSceneKey,
-        captureGraphLayout(graphInstance),
-      );
-    }
+    const applyScene = () => {
+      const graphComponent = graphRef.current;
+      if (!graphComponent) {
+        if (!cancelled) {
+          frameId = window.requestAnimationFrame(applyScene);
+        }
+        return;
+      }
 
-    if (
-      previousSceneKey === scene.key &&
-      currentSceneStructureSignatureRef.current === nextSceneStructureSignature
-    ) {
-      return;
-    }
+      const graphInstance = graphComponent.getInstance();
+      const previousSceneKey = currentSceneKeyRef.current;
+      const nextSceneStructureSignature = buildSceneStructureSignature(scene);
+      const persistenceEnabled = enabled && Boolean(scopeId);
 
-    const layout =
-      runtimeLayoutsRef.current.get(scene.key) ??
-      (persistenceEnabled
-        ? persistedLayoutsRef.current.get(scene.key)
-        : undefined);
+      if (previousSceneKey) {
+        runtimeLayoutsRef.current.set(
+          previousSceneKey,
+          captureGraphLayout(graphInstance),
+        );
+      }
 
-    restoreSceneLayout(graphComponent, scene, adaptLayoutForScene(scene, layout));
-    currentSceneKeyRef.current = scene.key;
-    currentSceneStructureSignatureRef.current = nextSceneStructureSignature;
+      if (
+        previousSceneKey === scene.key &&
+        currentSceneStructureSignatureRef.current === nextSceneStructureSignature
+      ) {
+        return;
+      }
+
+      const layout =
+        runtimeLayoutsRef.current.get(scene.key) ??
+        (persistenceEnabled
+          ? persistedLayoutsRef.current.get(scene.key)
+          : undefined);
+
+      restoreSceneLayout(graphComponent, scene, adaptLayoutForScene(scene, layout));
+      currentSceneKeyRef.current = scene.key;
+      currentSceneStructureSignatureRef.current = nextSceneStructureSignature;
+    };
+
+    applyScene();
+
+    return () => {
+      cancelled = true;
+      if (frameId !== null) {
+        window.cancelAnimationFrame(frameId);
+      }
+    };
   }, [enabled, graphRef, layoutLoading, layoutVersion, scene, scopeId]);
 
   useEffect(() => {

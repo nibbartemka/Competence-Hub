@@ -1074,6 +1074,7 @@ async def create_learning_trajectory_task(
         prompt=normalized_payload.prompt.strip(),
         content_json=dump_task_content(normalized_content),
         difficulty=normalized_payload.difficulty,
+        expected_duration_seconds=normalized_payload.expected_duration_seconds,
     )
     session.add(task)
     await flush_or_409(session)
@@ -1138,6 +1139,7 @@ async def update_learning_trajectory_task(
     task.prompt = normalized_payload.prompt.strip()
     task.content_json = dump_task_content(normalized_content)
     task.difficulty = normalized_payload.difficulty
+    task.expected_duration_seconds = normalized_payload.expected_duration_seconds
     task.updated_at = datetime.utcnow()
 
     for related_element in list(task.related_elements):

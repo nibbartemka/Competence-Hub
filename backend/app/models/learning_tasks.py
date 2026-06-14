@@ -58,6 +58,7 @@ class LearningTrajectoryTask(Base):
     title: Mapped[str] = mapped_column(Text, nullable=False, default="")
     content_json: Mapped[str] = mapped_column(Text, nullable=False, default="{}")
     difficulty: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    expected_duration_seconds: Mapped[int | None] = mapped_column(Integer, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime,
         nullable=False,

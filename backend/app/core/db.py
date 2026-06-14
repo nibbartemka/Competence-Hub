@@ -8,7 +8,7 @@ from sqlalchemy.ext.asyncio import (
     async_sessionmaker
 )
 from sqlalchemy.orm import declarative_base
-from sqlalchemy import text, select
+from sqlalchemy import text, select, inspect as sa_inspect
 
 from .config import settings
 from .slugs import transliterate_to_slug_base
@@ -91,6 +91,23 @@ def _sqlite_has_table(connection, table_name: str) -> bool:
         {"table_name": table_name},
     ).fetchone()
     return row is not None
+
+
+def _has_table(connection, table_name: str) -> bool:
+    try:
+        return bool(sa_inspect(connection).has_table(table_name))
+    except Exception:
+        return False
+
+
+def _has_column(connection, table_name: str, column_name: str) -> bool:
+    try:
+        return any(
+            str(column.get("name", "")).strip() == column_name
+            for column in sa_inspect(connection).get_columns(table_name)
+        )
+    except Exception:
+        return False
 
 
 def _sqlite_has_index(connection, index_name: str) -> bool:
@@ -896,6 +913,13 @@ def _sync_sqlite_schema(connection) -> None:
                     "ADD COLUMN template_kind TEXT NOT NULL DEFAULT 'manual'"
                 )
             )
+        if not _sqlite_has_column(connection, "learning_trajectory_tasks", "expected_duration_seconds"):
+            connection.execute(
+                text(
+                    "ALTER TABLE learning_trajectory_tasks "
+                    "ADD COLUMN expected_duration_seconds INTEGER"
+                )
+            )
     if _sqlite_has_table(connection, "student_task_progress") and not _sqlite_has_column(
         connection, "student_task_progress", "last_answer_payload"
     ):
@@ -914,6 +938,27 @@ def _sync_sqlite_schema(connection) -> None:
                 "ADD COLUMN last_feedback_json TEXT"
             )
         )
+
+
+def _sync_postgres_schema(connection) -> None:
+    if _has_table(connection, "learning_trajectory_tasks") and not _has_column(
+        connection, "learning_trajectory_tasks", "expected_duration_seconds"
+    ):
+        connection.execute(
+            text(
+                "ALTER TABLE learning_trajectory_tasks "
+                "ADD COLUMN expected_duration_seconds INTEGER"
+            )
+        )
+
+
+def _sync_runtime_schema(connection) -> None:
+    dialect_name = str(connection.dialect.name).strip().lower()
+    if dialect_name == "sqlite":
+        _sync_sqlite_schema(connection)
+        return
+    if dialect_name.startswith("postgresql"):
+        _sync_postgres_schema(connection)
 
 
 async def get_async_session() -> AsyncGenerator[AsyncSession, None]:
@@ -982,6 +1027,7 @@ async def _seed_base_records() -> None:
 async def init_db() -> None:
     async with get_async_engine().begin() as connection:
         await connection.run_sync(Base.metadata.create_all)
+        await connection.run_sync(_sync_runtime_schema)
     await _seed_base_records()
 
 

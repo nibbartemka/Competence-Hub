@@ -35,6 +35,9 @@ function estimateExpectedDurationSeconds(
   task: StudentAssignedTask,
   practiceStage: "know" | "can" | "master",
 ) {
+  if (typeof task.expected_duration_seconds === "number" && task.expected_duration_seconds > 0) {
+    return task.expected_duration_seconds;
+  }
   if (practiceStage === "master") {
     return null;
   }
@@ -616,9 +619,7 @@ export default function StudentTopicControlPage() {
       ? "steady"
       : elapsedSeconds <= expectedDurationSeconds
         ? "steady"
-        : elapsedSeconds <= Math.round(expectedDurationSeconds * 1.6)
-          ? "warning"
-          : "critical";
+        : "critical";
   const feedbackRecord = isRecord(currentTask?.progress.last_feedback)
     ? currentTask.progress.last_feedback
     : null;
@@ -799,9 +800,7 @@ export default function StudentTopicControlPage() {
                 {durationSignalsEnabled
                   ? durationTone === "steady"
                     ? "Ответ идет в ожидаемом темпе."
-                    : durationTone === "warning"
-                      ? "Ответ уже дольше ожидаемого, но пока в допустимой зоне."
-                      : "Ответ заметно дольше нормы. Если он будет верным, система может выдать дополнительную проверку."
+                    : "Ответ уже дольше заданного времени. Если он будет верным, система выдаст дополнительную проверку по этому же элементу."
                   : "На этапе «Владеть» время ответа не влияет на адаптацию и не меняет маршрут контроля."}
               </div>
               {durationSignalsEnabled &&
@@ -861,9 +860,7 @@ export default function StudentTopicControlPage() {
               <div className={`student-control-adaptive-panel__note student-control-adaptive-panel__note--${durationTone}`}>
                 {durationTone === "steady"
                   ? "Ответ идет в ожидаемом темпе."
-                  : durationTone === "warning"
-                    ? "Ответ уже дольше ожидаемого, но пока в допустимой зоне."
-                    : "Ответ заметно дольше нормы. Если он будет верным, система может выдать дополнительную проверку."}
+                  : "Ответ уже дольше заданного времени. Если он будет верным, система выдаст дополнительную проверку по этому же элементу."}
               </div>
               {adaptiveStatus?.last_duration_seconds !== null && adaptiveStatus?.last_duration_seconds !== undefined ? (
                 <div className="student-control-adaptive-panel__note">

@@ -710,6 +710,8 @@ def validate_task_payload(
             raise bad_request("Для элементов «Уметь» пока доступен только текстовый ответ.")
         if not payload.related_element_ids:
             raise bad_request("Для задания уровня «Уметь» нужно указать связанные элементы этой темы.")
+        if payload.expected_duration_seconds is None:
+            raise bad_request("Для задания уровня «Уметь» нужно указать среднее время выполнения.")
     elif primary_element.competence_type == CompetenceType.MASTER:
         if payload.template_kind != LearningTrajectoryTaskTemplateKind.MANUAL:
             raise bad_request("Для элементов «Владеть» пока доступен только ручной шаблон задания.")
@@ -717,6 +719,10 @@ def validate_task_payload(
             raise bad_request("Для элементов «Владеть» пока доступен только текстовый ответ.")
         if not payload.related_element_ids:
             raise bad_request("Для задания уровня «Владеть» нужно указать связанные элементы этой темы.")
+        if payload.expected_duration_seconds is not None:
+            raise bad_request("Для задания уровня «Владеть» ручная настройка времени не используется.")
+    elif payload.expected_duration_seconds is None:
+        raise bad_request("Для задания уровня «Знать» нужно указать среднее время выполнения.")
 
     if payload.primary_element_id in payload.related_element_ids:
         raise bad_request("Ключевой элемент не нужно дублировать среди связанных элементов.")
@@ -876,6 +882,10 @@ def expected_duration_seconds(task: LearningTrajectoryTask) -> int | None:
     if competence_type == CompetenceType.MASTER:
         return None
 
+    configured_duration = getattr(task, "expected_duration_seconds", None)
+    if configured_duration is not None and configured_duration > 0:
+        return configured_duration
+
     if competence_type == CompetenceType.CAN:
         base_duration = CAN_STAGE_BASE_DURATION_BY_TYPE.get(task.task_type, 60)
         difficulty_factor = 1.2
@@ -896,7 +906,7 @@ def is_fragile_success(
     expected_duration = expected_duration_seconds(task)
     if expected_duration is None:
         return False
-    return duration_seconds > ceil(expected_duration * 1.6)
+    return duration_seconds > expected_duration
 
 
 def enrich_feedback_for_adaptive_control(
@@ -1192,6 +1202,7 @@ def build_task_read(task: LearningTrajectoryTask) -> LearningTrajectoryTaskRead:
         title=task.title,
         prompt=task.prompt,
         difficulty=task.difficulty,
+        expected_duration_seconds=task.expected_duration_seconds,
         task_type=task.task_type,
         template_kind=task.template_kind,
         content=build_teacher_task_content(task),
@@ -1278,6 +1289,7 @@ def build_student_task_read(
         title=task.title,
         prompt=task.prompt,
         difficulty=task.difficulty,
+        expected_duration_seconds=task.expected_duration_seconds,
         task_type=task.task_type,
         template_kind=task.template_kind,
         content=(

@@ -417,6 +417,7 @@ export type LearningTrajectoryTask = {
   title: string;
   prompt: string;
   difficulty: number;
+  expected_duration_seconds: number | null;
   task_type: LearningTrajectoryTaskType;
   template_kind: LearningTrajectoryTaskTemplateKind;
   content: LearningTrajectoryTaskContent;
@@ -482,6 +483,7 @@ export type StudentAssignedTask = {
   title: string;
   prompt: string;
   difficulty: number;
+  expected_duration_seconds: number | null;
   task_type: LearningTrajectoryTaskType;
   template_kind: LearningTrajectoryTaskTemplateKind;
   content: StudentTaskContent;
