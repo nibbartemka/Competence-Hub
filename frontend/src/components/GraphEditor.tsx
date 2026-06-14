@@ -5690,7 +5690,7 @@ export function GraphEditor({
                   </div>
                 </div>
 
-                <ul className="editor-list">
+                <ul className="editor-list editor-confirm-dialog__list">
                   {confirmDelete.relationNames.map((relationName, index) => (
                     <li key={`${relationName}-${index}`}>{relationName}</li>
                   ))}
@@ -5762,7 +5762,7 @@ export function GraphEditor({
                 </div>
               </div>
 
-              <ul className="editor-list">
+              <ul className="editor-list editor-confirm-dialog__list">
                 {confirmCompetenceChange.relationNames.map((relationName, index) => (
                   <li key={`${relationName}-${index}`}>{relationName}</li>
                 ))}

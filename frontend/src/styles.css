@@ -3869,11 +3869,14 @@ body:has(.session-profile-header) .home-shell {
 
 .editor-confirm-dialog {
   width: min(480px, 100%);
+  max-height: calc(100vh - 40px);
+  display: grid;
   padding: 22px;
   border-radius: 24px;
   border: 1px solid rgba(31, 55, 84, 0.12);
   background: rgba(255, 255, 255, 0.97);
   box-shadow: 0 24px 60px rgba(20, 36, 56, 0.22);
+  overflow: hidden;
 }
 
 .editor-confirm-dialog__header h4 {
@@ -3886,6 +3889,12 @@ body:has(.session-profile-header) .home-shell {
   margin: 14px 0 0;
   color: var(--muted);
   line-height: 1.55;
+}
+
+.editor-confirm-dialog__list {
+  max-height: min(280px, 40vh);
+  overflow: auto;
+  padding-right: 8px;
 }
 
 .editor-confirm-dialog__actions {
