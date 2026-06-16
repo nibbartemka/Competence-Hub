@@ -1,0 +1,27 @@
+services:
+  backend:
+    environment:
+      ENVIRONMENT: development
+      COMPETENCE_HUB_RELOAD: "1"
+    volumes:
+      - ./backend:/app
+      - backend_data:/app/data
+
+  frontend:
+    command: ["npm", "run", "dev", "--", "--host", "0.0.0.0", "--port", "4173", "--strictPort"]
+    environment:
+      VITE_API_BASE: /api
+      VITE_DEV_PROXY_TARGET: http://backend:8000
+      CHOKIDAR_USEPOLLING: "true"
+      CHOKIDAR_INTERVAL: "300"
+    ports:
+      - "4173:4173"
+    volumes:
+      - ./frontend:/app
+      - frontend_node_modules:/app/node_modules
+
+  nginx:
+    profiles: ["prod-only"]
+
+volumes:
+  frontend_node_modules:

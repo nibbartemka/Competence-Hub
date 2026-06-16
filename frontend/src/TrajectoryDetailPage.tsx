@@ -261,6 +261,16 @@ function clampTaskDifficulty(value: number) {
   return Math.max(TASK_DIFFICULTY_MIN, Math.min(TASK_DIFFICULTY_MAX, Number(value) || 0));
 }
 
+function normalizeTaskExpectedDurationSeconds(value: number) {
+  return Math.max(1, Math.round(Number(value) || 0));
+}
+
+function defaultExpectedDurationSeconds(tab: TaskCompetenceTab) {
+  if (tab === "can") return 180;
+  if (tab === "know") return 60;
+  return 60;
+}
+
 function estimateTrajectoryNodeHeight(topic: Topic) {
   const text = topic.description?.trim() || "Описание темы пока не добавлено.";
   return Math.min(420, 230 + Math.ceil(text.length / 26) * 18);
@@ -1151,6 +1161,9 @@ export default function TrajectoryDetailPage() {
   const [taskPrompt, setTaskPrompt] = useState("");
   const autoTaskDraftRef = useRef({ title: "", prompt: "" });
   const [taskDifficulty, setTaskDifficulty] = useState(30);
+  const [taskExpectedDurationSeconds, setTaskExpectedDurationSeconds] = useState(
+    defaultExpectedDurationSeconds("know"),
+  );
   const [taskType, setTaskType] = useState<LearningTrajectoryTaskType>("single_choice");
   const [taskPreviewOpen, setTaskPreviewOpen] = useState(false);
   const [taskOptions, setTaskOptions] = useState<LearningTrajectoryTaskOption[]>([
@@ -1202,6 +1215,22 @@ export default function TrajectoryDetailPage() {
     activeSession.userId === trajectory?.teacher_id;
   const resolvedDisciplineId = graph?.discipline.id ?? "";
   const resolvedDisciplinePath = disciplinePathValue(graph?.discipline, disciplineId ?? "");
+  const teacherDashboardPath = useMemo(() => {
+    const teacherUserId = trajectory?.teacher_id || (activeSession?.role === "teacher" ? activeSession.userId : "");
+    if (!teacherUserId) {
+      return getSessionHomePath(activeSession);
+    }
+
+    const nextSearchParams = new URLSearchParams();
+    nextSearchParams.set("panel", "trajectories");
+    if (resolvedDisciplineId) {
+      nextSearchParams.set("discipline", resolvedDisciplineId);
+    }
+    if (activeSession?.role === "admin") {
+      nextSearchParams.set("viewer", "admin");
+    }
+    return `/teachers/${teacherUserId}?${nextSearchParams.toString()}`;
+  }, [activeSession, resolvedDisciplineId, trajectory?.teacher_id]);
   const { pushNotification } = useNotifications();
 
   useEffect(() => {
@@ -2004,6 +2033,7 @@ export default function TrajectoryDetailPage() {
     setTaskTitle("");
     setTaskPrompt("");
     setTaskDifficulty(30);
+    setTaskExpectedDurationSeconds(defaultExpectedDurationSeconds("know"));
     setTaskRelatedElementIds([]);
     setTaskCheckedRelationIds([]);
     setTaskSingleCorrectElementId("");
@@ -2523,6 +2553,12 @@ export default function TrajectoryDetailPage() {
     setTaskTitle(task.title);
     setTaskPrompt(task.prompt);
     setTaskDifficulty(clampTaskDifficulty(task.difficulty));
+    setTaskExpectedDurationSeconds(
+      task.expected_duration_seconds ??
+        defaultExpectedDurationSeconds(
+          elementById.get(task.primary_element.element_id)?.competence_type ?? "know",
+        ),
+    );
     setTaskType(task.task_type);
     setTaskTemplateKind(task.template_kind);
     setTaskOptions(
@@ -2574,6 +2610,9 @@ export default function TrajectoryDetailPage() {
 
   function handleTaskCompetenceTabChange(nextTab: TaskCompetenceTab) {
     setTaskCompetenceTab(nextTab);
+    setTaskExpectedDurationSeconds((current) =>
+      current > 0 ? current : defaultExpectedDurationSeconds(nextTab),
+    );
     setTaskPreviewOpen(false);
     setTaskRelatedElementIds([]);
     setTaskCheckedRelationIds([]);
@@ -2702,6 +2741,10 @@ export default function TrajectoryDetailPage() {
         title: taskTitle.trim(),
         prompt: taskPrompt.trim(),
         difficulty: clampTaskDifficulty(taskDifficulty),
+        expected_duration_seconds:
+          selectedPrimaryElement?.competence_type === "master"
+            ? null
+            : normalizeTaskExpectedDurationSeconds(taskExpectedDurationSeconds),
         task_type: normalizedTaskType,
         template_kind: normalizedTemplateKind,
         content: buildTaskContentPayload(),
@@ -3934,6 +3977,23 @@ export default function TrajectoryDetailPage() {
                         disabled={saving}
                       />
                     </label>
+                    {taskCompetenceTab !== "master" ? (
+                      <label className="field">
+                        <span>Среднее время выполнения (сек.)</span>
+                        <input
+                          min={1}
+                          step={1}
+                          type="number"
+                          value={taskExpectedDurationSeconds}
+                          onChange={(event) =>
+                            setTaskExpectedDurationSeconds(
+                              normalizeTaskExpectedDurationSeconds(Number(event.target.value)),
+                            )
+                          }
+                          disabled={saving}
+                        />
+                      </label>
+                    ) : null}
                   </div>
                 </section>
                 <div className="trajectory-task-editor__actions">
@@ -4018,6 +4078,9 @@ export default function TrajectoryDetailPage() {
                         Ключевой элемент: {task.primary_element.name} ·{" "}
                         {TASK_TEMPLATE_LABELS[task.template_kind] ?? TASK_TYPE_LABELS[task.task_type]} ·{" "}
                         Сложность {task.difficulty}
+                        {task.expected_duration_seconds !== null
+                          ? ` · ${task.expected_duration_seconds} сек.`
+                          : ""}
                       </span>
                     </div>
                     <div className="trajectory-task-card__actions">
@@ -4111,7 +4174,7 @@ export default function TrajectoryDetailPage() {
               ) : null}
               <button
                 className="ghost-button"
-                onClick={() => navigate(`/disciplines/${resolvedDisciplinePath}/trajectory`)}
+                onClick={() => navigate(teacherDashboardPath)}
                 type="button"
               >
                 К списку траекторий
@@ -4546,6 +4609,23 @@ export default function TrajectoryDetailPage() {
                     disabled={saving}
                   />
                 </label>
+                {taskCompetenceTab !== "master" ? (
+                  <label className="field">
+                    <span>Среднее время выполнения (сек.)</span>
+                    <input
+                      min={1}
+                      step={1}
+                      type="number"
+                      value={taskExpectedDurationSeconds}
+                      onChange={(event) =>
+                        setTaskExpectedDurationSeconds(
+                          normalizeTaskExpectedDurationSeconds(Number(event.target.value)),
+                        )
+                      }
+                      disabled={saving}
+                    />
+                  </label>
+                ) : null}
               </div>
 
               <label className="field">

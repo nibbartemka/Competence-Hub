@@ -44,6 +44,10 @@ const PANEL_ORDER = [
 
 type TeacherPanelKey = (typeof PANEL_ORDER)[number];
 
+function isTeacherPanelKey(value: string | null): value is TeacherPanelKey {
+  return value === "disciplines" || value === "groups" || value === "summary" || value === "trajectories";
+}
+
 type StudentTaskSnapshot = {
   student: Student;
   trajectory: LearningTrajectorySummary;
@@ -71,6 +75,23 @@ type TaskDifficultyRow = {
   pendingReviewCount: number;
   completionPercent: number;
 };
+
+function trajectoryMatchesGroup(
+  trajectory: LearningTrajectorySummary,
+  group: Group,
+  subgroupById: Map<string, Subgroup>,
+) {
+  if (trajectory.group_id && trajectory.group_id !== group.id) {
+    return false;
+  }
+
+  if (trajectory.subgroup_id) {
+    const subgroup = subgroupById.get(trajectory.subgroup_id);
+    return subgroup?.group_id === group.id;
+  }
+
+  return true;
+}
 
 function extractErrorMessage(error: unknown) {
   if (error instanceof Error) {
@@ -120,6 +141,8 @@ export default function TeacherDashboardPage() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const isAdminViewer = searchParams.get("viewer") === "admin" && readSession()?.role === "admin";
+  const requestedPanel = searchParams.get("panel");
+  const requestedDisciplineId = searchParams.get("discipline") ?? "";
 
   const [teacher, setTeacher] = useState<Teacher | null>(null);
   const [disciplines, setDisciplines] = useState<Discipline[]>([]);
@@ -130,6 +153,10 @@ export default function TeacherDashboardPage() {
   const [taskSnapshots, setTaskSnapshots] = useState<StudentTaskSnapshot[]>([]);
   const [selectedDisciplineId, setSelectedDisciplineId] = useState("");
   const [activePanel, setActivePanel] = useState<TeacherPanelKey>("disciplines");
+  const [groupTrajectoryFilterId, setGroupTrajectoryFilterId] = useState("all");
+  const [groupNameFilter, setGroupNameFilter] = useState("");
+  const [groupModalId, setGroupModalId] = useState("");
+  const [summaryTrajectoryFilterId, setSummaryTrajectoryFilterId] = useState("all");
   const [loading, setLoading] = useState(true);
   const [summaryLoading, setSummaryLoading] = useState(false);
   const [error, setError] = useState("");
@@ -142,6 +169,12 @@ export default function TeacherDashboardPage() {
       navigate(getSessionHomePath(activeSession), { replace: true });
     }
   }, [isAdminViewer, navigate, teacherId]);
+
+  useEffect(() => {
+    if (isTeacherPanelKey(requestedPanel)) {
+      setActivePanel(requestedPanel);
+    }
+  }, [requestedPanel]);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -191,7 +224,7 @@ export default function TeacherDashboardPage() {
         setStudents(nextStudents);
         setSubgroups(nextSubgroups);
         setTrajectories(nextTrajectories);
-        setSelectedDisciplineId((current) => current || firstDiscipline?.id || "");
+        setSelectedDisciplineId((current) => current || requestedDisciplineId || firstDiscipline?.id || "");
       } catch (loadError) {
         if (!isAbortError(loadError)) {
           setError(extractErrorMessage(loadError));
@@ -205,7 +238,7 @@ export default function TeacherDashboardPage() {
 
     void load();
     return () => controller.abort();
-  }, [teacherId]);
+  }, [requestedDisciplineId, teacherId]);
 
   const teacherDisciplines = useMemo(() => {
     const currentTeacherId = teacher?.id ?? teacherId ?? "";
@@ -226,6 +259,15 @@ export default function TeacherDashboardPage() {
     teacherDisciplines.find((discipline) => discipline.id === selectedDisciplineId) ??
     teacherDisciplines[0] ??
     null;
+
+  useEffect(() => {
+    if (!teacherDisciplines.length) {
+      return;
+    }
+    if (!teacherDisciplines.some((discipline) => discipline.id === selectedDisciplineId)) {
+      setSelectedDisciplineId(requestedDisciplineId || teacherDisciplines[0].id);
+    }
+  }, [requestedDisciplineId, selectedDisciplineId, teacherDisciplines]);
 
   const selectedGroups = useMemo(() => {
     if (!selectedDiscipline) {
@@ -270,9 +312,95 @@ export default function TeacherDashboardPage() {
     return trajectories.filter((trajectory) => trajectory.discipline_id === selectedDiscipline.id);
   }, [selectedDiscipline, trajectories]);
 
+  useEffect(() => {
+    if (
+      groupTrajectoryFilterId !== "all" &&
+      !selectedTrajectories.some((trajectory) => trajectory.id === groupTrajectoryFilterId)
+    ) {
+      setGroupTrajectoryFilterId("all");
+    }
+  }, [groupTrajectoryFilterId, selectedTrajectories]);
+
+  const selectedGroupTrajectory = useMemo(
+    () => selectedTrajectories.find((trajectory) => trajectory.id === groupTrajectoryFilterId) ?? null,
+    [groupTrajectoryFilterId, selectedTrajectories],
+  );
+
+  const groupStudentsByGroupId = useMemo(() => {
+    const result = new Map<string, Student[]>();
+    for (const student of selectedStudents) {
+      result.set(student.group_id, [...(result.get(student.group_id) ?? []), student]);
+    }
+    for (const items of result.values()) {
+      items.sort((left, right) => left.name.localeCompare(right.name, "ru"));
+    }
+    return result;
+  }, [selectedStudents]);
+
+  const groupTrajectoriesByGroupId = useMemo(() => {
+    const result = new Map<string, LearningTrajectorySummary[]>();
+    for (const group of selectedGroups) {
+      result.set(
+        group.id,
+        selectedTrajectories.filter((trajectory) => trajectoryMatchesGroup(trajectory, group, subgroupById)),
+      );
+    }
+    return result;
+  }, [selectedGroups, selectedTrajectories, subgroupById]);
+
+  const filteredGroups = useMemo(() => {
+    const normalizedQuery = groupNameFilter.trim().toLowerCase();
+
+    return selectedGroups.filter((group) => {
+      if (selectedGroupTrajectory && !trajectoryMatchesGroup(selectedGroupTrajectory, group, subgroupById)) {
+        return false;
+      }
+      if (normalizedQuery && !group.name.toLowerCase().includes(normalizedQuery)) {
+        return false;
+      }
+      return true;
+    });
+  }, [groupNameFilter, selectedGroupTrajectory, selectedGroups, subgroupById]);
+
+  const modalGroup = useMemo(
+    () =>
+      filteredGroups.find((group) => group.id === groupModalId) ??
+      selectedGroups.find((group) => group.id === groupModalId) ??
+      null,
+    [filteredGroups, groupModalId, selectedGroups],
+  );
+
+  const modalGroupStudents = useMemo(
+    () => (modalGroup ? groupStudentsByGroupId.get(modalGroup.id) ?? [] : []),
+    [groupStudentsByGroupId, modalGroup],
+  );
+
+  useEffect(() => {
+    if (groupModalId && !modalGroup) {
+      setGroupModalId("");
+    }
+  }, [groupModalId, modalGroup]);
+
   const activeSelectedTrajectories = useMemo(
     () => selectedTrajectories.filter((trajectory) => trajectory.status === "active"),
     [selectedTrajectories],
+  );
+
+  useEffect(() => {
+    if (
+      summaryTrajectoryFilterId !== "all" &&
+      !activeSelectedTrajectories.some((trajectory) => trajectory.id === summaryTrajectoryFilterId)
+    ) {
+      setSummaryTrajectoryFilterId("all");
+    }
+  }, [activeSelectedTrajectories, summaryTrajectoryFilterId]);
+
+  const selectedSummaryTrajectories = useMemo(
+    () =>
+      summaryTrajectoryFilterId === "all"
+        ? activeSelectedTrajectories
+        : activeSelectedTrajectories.filter((trajectory) => trajectory.id === summaryTrajectoryFilterId),
+    [activeSelectedTrajectories, summaryTrajectoryFilterId],
   );
 
   useEffect(() => {
@@ -347,17 +475,17 @@ export default function TeacherDashboardPage() {
 
   const monitoredStudents = useMemo(() => {
     const eligibleStudents = selectedStudents.filter((student) =>
-      activeSelectedTrajectories.some((trajectory) => matchesTrajectoryStudent(trajectory, student)),
+      selectedSummaryTrajectories.some((trajectory) => matchesTrajectoryStudent(trajectory, student)),
     );
     return eligibleStudents.sort((left, right) => left.name.localeCompare(right.name, "ru"));
-  }, [activeSelectedTrajectories, selectedStudents]);
+  }, [selectedStudents, selectedSummaryTrajectories]);
 
   const selectedSnapshots = useMemo(
     () =>
       taskSnapshots.filter((snapshot) =>
-        selectedDiscipline ? snapshot.trajectory.discipline_id === selectedDiscipline.id : true,
+        selectedSummaryTrajectories.some((trajectory) => trajectory.id === snapshot.trajectory.id),
       ),
-    [selectedDiscipline, taskSnapshots],
+    [selectedSummaryTrajectories, taskSnapshots],
   );
 
   const studentSummaryRows = useMemo<StudentSummaryRow[]>(() => {
@@ -616,6 +744,8 @@ export default function TeacherDashboardPage() {
             <p className="card__eyebrow">Группы</p>
             <h2>Группы по выбранной дисциплине</h2>
           </div>
+        </div>
+        <div className="teacher-groups-filters">
           <label className="field role-dashboard-select">
             <span>Дисциплина</span>
             <select
@@ -629,14 +759,43 @@ export default function TeacherDashboardPage() {
               ))}
             </select>
           </label>
+          <label className="field role-dashboard-select">
+            <span>Траектория</span>
+            <select
+              value={groupTrajectoryFilterId}
+              onChange={(event) => setGroupTrajectoryFilterId(event.target.value)}
+            >
+              <option value="all">Все траектории</option>
+              {selectedTrajectories.map((trajectory) => (
+                <option key={trajectory.id} value={trajectory.id}>
+                  {trajectory.name}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="field">
+            <span>Название группы</span>
+            <input
+              placeholder="Например, АДП-DEMO-01"
+              type="search"
+              value={groupNameFilter}
+              onChange={(event) => setGroupNameFilter(event.target.value)}
+            />
+          </label>
         </div>
         <div className="role-card-grid role-card-grid--groups">
-          {selectedGroups.length ? (
-            selectedGroups.map((group) => {
-              const groupStudents = selectedStudents.filter((student) => student.group_id === group.id);
+          {filteredGroups.length ? (
+            filteredGroups.map((group) => {
+              const groupStudents = groupStudentsByGroupId.get(group.id) ?? [];
               const groupSubgroups = subgroupsByGroupId.get(group.id) ?? [];
+              const groupTrajectories = groupTrajectoriesByGroupId.get(group.id) ?? [];
               return (
-                <article className="role-feature-card" key={group.id}>
+                <button
+                  className="role-feature-card role-feature-card--interactive"
+                  key={group.id}
+                  onClick={() => setGroupModalId(group.id)}
+                  type="button"
+                >
                   <div>
                     <strong>{group.name}</strong>
                     <span>Студентов: {groupStudents.length}</span>
@@ -646,18 +805,26 @@ export default function TeacherDashboardPage() {
                         ? groupSubgroups.map((subgroup) => `№ ${subgroup.subgroup_num}`).join(", ")
                         : "не созданы"}
                     </span>
+                    <span>Траектории: {groupTrajectories.length}</span>
                   </div>
-                  <div className="role-inline-list">
-                    {groupStudents.slice(0, 6).map((student) => (
-                      <span key={student.id}>{student.name}</span>
-                    ))}
-                    {groupStudents.length > 6 ? <span>Еще {groupStudents.length - 6}</span> : null}
+                  <div className="role-inline-list teacher-group-card__chips">
+                    {groupTrajectories.length ? (
+                      groupTrajectories.map((trajectory) => (
+                        <span key={trajectory.id}>{trajectory.name}</span>
+                      ))
+                    ) : (
+                      <span>Траектории не назначены</span>
+                    )}
                   </div>
-                </article>
+                </button>
               );
             })
           ) : (
-            <p className="card__text">Для выбранной дисциплины группы не назначены.</p>
+            <p className="card__text">
+              {selectedGroups.length
+                ? "По текущим фильтрам группы не найдены."
+                : "Для выбранной дисциплины группы не назначены."}
+            </p>
           )}
         </div>
       </>
@@ -673,6 +840,35 @@ export default function TeacherDashboardPage() {
             <h2>Статистика по контролю студентов</h2>
           </div>
         </div>
+        <div className="teacher-summary-filters">
+          <label className="field role-dashboard-select">
+            <span>Дисциплина</span>
+            <select
+              value={selectedDiscipline?.id ?? ""}
+              onChange={(event) => setSelectedDisciplineId(event.target.value)}
+            >
+              {teacherDisciplines.map((discipline) => (
+                <option key={discipline.id} value={discipline.id}>
+                  {discipline.name}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="field role-dashboard-select">
+            <span>Траектория</span>
+            <select
+              value={summaryTrajectoryFilterId}
+              onChange={(event) => setSummaryTrajectoryFilterId(event.target.value)}
+            >
+              <option value="all">Все активные траектории</option>
+              {activeSelectedTrajectories.map((trajectory) => (
+                <option key={trajectory.id} value={trajectory.id}>
+                  {trajectory.name}
+                </option>
+              ))}
+            </select>
+          </label>
+        </div>
 
         {summaryError ? (
           <div className="home-feedback home-feedback--error">{summaryError}</div>
@@ -681,7 +877,7 @@ export default function TeacherDashboardPage() {
             <div className="status-view__pulse" />
             <span>Собираю статистику...</span>
           </div>
-        ) : !activeSelectedTrajectories.length ? (
+        ) : !selectedSummaryTrajectories.length ? (
           <p className="role-muted-note">Для сводки нужна активная траектория.</p>
         ) : (
           <>
@@ -715,24 +911,32 @@ export default function TeacherDashboardPage() {
                     <p className="card__eyebrow">Статусы</p>
                     <h3>Распределение заданий</h3>
                   </div>
-                  <span className="teacher-summary-card__badge">На проверке: {pendingReviewStudentsCount}</span>
                 </div>
                 <div className="teacher-status-chart">
-                  {taskStatusChart.map((item) => (
-                    <div className="teacher-status-chart__row" key={item.key}>
-                      <div className="teacher-status-chart__meta">
+                  <div className="teacher-status-chart__plot">
+                    {taskStatusChart.map((item) => (
+                      <div className="teacher-status-chart__bar-group" key={item.key}>
+                        <span className="teacher-status-chart__value">{item.count}</span>
+                        <div className="teacher-status-chart__bar-track">
+                          <i
+                            className={`teacher-status-chart__bar teacher-status-chart__bar--${item.tone}`}
+                            style={{ height: `${Math.max(item.percent, item.count > 0 ? 8 : 0)}%` }}
+                          />
+                        </div>
+                        <strong>{item.percent}%</strong>
+                        <span className="teacher-status-chart__label">{item.label}</span>
+                      </div>
+                    ))}
+                  </div>
+                  <div className="teacher-status-chart__legend-list">
+                    {taskStatusChart.map((item) => (
+                      <div className="teacher-status-chart__legend" key={`${item.key}-legend`}>
+                        <i className={`teacher-status-chart__legend-dot teacher-status-chart__legend-dot--${item.tone}`} />
                         <span>{item.label}</span>
                         <strong>{item.count}</strong>
                       </div>
-                      <div className="teacher-status-chart__track">
-                        <i
-                          className={`teacher-status-chart__fill teacher-status-chart__fill--${item.tone}`}
-                          style={{ width: `${item.percent}%` }}
-                        />
-                      </div>
-                      <small>{item.percent}%</small>
-                    </div>
-                  ))}
+                    ))}
+                  </div>
                 </div>
               </section>
 
@@ -848,6 +1052,7 @@ export default function TeacherDashboardPage() {
                 <article className="role-feature-card" key={trajectory.id}>
                   <div>
                     <strong>{trajectory.name}</strong>
+                    <span>Дисциплина: {discipline?.name ?? "Не определена"}</span>
                     <span>{trajectoryStatusLabel[trajectory.status]}</span>
                     <span>{trajectory.topic_count} тем</span>
                   </div>
@@ -957,20 +1162,6 @@ export default function TeacherDashboardPage() {
               <h2>Личный кабинет</h2>
             </div>
 
-            <label className="field">
-              <span>Текущая дисциплина</span>
-              <select
-                onChange={(event) => setSelectedDisciplineId(event.target.value)}
-                value={selectedDiscipline?.id ?? ""}
-              >
-                {teacherDisciplines.map((discipline) => (
-                  <option key={discipline.id} value={discipline.id}>
-                    {discipline.name}
-                  </option>
-                ))}
-              </select>
-            </label>
-
             <nav className="teacher-dashboard-sidebar__nav">
               {PANEL_ORDER.map((panel) => (
                 <button
@@ -989,9 +1180,6 @@ export default function TeacherDashboardPage() {
 
             {!isAdminViewer && selectedDiscipline ? (
               <div className="teacher-dashboard-sidebar__actions">
-                <button className="ghost-button" onClick={() => navigate(-1)} type="button">
-                  Назад
-                </button>
                 <MotionLink
                   className="primary-button"
                   to={`/disciplines/${getDisciplinePath(selectedDiscipline, selectedDiscipline.id)}/trajectory`}
@@ -1002,9 +1190,6 @@ export default function TeacherDashboardPage() {
               </div>
             ) : isAdminViewer ? (
               <div className="teacher-dashboard-sidebar__actions">
-                <button className="ghost-button" onClick={() => navigate(-1)} type="button">
-                  Назад
-                </button>
                 <button
                   className="secondary-button secondary-button--danger"
                   disabled={!teacher || deleting}
@@ -1047,6 +1232,69 @@ export default function TeacherDashboardPage() {
           </div>
         </main>
       )}
+
+      {modalGroup ? (
+        <div className="modal-backdrop" onClick={() => setGroupModalId("")}>
+          <section
+            className="modal-panel teacher-group-modal"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className="modal-panel__header">
+              <div>
+                <p className="card__eyebrow">Группа</p>
+                <h2>{modalGroup.name}</h2>
+              </div>
+              <button className="ghost-button" onClick={() => setGroupModalId("")} type="button">
+                Закрыть
+              </button>
+            </div>
+            <div className="modal-panel__body teacher-group-modal__body">
+              <div className="teacher-group-modal__meta">
+                <span>Студентов: {modalGroupStudents.length}</span>
+                <span>
+                  Подгруппы:{" "}
+                  {(subgroupsByGroupId.get(modalGroup.id) ?? []).length
+                    ? (subgroupsByGroupId.get(modalGroup.id) ?? [])
+                        .map((subgroup) => `№ ${subgroup.subgroup_num}`)
+                        .join(", ")
+                    : "не созданы"}
+                </span>
+                <span>Траектории: {(groupTrajectoriesByGroupId.get(modalGroup.id) ?? []).length}</span>
+              </div>
+
+              {(groupTrajectoriesByGroupId.get(modalGroup.id) ?? []).length ? (
+                <div className="role-inline-list teacher-group-card__chips">
+                  {(groupTrajectoriesByGroupId.get(modalGroup.id) ?? []).map((trajectory) => (
+                    <span key={trajectory.id}>{trajectory.name}</span>
+                  ))}
+                </div>
+              ) : null}
+
+              {modalGroupStudents.length ? (
+                <div className="teacher-group-students">
+                  <div className="teacher-group-students__head">
+                    <span>Студент</span>
+                    <span>Логин</span>
+                    <span>Подгруппа</span>
+                  </div>
+                  {modalGroupStudents.map((student) => {
+                    const subgroup = student.subgroup_id ? subgroupById.get(student.subgroup_id) : null;
+                    return (
+                      <div className="teacher-group-student-row" key={student.id}>
+                        <strong>{student.name}</strong>
+                        <span>{student.login}</span>
+                        <span>{subgroup ? `№ ${subgroup.subgroup_num}` : "Без подгруппы"}</span>
+                      </div>
+                    );
+                  })}
+                </div>
+              ) : (
+                <p className="role-muted-note">В этой группе пока нет студентов.</p>
+              )}
+            </div>
+          </section>
+        </div>
+      ) : null}
     </div>
   );
 }

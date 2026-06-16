@@ -777,6 +777,7 @@ export function createLearningTrajectoryTask(
     title: string;
     prompt: string;
     difficulty: number;
+    expected_duration_seconds: number | null;
     task_type: LearningTrajectoryTaskType;
     template_kind: LearningTrajectoryTaskTemplateKind;
     content: LearningTrajectoryTaskContent;
@@ -798,6 +799,7 @@ export function updateLearningTrajectoryTask(
     title: string;
     prompt: string;
     difficulty: number;
+    expected_duration_seconds: number | null;
     task_type: LearningTrajectoryTaskType;
     template_kind: LearningTrajectoryTaskTemplateKind;
     content: LearningTrajectoryTaskContent;
