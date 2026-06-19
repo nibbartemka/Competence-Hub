@@ -1865,8 +1865,16 @@ def _score_text(content: dict[str, Any], answer_payload: dict[str, Any]) -> tupl
             parsed_answer = submitted_text
 
         expected_output = content.get("expected_output")
+        if expected_output is None:
+            input_payload = content.get("input_payload")
+            if isinstance(input_payload, dict):
+                try:
+                    expected_output = contract.executor(input_payload)
+                except Exception:
+                    expected_output = None
+
         try:
-            is_correct = bool(contract.validator(parsed_answer, expected_output))
+            is_correct = expected_output is not None and bool(contract.validator(parsed_answer, expected_output))
         except Exception:
             is_correct = False
 

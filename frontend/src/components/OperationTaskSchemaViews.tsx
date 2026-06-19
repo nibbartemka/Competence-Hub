@@ -40,17 +40,23 @@ function schemaType(schema?: Record<string, unknown>) {
 }
 
 function schemaTypeLabel(type: string) {
-  if (type === "Graph") return "Граф";
-  if (type === "AdjacencyMatrix") return "Матрица смежности";
-  if (type === "IncidenceMatrix") return "Матрица инцидентности";
-  if (type === "DegreeSequence") return "Степени вершин";
-  if (type === "integer") return "Целое число";
-  if (type === "number") return "Число";
-  if (type === "boolean") return "Да / нет";
-  if (type === "string") return "Текст";
-  if (type === "object") return "Объект";
-  if (type === "array") return "Список";
-  return type || "Схема";
+  if (type === "Graph") return "Graph";
+  if (type === "AdjacencyMatrix") return "Adjacency Matrix";
+  if (type === "IncidenceMatrix") return "Incidence Matrix";
+  if (type === "DegreeSequence") return "Degree Sequence";
+  if (type === "ReachabilityMatrix") return "Reachability Matrix";
+  if (type === "StrongComponents") return "Strong Components";
+  if (type === "GraphBasis") return "Graph Basis";
+  if (type === "MinimumCover") return "Minimum Cover";
+  if (type === "DominationNumber") return "Domination Number";
+  if (type === "IndependentVertexSet") return "Independent Vertex Set";
+  if (type === "integer") return "Integer";
+  if (type === "number") return "Number";
+  if (type === "boolean") return "Yes / No";
+  if (type === "string") return "Text";
+  if (type === "object") return "Object";
+  if (type === "array") return "List";
+  return type || "Schema";
 }
 
 function numberFromUnknown(value: unknown) {
@@ -363,6 +369,74 @@ function parseStructuredAnswer(
   return fallbackFactory();
 }
 
+function normalizeVertexList(value: unknown): string[] {
+  if (Array.isArray(value)) {
+    return value
+      .map((item) => String(item ?? "").trim())
+      .filter(Boolean);
+  }
+  if (typeof value !== "string") {
+    return [];
+  }
+
+  const trimmed = value.trim();
+  if (!trimmed) {
+    return [];
+  }
+
+  if (trimmed.startsWith("[")) {
+    try {
+      const parsed = JSON.parse(trimmed);
+      if (Array.isArray(parsed)) {
+        return parsed
+          .map((item) => String(item ?? "").trim())
+          .filter(Boolean);
+      }
+    } catch {
+      // Fall back to plain text parsing.
+    }
+  }
+
+  return trimmed
+    .split(/[\n,;]+/)
+    .map((item) => item.trim())
+    .filter(Boolean);
+}
+
+function normalizeVertexGroups(value: unknown): string[][] {
+  if (Array.isArray(value)) {
+    return value
+      .map((group) => normalizeVertexList(group))
+      .filter((group) => group.length > 0);
+  }
+  if (typeof value !== "string") {
+    return [];
+  }
+
+  const trimmed = value.trim();
+  if (!trimmed) {
+    return [];
+  }
+
+  if (trimmed.startsWith("[")) {
+    try {
+      const parsed = JSON.parse(trimmed);
+      if (Array.isArray(parsed)) {
+        return parsed
+          .map((group) => normalizeVertexList(group))
+          .filter((group) => group.length > 0);
+      }
+    } catch {
+      // Fall back to line parsing.
+    }
+  }
+
+  return trimmed
+    .split(/\n+/)
+    .map((line) => normalizeVertexList(line))
+    .filter((group) => group.length > 0);
+}
+
 function serializeStructuredAnswer(value: Record<string, unknown>) {
   return JSON.stringify(value);
 }
@@ -376,7 +450,8 @@ function buildAdjacencyDraft(inputPayload?: Record<string, unknown>, current?: R
     values: graph.vertices.map((_, rowIndex) =>
       graph.vertices.map((_, columnIndex) => {
         const row = Array.isArray(currentValues[rowIndex]) ? currentValues[rowIndex] : [];
-        return numberFromUnknown(row[columnIndex]);
+        const currentValue = numberFromUnknown(row[columnIndex]);
+        return currentValue === "" ? 0 : currentValue;
       }),
     ),
   };
@@ -393,7 +468,8 @@ function buildIncidenceDraft(inputPayload?: Record<string, unknown>, current?: R
     values: graph.vertices.map((_, rowIndex) =>
       edgeLabels.map((_, columnIndex) => {
         const row = Array.isArray(currentValues[rowIndex]) ? currentValues[rowIndex] : [];
-        return numberFromUnknown(row[columnIndex]);
+        const currentValue = numberFromUnknown(row[columnIndex]);
+        return currentValue === "" ? 0 : currentValue;
       }),
     ),
   };
@@ -417,6 +493,22 @@ function buildDegreeSequenceDraft(inputPayload?: Record<string, unknown>, curren
       }
       return baseRow;
     }),
+  };
+}
+
+function buildReachabilityDraft(inputPayload?: Record<string, unknown>, current?: Record<string, unknown>) {
+  const graph = normalizeGraphPayload(inputPayload);
+  const currentValues = Array.isArray(current?.values) ? current.values : [];
+
+  return {
+    vertices: graph.vertices,
+    values: graph.vertices.map((_, rowIndex) =>
+      graph.vertices.map((_, columnIndex) => {
+        const row = Array.isArray(currentValues[rowIndex]) ? currentValues[rowIndex] : [];
+        const currentValue = numberFromUnknown(row[columnIndex]);
+        return currentValue === "" ? 0 : currentValue;
+      }),
+    ),
   };
 }
 
@@ -522,6 +614,81 @@ function MatrixAnswerEditor({
           </tbody>
         </table>
       </div>
+    </section>
+  );
+}
+
+function VertexListAnswerEditor({
+  title,
+  label,
+  value,
+  onChange,
+  disabled,
+  helperText,
+}: {
+  title: string;
+  label: string;
+  value: string[];
+  onChange: (nextValue: string[]) => void;
+  disabled?: boolean;
+  helperText?: string;
+}) {
+  return (
+    <section className="operation-task-schema">
+      <div className="operation-task-schema__header">
+        <div>
+          <p className="card__eyebrow">Ответ студента</p>
+          <h3>{title}</h3>
+        </div>
+        <span className="hero__chip">Список</span>
+      </div>
+      <label className="field">
+        <span>{label}</span>
+        <textarea
+          className="trajectory-task-textarea"
+          disabled={disabled}
+          onChange={(event) => onChange(normalizeVertexList(event.target.value))}
+          placeholder="A, B, C"
+          rows={4}
+          value={value.join(", ")}
+        />
+      </label>
+      {helperText ? <p className="card__text">{helperText}</p> : null}
+    </section>
+  );
+}
+
+function VertexGroupsAnswerEditor({
+  title,
+  value,
+  onChange,
+  disabled,
+}: {
+  title: string;
+  value: string[][];
+  onChange: (nextValue: string[][]) => void;
+  disabled?: boolean;
+}) {
+  return (
+    <section className="operation-task-schema">
+      <div className="operation-task-schema__header">
+        <div>
+          <p className="card__eyebrow">Ответ студента</p>
+          <h3>{title}</h3>
+        </div>
+        <span className="hero__chip">Группы</span>
+      </div>
+      <label className="field">
+        <span>Одна строка = одна группа вершин</span>
+        <textarea
+          className="trajectory-task-textarea"
+          disabled={disabled}
+          onChange={(event) => onChange(normalizeVertexGroups(event.target.value))}
+          placeholder={"A, B\nC, D"}
+          rows={6}
+          value={value.map((group) => group.join(", ")).join("\n")}
+        />
+      </label>
     </section>
   );
 }
@@ -781,7 +948,7 @@ export function OperationAnswerEditor({
           )
         }
         rowLabels={normalizedDraft.vertices as string[]}
-        title="Построй матрицу смежности"
+        title="Build the adjacency matrix"
         values={normalizedDraft.values as Array<Array<number | string>>}
       />
     );
@@ -803,7 +970,7 @@ export function OperationAnswerEditor({
           )
         }
         rowLabels={normalizedDraft.vertices as string[]}
-        title="Построй матрицу инцидентности"
+        title="Build the incidence matrix"
         values={normalizedDraft.values as Array<Array<number | string>>}
       />
     );
@@ -819,6 +986,120 @@ export function OperationAnswerEditor({
         draft={normalizedDraft}
         graph={graph}
         onChange={(nextValue) => onChangeText(serializeStructuredAnswer(nextValue))}
+      />
+    );
+  }
+
+  if (type === "ReachabilityMatrix") {
+    const draft = parseStructuredAnswer(valueText, () => buildReachabilityDraft(inputPayload));
+    const normalizedDraft = buildReachabilityDraft(inputPayload, draft);
+    return (
+      <MatrixAnswerEditor
+        columnLabels={normalizedDraft.vertices as string[]}
+        disabled={disabled}
+        onChange={(nextValues) =>
+          onChangeText(
+            serializeStructuredAnswer({
+              ...normalizedDraft,
+              values: nextValues,
+            }),
+          )
+        }
+        rowLabels={normalizedDraft.vertices as string[]}
+        title="Build the reachability matrix"
+        values={normalizedDraft.values as Array<Array<number | string>>}
+      />
+    );
+  }
+
+  if (type === "StrongComponents") {
+    const draft = parseStructuredAnswer(valueText, () => ({ components: [] as string[][] }));
+    return (
+      <VertexGroupsAnswerEditor
+        disabled={disabled}
+        onChange={(components) => onChangeText(serializeStructuredAnswer({ components }))}
+        title="List the strong components"
+        value={normalizeVertexGroups(draft.components)}
+      />
+    );
+  }
+
+  if (type === "GraphBasis") {
+    const draft = parseStructuredAnswer(valueText, () => ({ basis: [] as string[] }));
+    return (
+      <VertexListAnswerEditor
+        disabled={disabled}
+        helperText="Choose one vertex from each source strong component."
+        label="Basis vertices"
+        onChange={(basis) => onChangeText(serializeStructuredAnswer({ basis }))}
+        title="Specify the graph basis"
+        value={normalizeVertexList(draft.basis)}
+      />
+    );
+  }
+
+  if (type === "MinimumCover") {
+    const draft = parseStructuredAnswer(valueText, () => ({ cover: [] as string[] }));
+    const cover = normalizeVertexList(draft.cover);
+    return (
+      <VertexListAnswerEditor
+        disabled={disabled}
+        helperText="The cover size is calculated automatically."
+        label="Cover vertices"
+        onChange={(nextCover) =>
+          onChangeText(
+            serializeStructuredAnswer({
+              cover: nextCover,
+              size: nextCover.length,
+            }),
+          )
+        }
+        title="Find a minimum cover"
+        value={cover}
+      />
+    );
+  }
+
+  if (type === "DominationNumber") {
+    const draft = parseStructuredAnswer(valueText, () => ({ minimum_dominating_set: [] as string[] }));
+    const dominatingSet = normalizeVertexList(draft.minimum_dominating_set);
+    return (
+      <VertexListAnswerEditor
+        disabled={disabled}
+        helperText="The domination number is calculated from the set size."
+        label="Dominating set"
+        onChange={(nextSet) =>
+          onChangeText(
+            serializeStructuredAnswer({
+              minimum_dominating_set: nextSet,
+              domination_number: nextSet.length,
+            }),
+          )
+        }
+        title="Specify a minimum dominating set"
+        value={dominatingSet}
+      />
+    );
+  }
+
+  if (type === "IndependentVertexSet") {
+    const draft = parseStructuredAnswer(valueText, () => ({ independent_set: [] as string[] }));
+    const independentSet = normalizeVertexList(draft.independent_set);
+    return (
+      <VertexListAnswerEditor
+        disabled={disabled}
+        helperText="The set size is calculated automatically."
+        label="Independent vertices"
+        onChange={(nextSet) =>
+          onChangeText(
+            serializeStructuredAnswer({
+              independent_set: nextSet,
+              size: nextSet.length,
+            }),
+          )
+        }
+        title="Find an independent set"
+        value={independentSet}
       />
     );
   }
@@ -870,6 +1151,24 @@ export function buildStructuredOperationAnswerText(
   }
   if (type === "DegreeSequence") {
     return serializeStructuredAnswer(buildDegreeSequenceDraft(content.input_payload));
+  }
+  if (type === "ReachabilityMatrix") {
+    return serializeStructuredAnswer(buildReachabilityDraft(content.input_payload));
+  }
+  if (type === "StrongComponents") {
+    return serializeStructuredAnswer({ components: [] });
+  }
+  if (type === "GraphBasis") {
+    return serializeStructuredAnswer({ basis: [] });
+  }
+  if (type === "MinimumCover") {
+    return serializeStructuredAnswer({ cover: [], size: 0 });
+  }
+  if (type === "DominationNumber") {
+    return serializeStructuredAnswer({ minimum_dominating_set: [], domination_number: 0 });
+  }
+  if (type === "IndependentVertexSet") {
+    return serializeStructuredAnswer({ independent_set: [], size: 0 });
   }
   if (type === "integer" || type === "number") {
     return serializeStructuredAnswer(buildScalarDraft(type));
