@@ -889,7 +889,7 @@ export default function StudentTopicControlPage() {
                     disabled={saving}
                     onClick={() => void submitCorrectAnswer(currentTask)}
                   >
-                    Submit Correct Answer
+                    Отправить эталон
                   </button>
                 ) : null}
                 <button
@@ -898,7 +898,7 @@ export default function StudentTopicControlPage() {
                   disabled={saving}
                   onClick={() => setDebugTask(currentTask)}
                 >
-                  Show Solution
+                  Показать эталон
                 </button>
               </div>
             </>
