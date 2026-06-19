@@ -1018,6 +1018,17 @@ def _normalized_matching_pairs(content: dict[str, Any]) -> list[dict[str, str]]:
     if not isinstance(raw_pairs, list):
         return []
 
+    left_items = {
+        str(item.get("id", "")).strip(): str(item.get("text", "")).strip()
+        for item in content.get("left", [])
+        if isinstance(item, dict) and str(item.get("id", "")).strip()
+    }
+    right_items = {
+        str(item.get("id", "")).strip(): str(item.get("text", "")).strip()
+        for item in content.get("right", [])
+        if isinstance(item, dict) and str(item.get("id", "")).strip()
+    }
+
     normalized_pairs: list[dict[str, str]] = []
     for index, raw_pair in enumerate(raw_pairs):
         if not isinstance(raw_pair, dict):
@@ -1028,8 +1039,10 @@ def _normalized_matching_pairs(content: dict[str, Any]) -> list[dict[str, str]]:
             or raw_pair.get("right_id")
             or f"pair-{index + 1}"
         ).strip()
-        left = str(raw_pair.get("left", "")).strip()
-        right = str(raw_pair.get("right", "")).strip()
+        left_id = str(raw_pair.get("left_id", "")).strip()
+        right_id = str(raw_pair.get("right_id", "")).strip()
+        left = str(raw_pair.get("left", "")).strip() or left_items.get(left_id, "")
+        right = str(raw_pair.get("right", "")).strip() or right_items.get(right_id, "")
         if not pair_id or not left or not right:
             continue
         normalized_pairs.append(

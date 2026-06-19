@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 
 from app.algorithm_library.contracts import get_operation_contract
-from app.services.learning_tasks import _score_text
+from app.services.learning_tasks import _normalized_matching_pairs, _score_matching, _score_text
 
 
 def test_score_text_computes_expected_output_for_operation_tasks_when_missing() -> None:
@@ -31,3 +31,55 @@ def test_score_text_computes_expected_output_for_operation_tasks_when_missing() 
     assert score == 100
     assert feedback["is_correct"] is True
     assert feedback["expected_output"] == expected_output
+
+
+def test_normalized_matching_pairs_supports_legacy_snapshot_shape() -> None:
+    content = {
+        "left": [
+            {"id": "graph", "text": "????"},
+            {"id": "vertex", "text": "???????"},
+        ],
+        "right": [
+            {"id": "graph", "text": "????????? ?????? ? ?????."},
+            {"id": "vertex", "text": "????????? ????? ?????."},
+        ],
+        "pairs": [
+            {"left_id": "graph", "right_id": "graph"},
+            {"left_id": "vertex", "right_id": "vertex"},
+        ],
+    }
+
+    assert _normalized_matching_pairs(content) == [
+        {"id": "graph", "left": "????", "right": "????????? ?????? ? ?????."},
+        {"id": "vertex", "left": "???????", "right": "????????? ????? ?????."},
+    ]
+
+
+def test_score_matching_supports_legacy_snapshot_shape() -> None:
+    content = {
+        "left": [
+            {"id": "graph", "text": "????"},
+            {"id": "vertex", "text": "???????"},
+        ],
+        "right": [
+            {"id": "graph", "text": "????????? ?????? ? ?????."},
+            {"id": "vertex", "text": "????????? ????? ?????."},
+        ],
+        "pairs": [
+            {"left_id": "graph", "right_id": "graph"},
+            {"left_id": "vertex", "right_id": "vertex"},
+        ],
+    }
+
+    score, feedback = _score_matching(
+        content,
+        {
+            "pairings": [
+                {"left_id": "graph", "right_id": "graph"},
+                {"left_id": "vertex", "right_id": "vertex"},
+            ]
+        },
+    )
+
+    assert score == 100
+    assert feedback["is_correct"] is True
