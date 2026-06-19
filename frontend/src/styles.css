@@ -4490,6 +4490,10 @@ body:has(.session-profile-header) .home-shell {
   }
 }
 
+.student-control-adaptive-panel__json-grid {
+  grid-template-columns: 1fr;
+}
+
 @media (max-width: 960px) {
   .trajectory-hero {
     grid-template-columns: minmax(0, 1fr);
@@ -8527,4 +8531,41 @@ body:has(.session-profile-header) .home-shell {
   gap: 10px;
   justify-content: flex-end;
   margin-top: 8px;
+}
+
+.student-control-adaptive-panel__json-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.student-control-adaptive-panel__json-card {
+  display: grid;
+  gap: 8px;
+  padding: 12px 14px;
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.82);
+  border: 1px solid rgba(72, 105, 160, 0.12);
+}
+
+.student-control-adaptive-panel__json-label {
+  color: #66809d;
+  font-size: 0.78rem;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.student-control-adaptive-panel__json-pre {
+  margin: 0;
+  max-height: 260px;
+  overflow: auto;
+  padding: 12px;
+  border-radius: 12px;
+  background: #10233a;
+  color: #e6f0fb;
+  font-size: 0.8rem;
+  line-height: 1.45;
+  white-space: pre-wrap;
+  word-break: break-word;
 }

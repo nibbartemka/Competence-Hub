@@ -115,6 +115,137 @@ function isManualMasterTask(task: StudentAssignedTask) {
   );
 }
 
+function buildDebugCorrectAnswer(task: StudentAssignedTask): Record<string, unknown> | null {
+  const solution =
+    task.content.debug_solution && isRecord(task.content.debug_solution)
+      ? task.content.debug_solution
+      : null;
+  if (!solution) {
+    return null;
+  }
+
+  const kind = String(solution.kind ?? "");
+  if (kind === "choice") {
+    const correctOptionIds = Array.isArray(solution.correct_option_ids)
+      ? solution.correct_option_ids.map((item) => String(item))
+      : [];
+    return correctOptionIds.length ? { selected_option_ids: correctOptionIds } : null;
+  }
+
+  if (kind === "matching") {
+    const pairs = Array.isArray(solution.pairs)
+      ? solution.pairs
+          .map((item) =>
+            isRecord(item)
+              ? {
+                  left_id: String(item.left_id ?? item.left ?? "").trim(),
+                  right_id: String(item.right_id ?? item.right ?? "").trim(),
+                }
+              : null,
+          )
+          .filter(
+            (
+              item,
+            ): item is {
+              left_id: string;
+              right_id: string;
+            } => Boolean(item?.left_id && item.right_id),
+          )
+      : [];
+    return pairs.length ? { pairings: pairs } : null;
+  }
+
+  if (kind === "ordering") {
+    const correctOrderIds = Array.isArray(solution.correct_order_ids)
+      ? solution.correct_order_ids.map((item) => String(item))
+      : [];
+    return correctOrderIds.length ? { ordered_item_ids: correctOrderIds } : null;
+  }
+
+  if (kind === "text") {
+    if (solution.expected_output !== undefined) {
+      return { text: JSON.stringify(solution.expected_output) };
+    }
+    const acceptedAnswers = Array.isArray(solution.accepted_answers)
+      ? solution.accepted_answers.map((item) => String(item)).filter(Boolean)
+      : [];
+    return acceptedAnswers.length ? { text: acceptedAnswers[0] } : null;
+  }
+
+  return null;
+}
+
+function tryParseJsonText(value: string): unknown {
+  try {
+    return JSON.parse(value);
+  } catch {
+    return value;
+  }
+}
+
+function buildExpectedJsonPreview(task: StudentAssignedTask): unknown | null {
+  const solution =
+    task.content.debug_solution && isRecord(task.content.debug_solution)
+      ? task.content.debug_solution
+      : null;
+  if (!solution) {
+    return null;
+  }
+
+  const kind = String(solution.kind ?? "");
+  if (kind === "text") {
+    if (solution.expected_output !== undefined) {
+      return solution.expected_output;
+    }
+    const acceptedAnswers = Array.isArray(solution.accepted_answers)
+      ? solution.accepted_answers.map((item) => String(item)).filter(Boolean)
+      : [];
+    return acceptedAnswers.length ? acceptedAnswers[0] : null;
+  }
+
+  return buildDebugCorrectAnswer(task);
+}
+
+function buildCurrentJsonPreview(
+  task: StudentAssignedTask,
+  currentAnswer: Record<string, unknown>,
+): unknown | null {
+  if (task.task_type === "text" && hasStructuredOperationContent(task.content)) {
+    return tryParseJsonText(buildStructuredOperationAnswerText(currentAnswer, task.content));
+  }
+  return currentAnswer;
+}
+
+function renderAdaptiveJsonComparison(
+  task: StudentAssignedTask | null,
+  practiceStage: "know" | "can" | "master",
+  currentAnswer: Record<string, unknown>,
+) {
+  if (!task || practiceStage !== "can") {
+    return null;
+  }
+
+  const expectedJson = buildExpectedJsonPreview(task);
+  const currentJson = buildCurrentJsonPreview(task, currentAnswer);
+
+  return (
+    <div className="student-control-adaptive-panel__json-grid">
+      <div className="student-control-adaptive-panel__json-card">
+        <span className="student-control-adaptive-panel__json-label">Expected JSON</span>
+        <pre className="student-control-adaptive-panel__json-pre">
+          {JSON.stringify(expectedJson, null, 2) ?? "null"}
+        </pre>
+      </div>
+      <div className="student-control-adaptive-panel__json-card">
+        <span className="student-control-adaptive-panel__json-label">Current JSON</span>
+        <pre className="student-control-adaptive-panel__json-pre">
+          {JSON.stringify(currentJson, null, 2) ?? "null"}
+        </pre>
+      </div>
+    </div>
+  );
+}
+
 function extractSubmittedFileMeta(task: StudentAssignedTask) {
   const payload = task.progress.last_answer_payload;
   if (!payload || payload.submission_kind !== "file") {
@@ -350,6 +481,42 @@ export default function StudentTopicControlPage() {
         task.id,
         studentId,
         nextAnswer,
+        task.task_instance_id,
+        durationSeconds,
+      );
+      await loadControl(undefined, continuePractice, practiceStage);
+    } catch (submitError) {
+      setError(extractErrorMessage(submitError));
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function submitCorrectAnswer(task: StudentAssignedTask) {
+    if (!studentId) {
+      setError("Student was not resolved.");
+      return;
+    }
+
+    const correctAnswer = buildDebugCorrectAnswer(task);
+    if (!correctAnswer) {
+      setError("No prepared correct answer is available for this task.");
+      return;
+    }
+
+    const durationSeconds =
+      practiceStage !== "master" && taskStartedAt !== null
+        ? Math.max(1, Math.round((Date.now() - taskStartedAt) / 1000))
+        : null;
+
+    try {
+      setSaving(true);
+      setError("");
+      setNotice("");
+      await submitStudentTaskScore(
+        task.id,
+        studentId,
+        correctAnswer,
         task.task_instance_id,
         durationSeconds,
       );
@@ -715,13 +882,23 @@ export default function StudentTopicControlPage() {
                 >
                   {saving ? "Проверяю..." : "Отправить ответ"}
                 </button>
+                {control?.practice_stage === "can" && buildDebugCorrectAnswer(currentTask) ? (
+                  <button
+                    className="ghost-button"
+                    type="button"
+                    disabled={saving}
+                    onClick={() => void submitCorrectAnswer(currentTask)}
+                  >
+                    Submit Correct Answer
+                  </button>
+                ) : null}
                 <button
                   className="ghost-button"
                   type="button"
                   disabled={saving}
                   onClick={() => setDebugTask(currentTask)}
                 >
-                  Показать эталон
+                  Show Solution
                 </button>
               </div>
             </>
@@ -814,6 +991,7 @@ export default function StudentTopicControlPage() {
                 </div>
               ) : null}
             </div>
+            {renderAdaptiveJsonComparison(currentTask, control?.practice_stage ?? "know", answer)}
           </div>
         </section>
 
@@ -871,6 +1049,7 @@ export default function StudentTopicControlPage() {
                 </div>
               ) : null}
             </div>
+            {renderAdaptiveJsonComparison(currentTask, control?.practice_stage ?? "know", answer)}
           </div>
           <div className="student-control-panel__header">
             <h3>Элементы темы</h3>

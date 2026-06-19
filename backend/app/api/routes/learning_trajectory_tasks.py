@@ -1398,18 +1398,16 @@ async def submit_student_task_score(
         progress.completed_at = answered_at
 
     if task.primary_element.competence_type == CompetenceType.CAN:
-        scores_by_element_id = {task.primary_element_id: score}
-        if score < 60:
-            scores_by_element_id.update(
-                {
-                    related.element_id: 0
-                    for related in task.related_elements
-                }
-            )
         await _upsert_student_masteries(
             student=student,
             discipline_id=task.trajectory.discipline_id,
-            scores_by_element_id=scores_by_element_id,
+            scores_by_element_id={
+                task.primary_element_id: score,
+                **{
+                    related.element_id: score
+                    for related in task.related_elements
+                },
+            },
             session=session,
         )
     else:
