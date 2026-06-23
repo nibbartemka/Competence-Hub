@@ -437,6 +437,54 @@ function normalizeVertexGroups(value: unknown): string[][] {
     .filter((group) => group.length > 0);
 }
 
+function uniqueVertexList(vertices: string[]) {
+  return Array.from(
+    new Set(
+      vertices
+        .map((item) => String(item ?? "").trim())
+        .filter(Boolean),
+    ),
+  );
+}
+
+function toggleVertexSelection(current: string[], vertex: string) {
+  return current.includes(vertex)
+    ? current.filter((item) => item !== vertex)
+    : [...current, vertex];
+}
+
+function normalizeVertexGroupDraft(value: string[][], availableVertices: string[]) {
+  const allowedVertices = new Set(uniqueVertexList(availableVertices));
+  const seenVertices = new Set<string>();
+  const normalizedGroups: string[][] = [];
+
+  for (const rawGroup of value) {
+    const nextGroup: string[] = [];
+    for (const vertex of uniqueVertexList(rawGroup)) {
+      if (!allowedVertices.has(vertex) || seenVertices.has(vertex)) {
+        continue;
+      }
+      seenVertices.add(vertex);
+      nextGroup.push(vertex);
+    }
+    normalizedGroups.push(nextGroup);
+  }
+
+  return normalizedGroups;
+}
+
+function toggleVertexInGroups(groups: string[][], groupIndex: number, vertex: string) {
+  const wasSelected = groups[groupIndex]?.includes(vertex) ?? false;
+  const nextGroups = groups.map((group) => group.filter((item) => item !== vertex));
+
+  if (!wasSelected) {
+    const targetGroup = nextGroups[groupIndex] ?? [];
+    nextGroups[groupIndex] = [...targetGroup, vertex];
+  }
+
+  return nextGroups;
+}
+
 function serializeStructuredAnswer(value: Record<string, unknown>) {
   return JSON.stringify(value);
 }
@@ -625,6 +673,7 @@ function VertexListAnswerEditor({
   onChange,
   disabled,
   helperText,
+  availableVertices,
 }: {
   title: string;
   label: string;
@@ -632,7 +681,11 @@ function VertexListAnswerEditor({
   onChange: (nextValue: string[]) => void;
   disabled?: boolean;
   helperText?: string;
+  availableVertices?: string[];
 }) {
+  const normalizedVertices = uniqueVertexList(availableVertices ?? []);
+  const selectedVertices = value.filter((vertex) => normalizedVertices.includes(vertex));
+
   return (
     <section className="operation-task-schema">
       <div className="operation-task-schema__header">
@@ -640,19 +693,57 @@ function VertexListAnswerEditor({
           <p className="card__eyebrow">Ответ студента</p>
           <h3>{title}</h3>
         </div>
-        <span className="hero__chip">Список</span>
+        <span className="hero__chip">Выбор</span>
       </div>
-      <label className="field">
-        <span>{label}</span>
-        <textarea
-          className="trajectory-task-textarea"
-          disabled={disabled}
-          onChange={(event) => onChange(normalizeVertexList(event.target.value))}
-          placeholder="A, B, C"
-          rows={4}
-          value={value.join(", ")}
-        />
-      </label>
+      {normalizedVertices.length ? (
+        <div className="operation-task-schema__vertex-picker">
+          <span className="operation-task-schema__picker-label">{label}</span>
+          <div className="operation-task-schema__vertex-grid">
+            {normalizedVertices.map((vertex) => {
+              const isSelected = selectedVertices.includes(vertex);
+              return (
+                <button
+                  className={
+                    isSelected
+                      ? "operation-task-schema__vertex-button operation-task-schema__vertex-button--selected"
+                      : "operation-task-schema__vertex-button"
+                  }
+                  disabled={disabled}
+                  key={vertex}
+                  onClick={() => onChange(toggleVertexSelection(selectedVertices, vertex))}
+                  type="button"
+                >
+                  {vertex}
+                </button>
+              );
+            })}
+          </div>
+          <div className="operation-task-schema__selection-summary">
+            <span className="operation-task-schema__picker-label">Выбрано: {selectedVertices.length}</span>
+            {selectedVertices.length ? (
+              <div className="operation-task-schema__chips">
+                {selectedVertices.map((vertex) => (
+                  <span key={vertex}>{vertex}</span>
+                ))}
+              </div>
+            ) : (
+              <div className="operation-task-schema__empty">Пока не выбрано ни одной вершины.</div>
+            )}
+          </div>
+        </div>
+      ) : (
+        <label className="field">
+          <span>{label}</span>
+          <textarea
+            className="trajectory-task-textarea"
+            disabled={disabled}
+            onChange={(event) => onChange(normalizeVertexList(event.target.value))}
+            placeholder="A, B, C"
+            rows={4}
+            value={value.join(", ")}
+          />
+        </label>
+      )}
       {helperText ? <p className="card__text">{helperText}</p> : null}
     </section>
   );
@@ -663,12 +754,20 @@ function VertexGroupsAnswerEditor({
   value,
   onChange,
   disabled,
+  availableVertices,
 }: {
   title: string;
   value: string[][];
   onChange: (nextValue: string[][]) => void;
   disabled?: boolean;
+  availableVertices?: string[];
 }) {
+  const normalizedVertices = uniqueVertexList(availableVertices ?? []);
+  const normalizedGroups = normalizeVertexGroupDraft(value, normalizedVertices);
+  const groups = normalizedGroups.length ? normalizedGroups : [[]];
+  const assignedVertices = new Set(groups.flat());
+  const freeVertices = normalizedVertices.filter((vertex) => !assignedVertices.has(vertex));
+
   return (
     <section className="operation-task-schema">
       <div className="operation-task-schema__header">
@@ -678,20 +777,99 @@ function VertexGroupsAnswerEditor({
         </div>
         <span className="hero__chip">Группы</span>
       </div>
-      <label className="field">
-        <span>Одна строка = одна группа вершин</span>
-        <textarea
-          className="trajectory-task-textarea"
-          disabled={disabled}
-          onChange={(event) => onChange(normalizeVertexGroups(event.target.value))}
-          placeholder={"A, B\nC, D"}
-          rows={6}
-          value={value.map((group) => group.join(", ")).join("\n")}
-        />
-      </label>
+      {normalizedVertices.length ? (
+        <>
+          <div className="operation-task-schema__group-toolbar">
+            <p className="card__text">
+              Распределите вершины по группам. Каждая вершина может находиться только в одной группе.
+            </p>
+            <button
+              className="ghost-button"
+              disabled={disabled}
+              onClick={() => onChange([...groups, []])}
+              type="button"
+            >
+              Добавить группу
+            </button>
+          </div>
+          <div className="operation-task-schema__group-list">
+            {groups.map((group, groupIndex) => (
+              <div className="operation-task-schema__group-card" key={`group-${groupIndex}`}>
+                <div className="operation-task-schema__group-head">
+                  <strong>Группа {groupIndex + 1}</strong>
+                  {groups.length > 1 ? (
+                    <button
+                      className="ghost-button"
+                      disabled={disabled}
+                      onClick={() => onChange(groups.filter((_, index) => index !== groupIndex))}
+                      type="button"
+                    >
+                      Удалить
+                    </button>
+                  ) : null}
+                </div>
+                <div className="operation-task-schema__vertex-grid">
+                  {normalizedVertices.map((vertex) => {
+                    const isSelected = group.includes(vertex);
+                    return (
+                      <button
+                        className={
+                          isSelected
+                            ? "operation-task-schema__vertex-button operation-task-schema__vertex-button--selected"
+                            : "operation-task-schema__vertex-button"
+                        }
+                        disabled={disabled}
+                        key={`${groupIndex}-${vertex}`}
+                        onClick={() => onChange(toggleVertexInGroups(groups, groupIndex, vertex))}
+                        type="button"
+                      >
+                        {vertex}
+                      </button>
+                    );
+                  })}
+                </div>
+                {group.length ? (
+                  <div className="operation-task-schema__chips">
+                    {group.map((vertex) => (
+                      <span key={`${groupIndex}-selected-${vertex}`}>{vertex}</span>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="operation-task-schema__empty">В этой группе пока нет вершин.</div>
+                )}
+              </div>
+            ))}
+          </div>
+          <div className="operation-task-schema__selection-summary">
+            <span className="operation-task-schema__picker-label">Не распределены:</span>
+            {freeVertices.length ? (
+              <div className="operation-task-schema__chips">
+                {freeVertices.map((vertex) => (
+                  <span key={`free-${vertex}`}>{vertex}</span>
+                ))}
+              </div>
+            ) : (
+              <div className="operation-task-schema__empty">Все вершины распределены по группам.</div>
+            )}
+          </div>
+        </>
+      ) : (
+        <label className="field">
+          <span>Одна строка = одна группа вершин</span>
+          <textarea
+            className="trajectory-task-textarea"
+            disabled={disabled}
+            onChange={(event) => onChange(normalizeVertexGroups(event.target.value))}
+            placeholder={"A, B\nC, D"}
+            rows={6}
+            value={value.map((group) => group.join(", ")).join("\n")}
+          />
+        </label>
+      )}
     </section>
   );
 }
+
 
 function DegreeSequenceAnswerEditor({
   graph,
@@ -816,6 +994,89 @@ function DegreeSequenceAnswerEditor({
           </tbody>
         </table>
       </div>
+    </section>
+  );
+}
+
+function VertexSelectionPreview({
+  title,
+  badge,
+  vertices,
+  metricLabel,
+  metricValue,
+}: {
+  title: string;
+  badge: string;
+  vertices: string[];
+  metricLabel?: string;
+  metricValue?: number | string | null;
+}) {
+  return (
+    <section className="operation-task-schema operation-task-schema--compact">
+      <div className="operation-task-schema__header">
+        <div>
+          <p className="card__eyebrow">Правильный ответ</p>
+          <h3>{title}</h3>
+        </div>
+        <span className="hero__chip">{badge}</span>
+      </div>
+      {metricLabel ? (
+        <div className="operation-task-schema__fields">
+          <div className="operation-task-schema__field-card">
+            <span>{metricLabel}</span>
+            <strong>{metricValue ?? "-"}</strong>
+          </div>
+        </div>
+      ) : null}
+      {vertices.length ? (
+        <div className="operation-task-schema__chips">
+          {vertices.map((vertex) => (
+            <span key={vertex}>{vertex}</span>
+          ))}
+        </div>
+      ) : (
+        <div className="operation-task-schema__empty">Список вершин пуст.</div>
+      )}
+    </section>
+  );
+}
+
+function VertexGroupsPreview({
+  title,
+  badge,
+  groups,
+}: {
+  title: string;
+  badge: string;
+  groups: string[][];
+}) {
+  return (
+    <section className="operation-task-schema operation-task-schema--compact">
+      <div className="operation-task-schema__header">
+        <div>
+          <p className="card__eyebrow">Правильный ответ</p>
+          <h3>{title}</h3>
+        </div>
+        <span className="hero__chip">{badge}</span>
+      </div>
+      {groups.length ? (
+        <div className="operation-task-schema__group-list">
+          {groups.map((group, groupIndex) => (
+            <div className="operation-task-schema__group-card" key={`preview-group-${groupIndex}`}>
+              <div className="operation-task-schema__group-head">
+                <strong>Группа {groupIndex + 1}</strong>
+              </div>
+              <div className="operation-task-schema__chips">
+                {group.map((vertex) => (
+                  <span key={`preview-${groupIndex}-${vertex}`}>{vertex}</span>
+                ))}
+              </div>
+            </div>
+          ))}
+        </div>
+      ) : (
+        <div className="operation-task-schema__empty">Группы не заданы.</div>
+      )}
     </section>
   );
 }
@@ -948,7 +1209,7 @@ export function OperationAnswerEditor({
           )
         }
         rowLabels={normalizedDraft.vertices as string[]}
-        title="Build the adjacency matrix"
+        title="Постройте матрицу смежности"
         values={normalizedDraft.values as Array<Array<number | string>>}
       />
     );
@@ -970,7 +1231,7 @@ export function OperationAnswerEditor({
           )
         }
         rowLabels={normalizedDraft.vertices as string[]}
-        title="Build the incidence matrix"
+        title="Постройте матрицу инцидентности"
         values={normalizedDraft.values as Array<Array<number | string>>}
       />
     );
@@ -986,6 +1247,111 @@ export function OperationAnswerEditor({
         draft={normalizedDraft}
         graph={graph}
         onChange={(nextValue) => onChangeText(serializeStructuredAnswer(nextValue))}
+      />
+    );
+  }
+
+  if (
+    type === "StrongComponents" ||
+    type === "GraphBasis" ||
+    type === "MinimumCover" ||
+    type === "DominationNumber" ||
+    type === "IndependentVertexSet"
+  ) {
+    const graph = normalizeGraphPayload(inputPayload);
+
+    if (type === "StrongComponents") {
+      const draft = parseStructuredAnswer(valueText, () => ({ components: [] as string[][] }));
+      return (
+        <VertexGroupsAnswerEditor
+          availableVertices={graph.vertices}
+          disabled={disabled}
+          onChange={(components) => onChangeText(serializeStructuredAnswer({ components }))}
+          title="Перечислите сильные компоненты"
+          value={normalizeVertexGroups(draft.components)}
+        />
+      );
+    }
+
+    if (type === "GraphBasis") {
+      const draft = parseStructuredAnswer(valueText, () => ({ basis: [] as string[] }));
+      return (
+        <VertexListAnswerEditor
+          availableVertices={graph.vertices}
+          disabled={disabled}
+          helperText="Выберите по одной вершине из каждой истоковой сильной компоненты."
+          label="Вершины базы"
+          onChange={(basis) => onChangeText(serializeStructuredAnswer({ basis }))}
+          title="Укажите базу графа"
+          value={normalizeVertexList(draft.basis)}
+        />
+      );
+    }
+
+    if (type === "MinimumCover") {
+      const draft = parseStructuredAnswer(valueText, () => ({ cover: [] as string[] }));
+      const cover = normalizeVertexList(draft.cover);
+      return (
+        <VertexListAnswerEditor
+          availableVertices={graph.vertices}
+          disabled={disabled}
+          helperText="Размер покрытия вычисляется автоматически."
+          label="Вершины покрытия"
+          onChange={(nextCover) =>
+            onChangeText(
+              serializeStructuredAnswer({
+                cover: nextCover,
+                size: nextCover.length,
+              }),
+            )
+          }
+          title="Найдите минимальное покрытие"
+          value={cover}
+        />
+      );
+    }
+
+    if (type === "DominationNumber") {
+      const draft = parseStructuredAnswer(valueText, () => ({ minimum_dominating_set: [] as string[] }));
+      const dominatingSet = normalizeVertexList(draft.minimum_dominating_set);
+      return (
+        <VertexListAnswerEditor
+          availableVertices={graph.vertices}
+          disabled={disabled}
+          helperText="Число доминирования вычисляется по размеру множества."
+          label="Доминирующее множество"
+          onChange={(nextSet) =>
+            onChangeText(
+              serializeStructuredAnswer({
+                minimum_dominating_set: nextSet,
+                domination_number: nextSet.length,
+              }),
+            )
+          }
+          title="Укажите наименьшее доминирующее множество"
+          value={dominatingSet}
+        />
+      );
+    }
+
+    const draft = parseStructuredAnswer(valueText, () => ({ independent_set: [] as string[] }));
+    const independentSet = normalizeVertexList(draft.independent_set);
+    return (
+      <VertexListAnswerEditor
+        availableVertices={graph.vertices}
+        disabled={disabled}
+        helperText="Размер множества вычисляется автоматически."
+        label="Независимые вершины"
+        onChange={(nextSet) =>
+          onChangeText(
+            serializeStructuredAnswer({
+              independent_set: nextSet,
+              size: nextSet.length,
+            }),
+          )
+        }
+        title="Найдите независимое множество"
+        value={independentSet}
       />
     );
   }
@@ -1006,100 +1372,8 @@ export function OperationAnswerEditor({
           )
         }
         rowLabels={normalizedDraft.vertices as string[]}
-        title="Build the reachability matrix"
+        title="Постройте матрицу достижимости"
         values={normalizedDraft.values as Array<Array<number | string>>}
-      />
-    );
-  }
-
-  if (type === "StrongComponents") {
-    const draft = parseStructuredAnswer(valueText, () => ({ components: [] as string[][] }));
-    return (
-      <VertexGroupsAnswerEditor
-        disabled={disabled}
-        onChange={(components) => onChangeText(serializeStructuredAnswer({ components }))}
-        title="List the strong components"
-        value={normalizeVertexGroups(draft.components)}
-      />
-    );
-  }
-
-  if (type === "GraphBasis") {
-    const draft = parseStructuredAnswer(valueText, () => ({ basis: [] as string[] }));
-    return (
-      <VertexListAnswerEditor
-        disabled={disabled}
-        helperText="Choose one vertex from each source strong component."
-        label="Basis vertices"
-        onChange={(basis) => onChangeText(serializeStructuredAnswer({ basis }))}
-        title="Specify the graph basis"
-        value={normalizeVertexList(draft.basis)}
-      />
-    );
-  }
-
-  if (type === "MinimumCover") {
-    const draft = parseStructuredAnswer(valueText, () => ({ cover: [] as string[] }));
-    const cover = normalizeVertexList(draft.cover);
-    return (
-      <VertexListAnswerEditor
-        disabled={disabled}
-        helperText="The cover size is calculated automatically."
-        label="Cover vertices"
-        onChange={(nextCover) =>
-          onChangeText(
-            serializeStructuredAnswer({
-              cover: nextCover,
-              size: nextCover.length,
-            }),
-          )
-        }
-        title="Find a minimum cover"
-        value={cover}
-      />
-    );
-  }
-
-  if (type === "DominationNumber") {
-    const draft = parseStructuredAnswer(valueText, () => ({ minimum_dominating_set: [] as string[] }));
-    const dominatingSet = normalizeVertexList(draft.minimum_dominating_set);
-    return (
-      <VertexListAnswerEditor
-        disabled={disabled}
-        helperText="The domination number is calculated from the set size."
-        label="Dominating set"
-        onChange={(nextSet) =>
-          onChangeText(
-            serializeStructuredAnswer({
-              minimum_dominating_set: nextSet,
-              domination_number: nextSet.length,
-            }),
-          )
-        }
-        title="Specify a minimum dominating set"
-        value={dominatingSet}
-      />
-    );
-  }
-
-  if (type === "IndependentVertexSet") {
-    const draft = parseStructuredAnswer(valueText, () => ({ independent_set: [] as string[] }));
-    const independentSet = normalizeVertexList(draft.independent_set);
-    return (
-      <VertexListAnswerEditor
-        disabled={disabled}
-        helperText="The set size is calculated automatically."
-        label="Independent vertices"
-        onChange={(nextSet) =>
-          onChangeText(
-            serializeStructuredAnswer({
-              independent_set: nextSet,
-              size: nextSet.length,
-            }),
-          )
-        }
-        title="Find an independent set"
-        value={independentSet}
       />
     );
   }
@@ -1360,8 +1634,8 @@ export function OperationSolvedAnswerPreview({
                 return (
                   <tr key={String(row.vertex ?? index)}>
                     <th>{String(row.vertex ?? `V${index + 1}`)}</th>
-                    <td className="operation-task-schema__matrix-value">{String(row.in_degree ?? "—")}</td>
-                    <td className="operation-task-schema__matrix-value">{String(row.out_degree ?? "—")}</td>
+                    <td className="operation-task-schema__matrix-value">{String(row.in_degree ?? "-")}</td>
+                    <td className="operation-task-schema__matrix-value">{String(row.out_degree ?? "-")}</td>
                     <td className="operation-task-schema__matrix-value">{String(row.degree ?? "")}</td>
                   </tr>
                 );
@@ -1370,6 +1644,131 @@ export function OperationSolvedAnswerPreview({
           </table>
         </div>
       </section>
+    );
+  }
+
+  if (type === "ReachabilityMatrix") {
+    const vertices = Array.isArray(payload.vertices)
+      ? payload.vertices.map((item) => String(item))
+      : [];
+    const values = Array.isArray(payload.values) ? payload.values : [];
+    return (
+      <section className="operation-task-schema operation-task-schema--compact">
+        <div className="operation-task-schema__header">
+          <div>
+            <p className="card__eyebrow">Правильный ответ</p>
+            <h3>Матрица достижимости</h3>
+          </div>
+          <span className="hero__chip">{schemaTypeLabel(type)}</span>
+        </div>
+        <div className="operation-task-schema__matrix-shell">
+          <table className="operation-task-schema__matrix">
+            <thead>
+              <tr>
+                <th />
+                {vertices.map((vertex) => (
+                  <th key={vertex}>{vertex}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {vertices.map((vertex, rowIndex) => {
+                const row = Array.isArray(values[rowIndex]) ? values[rowIndex] : [];
+                return (
+                  <tr key={vertex}>
+                    <th>{vertex}</th>
+                    {vertices.map((columnVertex, columnIndex) => (
+                      <td className="operation-task-schema__matrix-value" key={`${vertex}-${columnVertex}`}>
+                        {String(row[columnIndex] ?? "")}
+                      </td>
+                    ))}
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      </section>
+    );
+  }
+
+  if (type === "StrongComponents") {
+    return (
+      <VertexGroupsPreview
+        badge={schemaTypeLabel(type)}
+        groups={normalizeVertexGroups(payload.components)}
+        title="Сильные компоненты"
+      />
+    );
+  }
+
+  if (type === "GraphBasis") {
+    const basis = normalizeVertexList(payload.basis);
+    const sourceComponents = normalizeVertexGroups(payload.source_components);
+    const strongComponents = normalizeVertexGroups(payload.strong_components);
+    return (
+      <>
+        <VertexSelectionPreview
+          badge={schemaTypeLabel(type)}
+          metricLabel="Размер базы"
+          metricValue={basis.length}
+          title="База графа"
+          vertices={basis}
+        />
+        {sourceComponents.length ? (
+          <VertexGroupsPreview
+            badge="Истоковая КСС"
+            groups={sourceComponents}
+            title="Истоковые компоненты"
+          />
+        ) : null}
+        {strongComponents.length ? (
+          <VertexGroupsPreview
+            badge="КСС"
+            groups={strongComponents}
+            title="Все сильные компоненты"
+          />
+        ) : null}
+      </>
+    );
+  }
+
+  if (type === "MinimumCover") {
+    return (
+      <VertexSelectionPreview
+        badge={schemaTypeLabel(type)}
+        metricLabel="Размер покрытия"
+        metricValue={numberFromUnknown(payload.size) || normalizeVertexList(payload.cover).length}
+        title="Минимальное покрытие"
+        vertices={normalizeVertexList(payload.cover)}
+      />
+    );
+  }
+
+  if (type === "DominationNumber") {
+    return (
+      <VertexSelectionPreview
+        badge={schemaTypeLabel(type)}
+        metricLabel="Число доминирования"
+        metricValue={
+          numberFromUnknown(payload.domination_number) ||
+          normalizeVertexList(payload.minimum_dominating_set).length
+        }
+        title="Наименьшее доминирующее множество"
+        vertices={normalizeVertexList(payload.minimum_dominating_set)}
+      />
+    );
+  }
+
+  if (type === "IndependentVertexSet") {
+    return (
+      <VertexSelectionPreview
+        badge={schemaTypeLabel(type)}
+        metricLabel="Размер множества"
+        metricValue={numberFromUnknown(payload.size) || normalizeVertexList(payload.independent_set).length}
+        title="Независимое множество вершин"
+        vertices={normalizeVertexList(payload.independent_set)}
+      />
     );
   }
 
