@@ -1,0 +1,112 @@
+services:
+  backend:
+    build:
+      context: ./backend
+    container_name: competence-hub-backend
+    environment:
+      ENVIRONMENT: ${ENVIRONMENT}
+      APP__HOST: ${BACKEND_HOST}
+      APP__PORT: ${BACKEND_PORT}
+      SQLITE__PATH: ${SQLITE_PATH}
+      POSTGRES__HOST: ${POSTGRES_HOST}
+      POSTGRES__PORT: ${POSTGRES_PORT}
+      POSTGRES__USER: ${POSTGRES_USER}
+      POSTGRES__PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES__DB: ${POSTGRES_DB}
+      REDIS__URL: ${REDIS_URL}
+      REDIS__ENABLED: ${REDIS_ENABLED}
+      MINIO__ENDPOINT: ${MINIO_ENDPOINT}
+      MINIO__ACCESS_KEY: ${MINIO_ROOT_USER}
+      MINIO__SECRET_KEY: ${MINIO_ROOT_PASSWORD}
+      MINIO__BUCKET: ${MINIO_BUCKET}
+      MINIO__SECURE: ${MINIO_SECURE}
+      BACKEND_CORS_ORIGINS: ${BACKEND_CORS_ORIGINS}
+      DB_SEED: ${DB_SEED}
+      COMPETENCE_HUB_DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@${POSTGRES_HOST}:${POSTGRES_PORT}/${POSTGRES_DB}
+      COMPETENCE_HUB_SEED_IF_EMPTY: "true"
+    ports:
+      - "${BACKEND_PORT}:8000"
+    volumes:
+      - backend_data:/app/data
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      minio:
+        condition: service_started
+    restart: unless-stopped
+
+  frontend:
+    build:
+      context: ./frontend
+      args:
+        VITE_API_BASE: ${VITE_API_BASE}
+    container_name: competence-hub-frontend
+    depends_on:
+      - backend
+    restart: unless-stopped
+
+  nginx:
+    build:
+      context: ./nginx
+    container_name: competence-hub-nginx
+    environment:
+      NGINX_FRONTEND_UPSTREAM: ${NGINX_FRONTEND_UPSTREAM}
+      NGINX_BACKEND_UPSTREAM: ${NGINX_BACKEND_UPSTREAM}
+    ports:
+      - "${NGINX_PORT}:80"
+    depends_on:
+      - frontend
+      - backend
+    restart: unless-stopped
+
+  redis:
+    image: redis:7-alpine
+    container_name: competence-hub-redis
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    restart: unless-stopped
+    volumes:
+      - redis_data:/data
+
+  postgres:
+    image: postgres:17-alpine
+    container_name: competence-hub-postgres
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    ports:
+      - "${POSTGRES_HOST_PORT}:5432"
+    restart: unless-stopped
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+  minio:
+    image: minio/minio:RELEASE.2025-09-07T16-13-09Z
+    container_name: competence-hub-minio
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
+    ports:
+      - "${MINIO_API_PORT}:9000"
+      - "${MINIO_CONSOLE_PORT}:9001"
+    restart: unless-stopped
+    volumes:
+      - minio_data:/data
+
+volumes:
+  backend_data:
+  redis_data:
+  postgres_data:
+  minio_data:

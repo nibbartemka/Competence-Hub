@@ -1,0 +1,376 @@
+from uuid import UUID, uuid4
+
+from sqlalchemy import CheckConstraint, Enum, ForeignKey, String, Text, UniqueConstraint
+from sqlalchemy.orm import Mapped, mapped_column, relationship
+
+from app.core import Base
+from .enums import (
+    CompetenceType,
+    KnowledgeElementRelationType,
+    TopicKnowledgeElementRole,
+    TopicDependencyRelationType,
+    TopicDependencySource,
+    RelationDirectionType,
+)
+
+
+class Topic(Base):
+    __tablename__ = "topics"
+    __table_args__ = (
+        UniqueConstraint("discipline_id", "name", name="uq_topic_name_discipline"),
+    )
+
+    id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
+    name: Mapped[str] = mapped_column(String(255), nullable=False)
+    description: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    discipline_id: Mapped[UUID] = mapped_column(
+        ForeignKey("disciplines.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+
+    discipline: Mapped["Discipline"] = relationship(
+        "Discipline",
+        back_populates="topics",
+        lazy="selectin",
+    )
+
+    prerequisite_links: Mapped[list["TopicDependency"]] = relationship(
+        "TopicDependency",
+        foreign_keys="TopicDependency.prerequisite_topic_id",
+        back_populates="prerequisite_topic",
+        cascade="all, delete-orphan",
+        lazy="selectin",
+    )
+
+    dependent_links: Mapped[list["TopicDependency"]] = relationship(
+        "TopicDependency",
+        foreign_keys="TopicDependency.dependent_topic_id",
+        back_populates="dependent_topic",
+        cascade="all, delete-orphan",
+        lazy="selectin",
+    )
+
+    element_links: Mapped[list["TopicKnowledgeElement"]] = relationship(
+        "TopicKnowledgeElement",
+        back_populates="topic",
+        cascade="all, delete-orphan",
+        lazy="selectin",
+    )
+
+    element_relations: Mapped[list["KnowledgeElementRelation"]] = relationship(
+        "KnowledgeElementRelation",
+        back_populates="topic",
+        cascade="all, delete-orphan",
+        lazy="selectin",
+    )
+
+
+class TopicDependency(Base):
+    """Canonical direction: dependent_topic_id requires prerequisite_topic_id."""
+
+    __tablename__ = "topic_dependencies"
+    __table_args__ = (
+        UniqueConstraint(
+            "prerequisite_topic_id",
+            "dependent_topic_id",
+            name="uq_topic_dependency",
+        ),
+        CheckConstraint(
+            "prerequisite_topic_id != dependent_topic_id",
+            name="ck_topic_dependency_not_self",
+        ),
+    )
+
+    id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
+    description: Mapped[str | None] = mapped_column(Text, nullable=True)
+    relation_type: Mapped[TopicDependencyRelationType] = mapped_column(
+        Enum(
+            TopicDependencyRelationType,
+            name="topic_dependency_relation_type_enum",
+            values_callable=lambda enum_cls: [item.value for item in enum_cls],
+        ),
+        nullable=False,
+    )
+    source: Mapped[TopicDependencySource] = mapped_column(
+        Enum(
+            TopicDependencySource,
+            name="topic_dependency_source_enum",
+            values_callable=lambda enum_cls: [item.value for item in enum_cls],
+        ),
+        nullable=False,
+        default=TopicDependencySource.COMPUTED,
+    )
+
+    prerequisite_topic_id: Mapped[UUID] = mapped_column(
+        ForeignKey("topics.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    dependent_topic_id: Mapped[UUID] = mapped_column(
+        ForeignKey("topics.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+
+    prerequisite_topic: Mapped["Topic"] = relationship(
+        "Topic",
+        foreign_keys=[prerequisite_topic_id],
+        back_populates="prerequisite_links",
+        lazy="selectin",
+    )
+
+    dependent_topic: Mapped["Topic"] = relationship(
+        "Topic",
+        foreign_keys=[dependent_topic_id],
+        back_populates="dependent_links",
+        lazy="selectin",
+    )
+
+
+class KnowledgeElement(Base):
+    __tablename__ = "knowledge_elements"
+    __table_args__ = (
+        UniqueConstraint(
+            "discipline_id",
+            "name",
+            "competence_type",
+            name="uq_knowledge_element_discipline_name_competence",
+        ),
+    )
+
+    id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
+    name: Mapped[str] = mapped_column(String(255), nullable=False)
+    description: Mapped[str | None] = mapped_column(Text, nullable=True)
+    subject_area_description: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    competence_type: Mapped[CompetenceType] = mapped_column(
+        Enum(
+            CompetenceType,
+            name="competence_type_enum",
+            values_callable=lambda enum_cls: [item.value for item in enum_cls],
+        ),
+        nullable=False,
+    )
+    operation_ref: Mapped[str | None] = mapped_column(String(255), nullable=True)
+
+    discipline_id: Mapped[UUID | None] = mapped_column(
+        ForeignKey("disciplines.id", ondelete="CASCADE"),
+        nullable=True,
+    )
+
+    discipline: Mapped["Discipline | None"] = relationship(
+        "Discipline",
+        back_populates="knowledge_elements",
+        lazy="selectin",
+    )
+
+    topic_links: Mapped[list["TopicKnowledgeElement"]] = relationship(
+        "TopicKnowledgeElement",
+        back_populates="element",
+        cascade="all, delete-orphan",
+        lazy="selectin",
+    )
+
+    outgoing_relations: Mapped[list["KnowledgeElementRelation"]] = relationship(
+        "KnowledgeElementRelation",
+        foreign_keys="KnowledgeElementRelation.source_element_id",
+        back_populates="source_element",
+        cascade="all, delete-orphan",
+        lazy="selectin",
+    )
+
+    incoming_relations: Mapped[list["KnowledgeElementRelation"]] = relationship(
+        "KnowledgeElementRelation",
+        foreign_keys="KnowledgeElementRelation.target_element_id",
+        back_populates="target_element",
+        cascade="all, delete-orphan",
+        lazy="selectin",
+    )
+
+    skill_assessment_tasks: Mapped[list["SkillAssessmentTask"]] = relationship(
+        "SkillAssessmentTask",
+        back_populates="skill_element",
+        cascade="all, delete-orphan",
+        lazy="selectin",
+    )
+
+    master_domain_objects: Mapped[list["MasterElementDomainObject"]] = relationship(
+        "MasterElementDomainObject",
+        foreign_keys="MasterElementDomainObject.master_element_id",
+        back_populates="master_element",
+        cascade="all, delete-orphan",
+        lazy="selectin",
+    )
+
+
+class TopicKnowledgeElement(Base):
+    __tablename__ = "topic_knowledge_elements"
+    __table_args__ = (
+        UniqueConstraint("topic_id", "element_id", name="uq_topic_knowledge_element"),
+    )
+
+    id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
+    note: Mapped[str | None] = mapped_column(Text, nullable=True)
+    role: Mapped[TopicKnowledgeElementRole] = mapped_column(
+        Enum(
+            TopicKnowledgeElementRole,
+            name="topic_knowledge_element_role_enum",
+            values_callable=lambda enum_cls: [item.value for item in enum_cls],
+        ),
+        nullable=False,
+        default=TopicKnowledgeElementRole.FORMED,
+    )
+
+    topic_id: Mapped[UUID] = mapped_column(
+        ForeignKey("topics.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    element_id: Mapped[UUID] = mapped_column(
+        ForeignKey("knowledge_elements.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+
+    topic: Mapped["Topic"] = relationship(
+        "Topic",
+        back_populates="element_links",
+        lazy="selectin",
+    )
+
+    element: Mapped["KnowledgeElement"] = relationship(
+        "KnowledgeElement",
+        back_populates="topic_links",
+        lazy="selectin",
+    )
+
+
+class Relation(Base):
+    __tablename__ = 'relations'
+
+    id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
+
+    relation_type: Mapped[KnowledgeElementRelationType] = mapped_column(
+        Enum(
+            KnowledgeElementRelationType,
+            name="knowledge_element_relation_type_enum",
+            values_callable=lambda enum_cls: [item.value for item in enum_cls],
+        ),
+        nullable=False,
+        unique=True,
+    )
+
+    direction: Mapped[RelationDirectionType] = mapped_column(
+        Enum(
+            RelationDirectionType,
+            name="knowledge_element_relation_direction_enum",
+            values_callable=lambda enum_cls: [item.value for item in enum_cls],
+        ),
+        nullable=False,
+    )
+
+    element_relations: Mapped[list["KnowledgeElementRelation"]] = relationship(
+        "KnowledgeElementRelation",
+        back_populates="relation",
+        cascade="all, delete-orphan",
+        lazy="selectin",
+    )
+
+
+class KnowledgeElementRelation(Base):
+    __tablename__ = "knowledge_element_relations"
+    __table_args__ = (
+        UniqueConstraint(
+            "topic_id",
+            "source_element_id",
+            "target_element_id",
+            "relation_id",
+            name="uq_knowledge_element_relation",
+        ),
+        CheckConstraint(
+            "source_element_id != target_element_id",
+            name="ck_knowledge_element_relation_not_self",
+        ),
+    )
+
+    id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
+    description: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    topic_id: Mapped[UUID] = mapped_column(
+        ForeignKey("topics.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    source_element_id: Mapped[UUID] = mapped_column(
+        ForeignKey("knowledge_elements.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    target_element_id: Mapped[UUID] = mapped_column(
+        ForeignKey("knowledge_elements.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    
+    relation_id: Mapped[UUID] = mapped_column(
+        ForeignKey("relations.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+
+    topic: Mapped["Topic"] = relationship(
+        "Topic",
+        back_populates="element_relations",
+        lazy="selectin",
+    )
+
+    source_element: Mapped["KnowledgeElement"] = relationship(
+        "KnowledgeElement",
+        foreign_keys=[source_element_id],
+        back_populates="outgoing_relations",
+        lazy="selectin",
+    )
+
+    target_element: Mapped["KnowledgeElement"] = relationship(
+        "KnowledgeElement",
+        foreign_keys=[target_element_id],
+        back_populates="incoming_relations",
+        lazy="selectin",
+    )
+    
+    relation: Mapped["Relation"] = relationship(
+        "Relation",
+        foreign_keys=[relation_id],
+        back_populates="element_relations",
+        lazy="selectin",
+    )
+
+    @property
+    def relation_type(self) -> KnowledgeElementRelationType:
+        return self.relation.relation_type
+
+    @property
+    def direction(self) -> RelationDirectionType:
+        return self.relation.direction
+
+
+class MasterElementDomainObject(Base):
+    __tablename__ = "master_element_domain_objects"
+
+    id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
+    object_name: Mapped[str] = mapped_column(String(255), nullable=False)
+
+    master_element_id: Mapped[UUID] = mapped_column(
+        ForeignKey("knowledge_elements.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    knowledge_element_id: Mapped[UUID] = mapped_column(
+        ForeignKey("knowledge_elements.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+
+    master_element: Mapped["KnowledgeElement"] = relationship(
+        "KnowledgeElement",
+        foreign_keys=[master_element_id],
+        back_populates="master_domain_objects",
+        lazy="selectin",
+    )
+
+    knowledge_element: Mapped["KnowledgeElement"] = relationship(
+        "KnowledgeElement",
+        foreign_keys=[knowledge_element_id],
+        lazy="selectin",
+    )

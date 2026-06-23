@@ -1,0 +1,962 @@
+import type {
+  CompetenceType,
+  Discipline,
+  DisciplineKnowledgeGraph,
+  AuthSession,
+  AuthLoginResponse,
+  Admin,
+  Expert,
+  GraphLayout,
+  GraphLayoutPayload,
+  Group,
+  KnowledgeElement,
+  KnowledgeGraphExportFile,
+  KnowledgeGraphImportPreviewResponse,
+  KnowledgeGraphImportRequest,
+  KnowledgeGraphImportResult,
+  KnowledgeElementRelation,
+  KnowledgeElementRelationType,
+  OperationContract,
+  Relation,
+  RelationDirectionType,
+  LearningTrajectory,
+  LearningTrajectorySummary,
+  LearningTrajectoryTaskContent,
+  LearningTrajectoryTaskTemplateKind,
+  LearningTrajectoryTaskType,
+  LearningTrajectoryTask,
+  Student,
+  StudentAssignedTask,
+  StudentLearningTrajectorySummary,
+  StudentTrajectoryMastery,
+  StudentTopicControl,
+  Subgroup,
+  SkillAssessmentTask,
+  Teacher,
+  Topic,
+  TopicDependency,
+  TopicDependencyRelationType,
+  TopicKnowledgeElement,
+  TopicKnowledgeElementRole,
+} from "./types";
+import { readSession } from "./session";
+
+const API_BASE =
+  import.meta.env.VITE_API_BASE?.replace(/\/$/, "") ?? "http://127.0.0.1:8000/api";
+
+type RequestOptions = {
+  body?: unknown;
+  method?: string;
+  signal?: AbortSignal;
+};
+
+type FileResponsePayload = {
+  blob: Blob;
+  fileName: string;
+};
+
+export function isAbortError(error: unknown) {
+  if (error instanceof DOMException) {
+    return error.name === "AbortError";
+  }
+
+  if (error instanceof Error) {
+    return (
+      error.name === "AbortError" ||
+      error.message === "signal is aborted without reason" ||
+      error.message === "The operation was aborted."
+    );
+  }
+
+  return false;
+}
+
+async function request<T>(path: string, options: RequestOptions = {}): Promise<T> {
+  const { body, method = "GET", signal } = options;
+  let response: Response;
+  try {
+    response = await fetch(`${API_BASE}${path}`, {
+      method,
+      cache: "no-store",
+      headers: {
+        Accept: "application/json",
+        ...(readSession()?.sessionId ? { "X-Session-Id": readSession()?.sessionId ?? "" } : {}),
+        ...(body ? { "Content-Type": "application/json" } : {}),
+      },
+      body: body ? JSON.stringify(body) : undefined,
+      signal,
+    });
+  } catch (error) {
+    if (isAbortError(error)) {
+      throw error;
+    }
+    throw new Error("Не удалось связаться с сервером API. Проверь, что backend запущен.");
+  }
+
+  if (!response.ok) {
+    const contentType = response.headers.get("content-type") ?? "";
+    if (contentType.includes("application/json")) {
+      const payload = (await response.json()) as { detail?: string };
+      throw new Error(payload.detail || `HTTP ${response.status}`);
+    }
+    const message = await response.text();
+    throw new Error(message || `HTTP ${response.status}`);
+  }
+
+  if (response.status === 204) {
+    return undefined as T;
+  }
+
+  const rawText = await response.text();
+  if (!rawText.trim()) {
+    return undefined as T;
+  }
+
+  return JSON.parse(rawText) as T;
+}
+
+async function requestForm<T>(
+  path: string,
+  formData: FormData,
+  options: { method?: string } = {},
+): Promise<T> {
+  const response = await fetch(`${API_BASE}${path}`, {
+    method: options.method ?? "POST",
+    cache: "no-store",
+    headers: {
+      Accept: "application/json",
+      ...(readSession()?.sessionId ? { "X-Session-Id": readSession()?.sessionId ?? "" } : {}),
+    },
+    body: formData,
+  });
+
+  if (!response.ok) {
+    const contentType = response.headers.get("content-type") ?? "";
+    if (contentType.includes("application/json")) {
+      const payload = (await response.json()) as { detail?: string };
+      throw new Error(payload.detail || `HTTP ${response.status}`);
+    }
+    const message = await response.text();
+    throw new Error(message || `HTTP ${response.status}`);
+  }
+
+  const rawText = await response.text();
+  return rawText.trim() ? (JSON.parse(rawText) as T) : (undefined as T);
+}
+
+async function requestFile(path: string): Promise<FileResponsePayload> {
+  const response = await fetch(`${API_BASE}${path}`, {
+    method: "GET",
+    cache: "no-store",
+    headers: {
+      Accept: "*/*",
+      ...(readSession()?.sessionId ? { "X-Session-Id": readSession()?.sessionId ?? "" } : {}),
+    },
+  });
+
+  if (!response.ok) {
+    const contentType = response.headers.get("content-type") ?? "";
+    if (contentType.includes("application/json")) {
+      const payload = (await response.json()) as { detail?: string };
+      throw new Error(payload.detail || `HTTP ${response.status}`);
+    }
+    throw new Error((await response.text()) || `HTTP ${response.status}`);
+  }
+
+  const disposition = response.headers.get("content-disposition") ?? "";
+  const fileNameMatch = disposition.match(/filename="?([^"]+)"?/i);
+  return {
+    blob: await response.blob(),
+    fileName: fileNameMatch?.[1] ?? "submission",
+  };
+}
+
+export function fetchDisciplines(signal?: AbortSignal) {
+  return request<Discipline[]>("/disciplines/", { signal });
+}
+
+export function login(payload: {
+  login: string;
+  password: string;
+}) {
+  return request<AuthLoginResponse>("/auth/login", {
+    method: "POST",
+    body: payload,
+  });
+}
+
+export function fetchActiveSession(signal?: AbortSignal) {
+  return request<AuthSession>("/auth/session", { signal });
+}
+
+export function logout() {
+  return request<void>("/auth/session", { method: "DELETE" });
+}
+
+export function fetchGraphLayouts(
+  scopeType: string,
+  scopeId: string,
+  signal?: AbortSignal,
+) {
+  return request<GraphLayout[]>(
+    `/graph-layouts/${encodeURIComponent(scopeType)}/${encodeURIComponent(scopeId)}`,
+    { signal },
+  );
+}
+
+export function saveGraphLayout(
+  scopeType: string,
+  scopeId: string,
+  payload: {
+    scene_key: string;
+    payload: GraphLayoutPayload;
+  },
+) {
+  return request<GraphLayout>(
+    `/graph-layouts/${encodeURIComponent(scopeType)}/${encodeURIComponent(scopeId)}`,
+    {
+      method: "PUT",
+      body: payload,
+    },
+  );
+}
+
+export function createDiscipline(payload: {
+  name: string;
+  teacher_id?: string | null;
+  group_ids?: string[];
+}) {
+  return request<Discipline>("/disciplines/", {
+    method: "POST",
+    body: payload,
+  });
+}
+
+export function updateDisciplineAssignments(
+  disciplineId: string,
+  payload: {
+    teacher_ids: string[];
+    expert_ids?: string[];
+    group_ids: string[];
+  },
+) {
+  return request<Discipline>(`/disciplines/${disciplineId}/assignments`, {
+    method: "PUT",
+    body: payload,
+  });
+}
+
+export function fetchGroups(signal?: AbortSignal) {
+  return request<Group[]>("/groups/", { signal });
+}
+
+export function fetchAdmins(signal?: AbortSignal) {
+  return request<Admin[]>("/admins/", { signal });
+}
+
+export function createAdmin(payload: {
+  name: string;
+  login: string;
+  password: string;
+}) {
+  return request<Admin>("/admins/", {
+    method: "POST",
+    body: payload,
+  });
+}
+
+export function updateAdmin(adminId: string, payload: { is_active?: boolean }) {
+  return request<Admin>(`/admins/${adminId}`, {
+    method: "PUT",
+    body: payload,
+  });
+}
+
+export function deleteAdmin(adminId: string) {
+  return request<void>(`/admins/${adminId}`, {
+    method: "DELETE",
+  });
+}
+
+export function fetchExperts(signal?: AbortSignal) {
+  return request<Expert[]>("/experts/", { signal });
+}
+
+export function createExpert(payload: {
+  name: string;
+  login: string;
+  password: string;
+}) {
+  return request<Expert>("/experts/", {
+    method: "POST",
+    body: payload,
+  });
+}
+
+export function updateExpert(expertId: string, payload: { is_active?: boolean }) {
+  return request<Expert>(`/experts/${expertId}`, {
+    method: "PUT",
+    body: payload,
+  });
+}
+
+export function deleteExpert(expertId: string) {
+  return request<void>(`/experts/${expertId}`, {
+    method: "DELETE",
+  });
+}
+
+export function createGroup(payload: { name: string }) {
+  return request<Group>("/groups/", {
+    method: "POST",
+    body: payload,
+  });
+}
+
+export function fetchSubgroups(groupId: string, signal?: AbortSignal) {
+  return request<Subgroup[]>(`/groups/${groupId}/subgroups`, { signal });
+}
+
+export function createSubgroup(payload: { group_id: string; subgroup_num: number }) {
+  return request<Subgroup>(`/groups/${payload.group_id}/subgroups`, {
+    method: "POST",
+    body: payload,
+  });
+}
+
+export function fetchStudents(signal?: AbortSignal) {
+  return request<Student[]>("/students/", { signal });
+}
+
+export function fetchStudentsByGroup(groupId: string, signal?: AbortSignal) {
+  return request<Student[]>(
+    `/students/?group_id=${encodeURIComponent(groupId)}`,
+    { signal },
+  );
+}
+
+export function fetchStudent(studentId: string, signal?: AbortSignal) {
+  return request<Student>(`/students/${studentId}`, { signal });
+}
+
+export function createStudent(payload: {
+  name: string;
+  login: string;
+  password: string;
+  group_id: string;
+  subgroup_id?: string | null;
+}) {
+  return request<Student>("/students/", {
+    method: "POST",
+    body: payload,
+  });
+}
+
+export function updateStudent(studentId: string, payload: { is_active?: boolean }) {
+  return request<Student>(`/students/${studentId}`, {
+    method: "PUT",
+    body: payload,
+  });
+}
+
+export function deleteStudent(studentId: string) {
+  return request<void>(`/students/${studentId}`, {
+    method: "DELETE",
+  });
+}
+
+export function fetchTeachers(signal?: AbortSignal) {
+  return request<Teacher[]>("/teachers/", { signal });
+}
+
+export function fetchTeacher(teacherId: string, signal?: AbortSignal) {
+  return request<Teacher>(`/teachers/${teacherId}`, { signal });
+}
+
+export function createTeacher(payload: {
+  name: string;
+  login: string;
+  password: string;
+  group_ids?: string[];
+}) {
+  return request<Teacher>("/teachers/", {
+    method: "POST",
+    body: payload,
+  });
+}
+
+export function updateTeacher(teacherId: string, payload: { is_active?: boolean }) {
+  return request<Teacher>(`/teachers/${teacherId}`, {
+    method: "PUT",
+    body: payload,
+  });
+}
+
+export function deleteTeacher(teacherId: string) {
+  return request<void>(`/teachers/${teacherId}`, {
+    method: "DELETE",
+  });
+}
+
+export function fetchDisciplineKnowledgeGraph(
+  disciplineId: string,
+  signal?: AbortSignal,
+) {
+  return request<DisciplineKnowledgeGraph>(
+    `/disciplines/${disciplineId}/knowledge-graph`,
+    { signal },
+  );
+}
+
+export function previewKnowledgeGraphImport(
+  disciplineId: string,
+  payload: KnowledgeGraphExportFile,
+) {
+  return request<KnowledgeGraphImportPreviewResponse>(
+    `/disciplines/${disciplineId}/knowledge-graph/import-preview`,
+    {
+      method: "POST",
+      body: payload,
+    },
+  );
+}
+
+export function importKnowledgeGraph(disciplineId: string, payload: KnowledgeGraphImportRequest) {
+  return request<KnowledgeGraphImportResult>(
+    `/disciplines/${disciplineId}/knowledge-graph/import`,
+    {
+      method: "POST",
+      body: payload,
+    },
+  );
+}
+
+export function fetchKnowledgeElements(
+  signal?: AbortSignal,
+  disciplineId?: string,
+) {
+  const query = disciplineId ? `?discipline_id=${encodeURIComponent(disciplineId)}` : "";
+  return request<KnowledgeElement[]>(`/knowledge-elements/${query}`, { signal });
+}
+
+export function fetchTopicKnowledgeElements(signal?: AbortSignal) {
+  return request<TopicKnowledgeElement[]>("/topic-knowledge-elements/", { signal });
+}
+
+export function createTopic(payload: {
+  name: string;
+  description: string;
+  discipline_id: string;
+}) {
+  return request<Topic>("/topics/", {
+    method: "POST",
+    body: payload,
+  });
+}
+
+export function updateTopic(
+  topicId: string,
+  payload: {
+    name: string;
+    description: string;
+  },
+) {
+  return request<Topic>(`/topics/${topicId}`, {
+    method: "PUT",
+    body: payload,
+  });
+}
+
+export function deleteTopic(topicId: string) {
+  return request<void>(`/topics/${topicId}`, {
+    method: "DELETE",
+  });
+}
+
+export function createKnowledgeElement(payload: {
+  name: string;
+  description: string;
+  competence_type: CompetenceType;
+  discipline_id: string;
+  subject_area_description?: string | null;
+  operation_ref?: string | null;
+}) {
+  return request<KnowledgeElement>("/knowledge-elements/", {
+    method: "POST",
+    body: payload,
+  });
+}
+
+export function updateKnowledgeElement(
+  elementId: string,
+  payload: {
+    name: string;
+    description: string;
+    competence_type: CompetenceType;
+    subject_area_description?: string | null;
+    operation_ref?: string | null;
+  },
+) {
+  return request<KnowledgeElement>(`/knowledge-elements/${elementId}`, {
+    method: "PUT",
+    body: payload,
+  });
+}
+
+export function updateStructuredMasterKnowledgeElement(
+  elementId: string,
+  payload: {
+    name: string;
+    description: string;
+    topic_id: string;
+    subject_area_description: string;
+    automated_skill_element_ids: string[];
+    domain_objects: Array<{
+      object_name: string;
+      knowledge_element_id: string;
+    }>;
+  },
+) {
+  return request<KnowledgeElement>(`/knowledge-elements/${elementId}/master-structured`, {
+    method: "PUT",
+    body: payload,
+  });
+}
+
+export function updateStructuredSkillKnowledgeElement(
+  elementId: string,
+  payload: {
+    name: string;
+    description: string;
+    topic_id: string;
+    operation_ref: string;
+    realized_knowledge_element_ids: string[];
+  },
+) {
+  return request<KnowledgeElement>(`/knowledge-elements/${elementId}/skill-structured`, {
+    method: "PUT",
+    body: payload,
+  });
+}
+
+export function createStructuredMasterKnowledgeElement(payload: {
+  name: string;
+  description: string;
+  discipline_id: string;
+  topic_id: string;
+  subject_area_description: string;
+  automated_skill_element_ids: string[];
+  domain_objects: Array<{
+    object_name: string;
+    knowledge_element_id: string;
+  }>;
+}) {
+  return request<KnowledgeElement>("/knowledge-elements/master-structured", {
+    method: "POST",
+    body: payload,
+  });
+}
+
+export function deleteKnowledgeElement(elementId: string) {
+  return request<void>(`/knowledge-elements/${elementId}`, {
+    method: "DELETE",
+  });
+}
+
+export function createTopicKnowledgeElement(payload: {
+  topic_id: string;
+  element_id: string;
+  role: TopicKnowledgeElementRole;
+  note: string;
+}) {
+  return request<TopicKnowledgeElement>("/topic-knowledge-elements/", {
+    method: "POST",
+    body: payload,
+  });
+}
+
+export function createTopicDependency(payload: {
+  prerequisite_topic_id: string;
+  dependent_topic_id: string;
+  relation_type: TopicDependencyRelationType;
+  description: string;
+}) {
+  return request<TopicDependency>("/topic-dependencies/", {
+    method: "POST",
+    body: payload,
+  });
+}
+
+export function fetchRelations(signal?: AbortSignal) {
+  return request<Relation[]>("/relations/", { signal });
+}
+
+export function createRelation(payload: {
+  relation_type: KnowledgeElementRelationType;
+  direction: RelationDirectionType;
+}) {
+  return request<Relation>("/relations/", {
+    method: "POST",
+    body: payload,
+  });
+}
+
+export function updateRelation(
+  relationId: string,
+  payload: {
+    relation_type: KnowledgeElementRelationType;
+    direction: RelationDirectionType;
+  },
+) {
+  return request<Relation>(`/relations/${relationId}`, {
+    method: "PUT",
+    body: payload,
+  });
+}
+
+export function deleteRelation(relationId: string) {
+  return request<void>(`/relations/${relationId}`, {
+    method: "DELETE",
+  });
+}
+
+export function createKnowledgeElementRelation(payload: {
+  topic_id: string;
+  source_element_id: string;
+  target_element_id: string;
+  relation_id: string;
+  description: string;
+}) {
+  return request<KnowledgeElementRelation>("/knowledge-element-relations/", {
+    method: "POST",
+    body: payload,
+  });
+}
+
+export function updateKnowledgeElementRelation(
+  relationId: string,
+  payload: {
+    topic_id: string;
+    source_element_id: string;
+    target_element_id: string;
+    relation_id: string;
+    description: string;
+  },
+) {
+  return request<KnowledgeElementRelation>(`/knowledge-element-relations/${relationId}`, {
+    method: "PUT",
+    body: payload,
+  });
+}
+
+export function fetchOperationContracts(signal?: AbortSignal) {
+  return request<OperationContract[]>("/operation-contracts/", { signal });
+}
+
+export function fetchSkillAssessmentTasks(
+  disciplineId?: string,
+  signal?: AbortSignal,
+) {
+  const query = disciplineId ? `?discipline_id=${encodeURIComponent(disciplineId)}` : "";
+  return request<SkillAssessmentTask[]>(`/skill-assessment-tasks/${query}`, { signal });
+}
+
+export function createSkillAssessmentTask(payload: {
+  skill_element_id: string;
+  title: string;
+  prompt: string;
+  input_payload: Record<string, unknown>;
+}) {
+  return request<SkillAssessmentTask>("/skill-assessment-tasks/", {
+    method: "POST",
+    body: payload,
+  });
+}
+
+export function deleteSkillAssessmentTask(taskId: string) {
+  return request<void>(`/skill-assessment-tasks/${taskId}`, {
+    method: "DELETE",
+  });
+}
+
+export function deleteKnowledgeElementRelation(relationId: string) {
+  return request<void>(`/knowledge-element-relations/${relationId}`, {
+    method: "DELETE",
+  });
+}
+
+export function fetchLearningTrajectories(
+  params: {
+    discipline_id?: string;
+    teacher_id?: string;
+    group_id?: string;
+    subgroup_id?: string;
+    status_filter?: LearningTrajectory["status"];
+  } = {},
+  signal?: AbortSignal,
+) {
+  const query = new URLSearchParams();
+  if (params.discipline_id) query.set("discipline_id", params.discipline_id);
+  if (params.teacher_id) query.set("teacher_id", params.teacher_id);
+  if (params.group_id) query.set("group_id", params.group_id);
+  if (params.subgroup_id) query.set("subgroup_id", params.subgroup_id);
+  if (params.status_filter) query.set("status_filter", params.status_filter);
+  const suffix = query.toString() ? `?${query.toString()}` : "";
+  return request<LearningTrajectorySummary[]>(`/learning-trajectories/${suffix}`, { signal });
+}
+
+export function fetchStudentLearningTrajectories(studentId: string, signal?: AbortSignal) {
+  return request<StudentLearningTrajectorySummary[]>(
+    `/learning-trajectories/students/${studentId}`,
+    { signal },
+  );
+}
+
+export function fetchLearningTrajectory(trajectoryId: string, signal?: AbortSignal) {
+  return request<LearningTrajectory>(`/learning-trajectories/${trajectoryId}`, { signal });
+}
+
+export function createLearningTrajectory(payload: {
+  name: string;
+  discipline_id: string;
+  teacher_id: string;
+  group_id?: string | null;
+  subgroup_id?: string | null;
+  topics: Array<{
+    topic_id: string;
+    position: number;
+    threshold: number;
+    elements: Array<{
+      element_id: string;
+      threshold: number;
+    }>;
+  }>;
+}) {
+  return request<LearningTrajectory>("/learning-trajectories/", {
+    method: "POST",
+    body: payload,
+  });
+}
+
+export function updateLearningTrajectoryTopicOrder(
+  trajectoryId: string,
+  topicIds: string[],
+) {
+  return request<LearningTrajectory>(`/learning-trajectories/${trajectoryId}/topics/order`, {
+    method: "PUT",
+    body: { topic_ids: topicIds },
+  });
+}
+
+export function updateLearningTrajectoryStatus(
+  trajectoryId: string,
+  status: LearningTrajectory["status"],
+) {
+  return request<LearningTrajectory>(`/learning-trajectories/${trajectoryId}/status`, {
+    method: "PUT",
+    body: { status },
+  });
+}
+
+export function fetchLearningTrajectoryTasks(
+  trajectoryId: string,
+  signal?: AbortSignal,
+) {
+  return request<LearningTrajectoryTask[]>(`/learning-trajectory-tasks/trajectories/${trajectoryId}`, {
+    signal,
+  });
+}
+
+export function createLearningTrajectoryTask(
+  trajectoryId: string,
+  payload: {
+    topic_id: string;
+    primary_element_id: string;
+    related_element_ids: string[];
+    checked_relation_ids: string[];
+    title: string;
+    prompt: string;
+    difficulty: number;
+    expected_duration_seconds: number | null;
+    task_type: LearningTrajectoryTaskType;
+    template_kind: LearningTrajectoryTaskTemplateKind;
+    content: LearningTrajectoryTaskContent;
+  },
+) {
+  return request<LearningTrajectoryTask>(`/learning-trajectory-tasks/trajectories/${trajectoryId}`, {
+    method: "POST",
+    body: payload,
+  });
+}
+
+export function updateLearningTrajectoryTask(
+  taskId: string,
+  payload: {
+    topic_id: string;
+    primary_element_id: string;
+    related_element_ids: string[];
+    checked_relation_ids: string[];
+    title: string;
+    prompt: string;
+    difficulty: number;
+    expected_duration_seconds: number | null;
+    task_type: LearningTrajectoryTaskType;
+    template_kind: LearningTrajectoryTaskTemplateKind;
+    content: LearningTrajectoryTaskContent;
+  },
+) {
+  return request<LearningTrajectoryTask>(`/learning-trajectory-tasks/${taskId}`, {
+    method: "PUT",
+    body: payload,
+  });
+}
+
+export function deleteLearningTrajectoryTask(taskId: string) {
+  return request<void>(`/learning-trajectory-tasks/${taskId}`, {
+    method: "DELETE",
+  });
+}
+
+export function fetchStudentTasks(
+  studentId: string,
+  signal?: AbortSignal,
+  disciplineId?: string,
+  trajectoryId?: string,
+  topicId?: string,
+) {
+  const query = new URLSearchParams();
+  if (disciplineId) query.set("discipline_id", disciplineId);
+  if (trajectoryId) query.set("trajectory_id", trajectoryId);
+  if (topicId) query.set("topic_id", topicId);
+  const suffix = query.toString() ? `?${query.toString()}` : "";
+  return request<StudentAssignedTask[]>(`/learning-trajectory-tasks/students/${studentId}${suffix}`, {
+    signal,
+  });
+}
+
+export function fetchRecommendedStudentTask(
+  studentId: string,
+  signal?: AbortSignal,
+  disciplineId?: string,
+  trajectoryId?: string,
+  topicId?: string,
+) {
+  const query = new URLSearchParams();
+  if (disciplineId) query.set("discipline_id", disciplineId);
+  if (trajectoryId) query.set("trajectory_id", trajectoryId);
+  if (topicId) query.set("topic_id", topicId);
+  const suffix = query.toString() ? `?${query.toString()}` : "";
+  return request<StudentAssignedTask | null>(
+    `/learning-trajectory-tasks/students/${studentId}/next${suffix}`,
+    { signal },
+  );
+}
+
+export function fetchStudentTopicControl(
+  studentId: string,
+  trajectoryId: string,
+  topicId: string,
+  continuePractice = false,
+  practiceStage: "know" | "can" | "master" = "know",
+  signal?: AbortSignal,
+) {
+  const query = new URLSearchParams();
+  if (continuePractice) query.set("continue_practice", "true");
+  if (practiceStage !== "know") query.set("practice_stage", practiceStage);
+  const suffix = query.toString() ? `?${query.toString()}` : "";
+  return request<StudentTopicControl>(
+    `/students/${studentId}/trajectories/${trajectoryId}/control/${topicId}${suffix}`,
+    { signal },
+  );
+}
+
+export function fetchStudentTopicControlByPosition(
+  studentId: string,
+  trajectoryId: string,
+  topicPosition: number,
+  continuePractice = false,
+  practiceStage: "know" | "can" | "master" = "know",
+  signal?: AbortSignal,
+) {
+  const query = new URLSearchParams();
+  if (continuePractice) query.set("continue_practice", "true");
+  if (practiceStage !== "know") query.set("practice_stage", practiceStage);
+  const suffix = query.toString() ? `?${query.toString()}` : "";
+  return request<StudentTopicControl>(
+    `/students/${studentId}/trajectories/${trajectoryId}/control/steps/${topicPosition}${suffix}`,
+    { signal },
+  );
+}
+
+export function fetchStudentTrajectoryMastery(
+  studentId: string,
+  trajectoryId: string,
+  signal?: AbortSignal,
+) {
+  return request<StudentTrajectoryMastery>(
+    `/students/${studentId}/trajectories/${trajectoryId}/mastery`,
+    { signal },
+  );
+}
+
+export function submitStudentTaskScore(
+  taskId: string,
+  studentId: string,
+  answerPayload: Record<string, unknown>,
+  taskInstanceId?: string | null,
+  durationSeconds?: number | null,
+) {
+  return request<StudentAssignedTask>(`/learning-trajectory-tasks/${taskId}/students/${studentId}/progress`, {
+    method: "PUT",
+    body: {
+      answer_payload: answerPayload,
+      task_instance_id: taskInstanceId ?? null,
+      duration_seconds: durationSeconds ?? null,
+    },
+  });
+}
+
+export function submitStudentTaskFileSubmission(
+  taskId: string,
+  studentId: string,
+  file: File,
+  taskInstanceId?: string | null,
+  durationSeconds?: number | null,
+) {
+  const formData = new FormData();
+  formData.append("file", file);
+  if (taskInstanceId) {
+    formData.append("task_instance_id", taskInstanceId);
+  }
+  if (durationSeconds !== undefined && durationSeconds !== null) {
+    formData.append("duration_seconds", String(durationSeconds));
+  }
+  return requestForm<StudentAssignedTask>(
+    `/learning-trajectory-tasks/${taskId}/students/${studentId}/file-submission`,
+    formData,
+  );
+}
+
+export function reviewStudentTaskSubmission(
+  taskId: string,
+  studentId: string,
+  payload: {
+    score: number;
+    review_comment: string;
+  },
+) {
+  return request<StudentAssignedTask>(
+    `/learning-trajectory-tasks/${taskId}/students/${studentId}/teacher-review`,
+    {
+      method: "PUT",
+      body: payload,
+    },
+  );
+}
+
+export function downloadStudentTaskSubmissionFile(
+  taskId: string,
+  studentId: string,
+) {
+  return requestFile(`/learning-trajectory-tasks/${taskId}/students/${studentId}/submission-file`);
+}
