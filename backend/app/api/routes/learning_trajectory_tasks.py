@@ -1,4 +1,5 @@
 from datetime import datetime
+import unicodedata
 from pathlib import Path
 from urllib.parse import quote
 from uuid import UUID, uuid4
@@ -82,6 +83,29 @@ def _safe_uploaded_filename(filename: str | None) -> str:
         for char in candidate
     )
     return sanitized[:180] or "submission"
+
+
+def _ascii_download_filename(filename: str | None) -> str:
+    candidate = Path(filename or "submission").name.strip() or "submission"
+    candidate_path = Path(candidate)
+    normalized_stem = (
+        unicodedata.normalize("NFKD", candidate_path.stem)
+        .encode("ascii", "ignore")
+        .decode("ascii")
+    )
+    sanitized_stem = "".join(
+        char if char.isalnum() or char in {"-", "_", "."} else "_"
+        for char in normalized_stem
+    ).strip("._")
+    sanitized_suffix = "".join(
+        char
+        if ord(char) < 128 and (char.isalnum() or char in {"-", "_", "."})
+        else "_"
+        for char in candidate_path.suffix
+    )
+    if not sanitized_stem:
+        sanitized_stem = "submission"
+    return f"{sanitized_stem[:160]}{sanitized_suffix[:20]}"
 
 
 def _extract_submitted_file(answer_payload: dict | None) -> dict | None:
@@ -1724,7 +1748,7 @@ async def download_student_task_submission_file(
                 detail=str(exc),
             ) from exc
         quoted_name = quote(str(submitted_file["original_name"]))
-        safe_download_name = _safe_uploaded_filename(str(submitted_file["original_name"]))
+        safe_download_name = _ascii_download_filename(str(submitted_file["original_name"]))
         return Response(
             content=file_bytes,
             media_type=str(submitted_file["mime_type"] or "application/octet-stream"),

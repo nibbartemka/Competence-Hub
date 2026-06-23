@@ -71,20 +71,14 @@ type StudentGroup = {
   }>;
 };
 
-type ReviewQueueItem = {
+type ReviewListItem = {
   key: string;
-  title: string;
-  subtitle: string;
-  meta: string;
-  records: ReviewRecord[];
-};
-
-type ReviewQueueSection = {
-  key: string;
-  title: string;
-  eyebrow: string;
-  stats: string;
-  items: ReviewQueueItem[];
+  record: ReviewRecord;
+  heading: string;
+  subheading: string;
+  details: string;
+  statusLabel: string;
+  fileLabel: string;
 };
 
 const TASK_TYPE_LABELS: Record<StudentAssignedTask["task_type"], string> = {
@@ -235,6 +229,25 @@ function buildRecordSearchText(record: ReviewRecord) {
 
 function subgroupLabel(subgroup: Subgroup | null) {
   return subgroup ? `Подгруппа ${subgroup.subgroup_num}` : "Без подгруппы";
+}
+
+function buildReviewListDetails(record: ReviewRecord) {
+  return [
+    record.task.title || record.task.topic_name,
+    record.trajectory.name,
+    record.group?.name ?? "",
+  ]
+    .filter(Boolean)
+    .join(" ? ");
+}
+
+function buildStudentIdentity(record: ReviewRecord) {
+  const studentName = record.student.name.trim();
+  const studentLogin = record.student.login.trim();
+  if (studentName && studentLogin && studentName !== studentLogin) {
+    return `${studentName} ? ${studentLogin}`;
+  }
+  return studentName || studentLogin;
 }
 
 export default function TeacherReviewPage() {
@@ -589,77 +602,85 @@ export default function TeacherReviewPage() {
       });
   }, [filteredRecords]);
 
-  const reviewSections = useMemo<ReviewQueueSection[]>(() => {
-    if (viewMode === "topic-students") {
-      return topicGroups.map((group) => ({
-        key: `topic:${group.topicId}`,
-        title: group.topicName,
-        eyebrow: "Тема",
-        stats: `Студентов: ${group.studentGroups.length} · Ждут проверки: ${countPending(group.entries)}`,
-        items: group.studentGroups.map((studentGroup) => ({
-          key: `${group.topicId}:${studentGroup.studentId}`,
-          title: studentGroup.studentName,
-          subtitle: studentGroup.studentLogin,
-          meta: `Заданий: ${studentGroup.entries.length} · Ждут проверки: ${countPending(studentGroup.entries)}`,
-          records: studentGroup.entries,
-        })),
-      }));
-    }
+  const workList = useMemo<ReviewListItem[]>(() => {
+    const orderedRecords = [...filteredRecords].sort((left, right) => {
+      const pendingDelta =
+        Number(right.task.progress.status === "pending_review") -
+        Number(left.task.progress.status === "pending_review");
+      if (pendingDelta !== 0) {
+        return pendingDelta;
+      }
 
-    return studentGroups.map((group) => ({
-      key: `student:${group.studentId}`,
-      title: group.studentName,
-      eyebrow: "Студент",
-      stats: `Тем: ${group.topicGroups.length} · Ждут проверки: ${countPending(group.entries)}`,
-      items: group.topicGroups.map((topicGroup) => ({
-        key: `${group.studentId}:${topicGroup.topicId}`,
-        title: topicGroup.topicName,
-        subtitle: summarizeNames(topicGroup.entries.map((entry) => entry.trajectory.name)),
-        meta: `Заданий: ${topicGroup.entries.length} · Ждут проверки: ${countPending(topicGroup.entries)}`,
-        records: topicGroup.entries,
-      })),
-    }));
-  }, [studentGroups, topicGroups, viewMode]);
+      if (viewMode === "student-topics") {
+        const studentDelta = left.student.name.localeCompare(right.student.name, "ru");
+        if (studentDelta !== 0) {
+          return studentDelta;
+        }
 
-  const queueItems = useMemo(
-    () => reviewSections.flatMap((section) => section.items),
-    [reviewSections],
-  );
+        const topicDelta = left.task.topic_name.localeCompare(right.task.topic_name, "ru");
+        if (topicDelta !== 0) {
+          return topicDelta;
+        }
+      } else {
+        const topicDelta = left.task.topic_name.localeCompare(right.task.topic_name, "ru");
+        if (topicDelta !== 0) {
+          return topicDelta;
+        }
 
-  const [selectedQueueKey, setSelectedQueueKey] = useState("");
-  const [selectedRecordIndex, setSelectedRecordIndex] = useState(0);
+        const studentDelta = left.student.name.localeCompare(right.student.name, "ru");
+        if (studentDelta !== 0) {
+          return studentDelta;
+        }
+      }
+
+      return left.task.title.localeCompare(right.task.title, "ru");
+    });
+
+    return orderedRecords.map((record) => {
+      const submittedFile = extractSubmittedFileMeta(record.task);
+      const heading =
+        viewMode === "topic-students" ? record.task.topic_name : record.student.name;
+      const subheading =
+        viewMode === "topic-students"
+          ? buildStudentIdentity(record)
+          : record.task.topic_name;
+      const fileLabel = submittedFile
+        ? `${submittedFile.originalName}${submittedFile.sizeBytes ? ` · ${formatBytes(submittedFile.sizeBytes)}` : ""}`
+        : "Файл не загружен";
+
+      return {
+        key: record.key,
+        record,
+        heading,
+        subheading,
+        details: buildReviewListDetails(record),
+        statusLabel: studentTaskProgressLabel(record.task.progress.status),
+        fileLabel,
+      };
+    });
+  }, [filteredRecords, viewMode]);
+
+  const [selectedRecordKey, setSelectedRecordKey] = useState("");
 
   useEffect(() => {
-    if (!queueItems.length) {
-      if (selectedQueueKey) {
-        setSelectedQueueKey("");
-      }
-      if (selectedRecordIndex !== 0) {
-        setSelectedRecordIndex(0);
+    if (!workList.length) {
+      if (selectedRecordKey) {
+        setSelectedRecordKey("");
       }
       return;
     }
 
-    if (!queueItems.some((item) => item.key === selectedQueueKey)) {
-      setSelectedQueueKey(queueItems[0].key);
-      setSelectedRecordIndex(0);
+    if (!workList.some((item) => item.key === selectedRecordKey)) {
+      setSelectedRecordKey(workList[0].key);
     }
-  }, [queueItems, selectedQueueKey, selectedRecordIndex]);
+  }, [selectedRecordKey, workList]);
 
-  const selectedQueueIndex = queueItems.findIndex((item) => item.key === selectedQueueKey);
-  const selectedQueueItem =
-    selectedQueueIndex >= 0 ? queueItems[selectedQueueIndex] : queueItems[0] ?? null;
-  const selectedRecord = selectedQueueItem?.records[selectedRecordIndex] ?? null;
-
-  useEffect(() => {
-    if (!selectedQueueItem) {
-      return;
-    }
-
-    if (selectedRecordIndex > selectedQueueItem.records.length - 1) {
-      setSelectedRecordIndex(0);
-    }
-  }, [selectedQueueItem, selectedRecordIndex]);
+  const selectedWorkIndex = workList.findIndex((item) => item.key === selectedRecordKey);
+  const selectedWork =
+    selectedWorkIndex >= 0 ? workList[selectedWorkIndex] : workList[0] ?? null;
+  const selectedRecord = selectedWork?.record ?? null;
+  const selectedSubmittedFile = selectedRecord ? extractSubmittedFileMeta(selectedRecord.task) : null;
+  const activeWorkPosition = selectedWorkIndex >= 0 ? selectedWorkIndex + 1 : selectedWork ? 1 : 0;
 
   function updateReviewDraft(recordKey: string, task: StudentAssignedTask, patch: Partial<ReviewDraft>) {
     setReviewDrafts((current) => ({
@@ -728,59 +749,16 @@ export default function TeacherReviewPage() {
 
   function renderReviewChecklist(task: StudentAssignedTask) {
     const reviewContext = task.content.manual_review_context;
-    if (!reviewContext) {
+    const subjectAreaDescription = String(reviewContext?.subject_area_description ?? "").trim();
+    if (!subjectAreaDescription) {
       return null;
     }
 
     return (
       <div className="teacher-review-checklist">
         <div className="teacher-review-checklist__section">
-          <span className="card__eyebrow">Предметная область</span>
-          <p>{reviewContext.subject_area_description || "Не заполнена."}</p>
-        </div>
-        <div className="teacher-review-checklist__section">
-          <span className="card__eyebrow">Элементы «Уметь»</span>
-          {(reviewContext.skill_elements ?? []).length ? (
-            (reviewContext.skill_elements ?? []).map((item) => (
-              <div className="teacher-review-checklist__item" key={item.element_id}>
-                <strong>{item.name}</strong>
-                <span>{item.description || "Описание не добавлено."}</span>
-              </div>
-            ))
-          ) : (
-            <p>Не найдены.</p>
-          )}
-        </div>
-        <div className="teacher-review-checklist__section">
-          <span className="card__eyebrow">Связанные элементы «Знать»</span>
-          {(reviewContext.knowledge_elements ?? []).length ? (
-            (reviewContext.knowledge_elements ?? []).map((item) => (
-              <div className="teacher-review-checklist__item" key={item.element_id}>
-                <strong>{item.name}</strong>
-                <span>{item.description || "Описание не добавлено."}</span>
-              </div>
-            ))
-          ) : (
-            <p>Не найдены.</p>
-          )}
-        </div>
-        <div className="teacher-review-checklist__section">
-          <span className="card__eyebrow">Сопоставления объект -&gt; «Знать»</span>
-          {(reviewContext.domain_object_mappings ?? []).length ? (
-            (reviewContext.domain_object_mappings ?? []).map((item, index) => (
-              <div className="teacher-review-checklist__item" key={`${item.object_name}-${index}`}>
-                <strong>{item.object_name}</strong>
-                <span>
-                  {item.knowledge_element_name}
-                  {item.knowledge_element_description
-                    ? ` — ${item.knowledge_element_description}`
-                    : ""}
-                </span>
-              </div>
-            ))
-          ) : (
-            <p>Не найдены.</p>
-          )}
+          <span className="card__eyebrow">{"\u041f\u0440\u0435\u0434\u043c\u0435\u0442\u043d\u0430\u044f \u043e\u0431\u043b\u0430\u0441\u0442\u044c"}</span>
+          <p>{subjectAreaDescription}</p>
         </div>
       </div>
     );
@@ -810,7 +788,6 @@ export default function TeacherReviewPage() {
 
         <div className="student-task-card__progress">
           <span>Студент: {record.student.name}</span>
-          <span>Логин: {record.student.login}</span>
           <span>Группа: {record.group?.name ?? "Не указана"}</span>
           <span>{subgroupLabel(record.subgroup)}</span>
           <span>Тема: {record.task.topic_name}</span>
@@ -906,77 +883,43 @@ export default function TeacherReviewPage() {
     );
   }
 
-  function selectQueueItem(itemKey: string) {
-    setSelectedQueueKey(itemKey);
-    setSelectedRecordIndex(0);
+  function selectWorkItem(recordKey: string) {
+    setSelectedRecordKey(recordKey);
   }
 
-  function showAdjacentQueueItem(direction: -1 | 1) {
-    if (!queueItems.length) {
+  function showAdjacentWork(direction: -1 | 1) {
+    if (!workList.length) {
       return;
     }
 
-    const currentIndex = selectedQueueIndex >= 0 ? selectedQueueIndex : 0;
+    const currentIndex = selectedWorkIndex >= 0 ? selectedWorkIndex : 0;
     const nextIndex = currentIndex + direction;
-    if (nextIndex < 0 || nextIndex >= queueItems.length) {
+    if (nextIndex < 0 || nextIndex >= workList.length) {
       return;
     }
 
-    setSelectedQueueKey(queueItems[nextIndex].key);
-    setSelectedRecordIndex(0);
+    setSelectedRecordKey(workList[nextIndex].key);
   }
 
-  function showAdjacentRecord(direction: -1 | 1) {
-    if (!selectedQueueItem) {
-      return;
-    }
-
-    const nextIndex = selectedRecordIndex + direction;
-    if (nextIndex < 0 || nextIndex >= selectedQueueItem.records.length) {
-      return;
-    }
-
-    setSelectedRecordIndex(nextIndex);
-  }
-
-  function renderTaskDetail(record: ReviewRecord) {
-    return renderTaskCard(record);
-  }
-
-  function renderQueueSection(section: ReviewQueueSection) {
+  function renderWorkListItem(item: ReviewListItem) {
+    const isActive = item.key === selectedWork?.key;
     return (
-      <section className="teacher-review-queue-section" key={section.key}>
-        <div className="teacher-review-queue-section__header">
-          <div>
-            <span className="card__eyebrow">{section.eyebrow}</span>
-            <strong>{section.title}</strong>
+      <button
+        className={isActive ? "teacher-review-list-item teacher-review-list-item--active" : "teacher-review-list-item"}
+        key={item.key}
+        onClick={() => selectWorkItem(item.key)}
+        type="button"
+      >
+        <div className="teacher-review-list-item__top">
+          <div className="teacher-review-list-item__copy">
+            <strong>{item.heading}</strong>
+            <span>{item.subheading}</span>
           </div>
-          <span>{section.stats}</span>
+          <span className="hero__chip teacher-review-list-item__status">{item.statusLabel}</span>
         </div>
-
-        <div className="teacher-review-queue-list">
-          {section.items.map((item) => {
-            const isActive = item.key === selectedQueueItem?.key;
-            return (
-              <button
-                className={isActive ? "teacher-review-queue-item teacher-review-queue-item--active" : "teacher-review-queue-item"}
-                key={item.key}
-                onClick={() => selectQueueItem(item.key)}
-                type="button"
-              >
-                <div className="teacher-review-queue-item__copy">
-                  <strong>{item.title}</strong>
-                  <span>{item.subtitle}</span>
-                </div>
-                <div className="teacher-review-queue-item__meta">
-                  <span>{item.meta}</span>
-                  <span className="teacher-review-queue-item__action">Проверить</span>
-                </div>
-              </button>
-            );
-          })}
-        </div>
-      </section>
+        <span className="teacher-review-list-item__details">{item.details}</span>
+        <span className="teacher-review-list-item__file">{item.fileLabel}</span>
+      </button>
     );
   }
 
@@ -1109,88 +1052,71 @@ export default function TeacherReviewPage() {
 
           {true ? (
             <section className="teacher-review-workspace">
-              <aside className="card card--soft teacher-review-queue" aria-label="Очередь проверки">
+              <aside className="card card--soft teacher-review-queue" aria-label="Список работ">
                 <div className="teacher-review-queue__header">
                   <div>
-                    <p className="card__eyebrow">Очередь</p>
-                    <h2>{viewMode === "topic-students" ? "Темы и студенты" : "Студенты и темы"}</h2>
+                    <p className="card__eyebrow">Работы</p>
+                    <h2>Список работ</h2>
+                    <p className="card__text">
+                      {viewMode === "topic-students"
+                        ? "Темы идут первыми, ниже отдельные отправки студентов."
+                        : "Студенты идут первыми, ниже их отдельные отправки по темам."}
+                    </p>
                   </div>
-                  <span className="hero__chip">{queueItems.length}</span>
+                  <span className="hero__chip">{workList.length}</span>
                 </div>
                 <div className="teacher-review-queue__body">
-                  {reviewSections.map((section) => renderQueueSection(section))}
+                  {workList.length ? (
+                    <div className="teacher-review-list">
+                      {workList.map((item) => renderWorkListItem(item))}
+                    </div>
+                  ) : (
+                    <div className="teacher-review-empty teacher-review-empty--compact">
+                      <h2>Работы не найдены</h2>
+                      <p className="card__text">Измените фильтры или дождитесь новых отправок.</p>
+                    </div>
+                  )}
                 </div>
               </aside>
 
               <section className="card card--soft teacher-review-detail">
-                {selectedQueueItem && selectedRecord ? (
+                {selectedWork && selectedRecord ? (
                   <>
                     <div className="teacher-review-detail__header">
                       <div>
                         <p className="card__eyebrow">Выбрано</p>
-                        <h2>{selectedQueueItem.title}</h2>
-                        <p className="card__text">{selectedQueueItem.subtitle}</p>
+                        <h2>{selectedWork.heading}</h2>
+                        <p className="card__text">{selectedWork.subheading}</p>
+                        <p className="card__text teacher-review-detail__lead">{selectedWork.details}</p>
                       </div>
                       <div className="teacher-review-detail__nav">
                         <button
                           className="ghost-button"
-                          disabled={selectedQueueIndex <= 0}
-                          onClick={() => showAdjacentQueueItem(-1)}
+                          disabled={activeWorkPosition <= 1}
+                          onClick={() => showAdjacentWork(-1)}
                           type="button"
                         >
-                          Предыдущий
+                          Предыдущая
                         </button>
                         <button
                           className="ghost-button"
-                          disabled={selectedQueueIndex < 0 || selectedQueueIndex >= queueItems.length - 1}
-                          onClick={() => showAdjacentQueueItem(1)}
+                          disabled={activeWorkPosition === 0 || activeWorkPosition >= workList.length}
+                          onClick={() => showAdjacentWork(1)}
                           type="button"
                         >
-                          Следующий
+                          Следующая
                         </button>
                       </div>
                     </div>
 
                     <div className="overview-stats teacher-review-detail__stats">
-                      <span>{selectedQueueItem.meta}</span>
-                      <span>Блок {selectedQueueIndex + 1} из {queueItems.length}</span>
-                      <span>Задание {selectedRecordIndex + 1} из {selectedQueueItem.records.length}</span>
+                      <span>Работа {activeWorkPosition} из {workList.length}</span>
+                      <span>{selectedWork.statusLabel}</span>
+                      <span>Попыток: {selectedRecord.task.progress.attempts_count}</span>
+                      <span>{selectedSubmittedFile ? "Файл загружен" : "Без файла"}</span>
                     </div>
 
-                    {selectedQueueItem.records.length > 1 ? (
-                      <div className="teacher-review-task-switcher">
-                        <button
-                          className="secondary-button"
-                          disabled={selectedRecordIndex === 0}
-                          onClick={() => showAdjacentRecord(-1)}
-                          type="button"
-                        >
-                          Предыдущее задание
-                        </button>
-                        <div className="teacher-review-task-switcher__tabs">
-                          {selectedQueueItem.records.map((record, index) => (
-                            <button
-                              className={index === selectedRecordIndex ? "editor-tab editor-tab--active" : "editor-tab"}
-                              key={record.key}
-                              onClick={() => setSelectedRecordIndex(index)}
-                              type="button"
-                            >
-                              {index + 1}
-                            </button>
-                          ))}
-                        </div>
-                        <button
-                          className="secondary-button"
-                          disabled={selectedRecordIndex >= selectedQueueItem.records.length - 1}
-                          onClick={() => showAdjacentRecord(1)}
-                          type="button"
-                        >
-                          Следующее задание
-                        </button>
-                      </div>
-                    ) : null}
-
-                    {renderTaskDetail(selectedRecord)}
+                    {renderTaskCard(selectedRecord)}
                   </>
                 ) : (
                   <div className="teacher-review-empty">

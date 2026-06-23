@@ -122,29 +122,29 @@ const CAN_TO_CAN_RELATION_OPTIONS: Array<{
   label: string;
   value: KnowledgeElementRelationType;
 }> = [
-  { label: "РўСЂРµР±СѓРµС‚", value: "requires" },
-  { label: "РЎС‚СЂРѕРёС‚СЃСЏ РЅР°", value: "builds_on" },
-  { label: "РЎРѕРґРµСЂР¶РёС‚", value: "contains" },
-  { label: "РЇРІР»СЏРµС‚СЃСЏ С‡Р°СЃС‚СЊСЋ", value: "part_of" },
-  { label: "РЈС‚РѕС‡РЅСЏРµС‚", value: "refines" },
-  { label: "РћР±РѕР±С‰Р°РµС‚", value: "generalizes" },
-  { label: "Р РѕРґСЃС‚РІРµРЅРЅРѕ", value: "similar" },
-  { label: "РџСЂРѕС‚РёРІРѕРїРѕСЃС‚Р°РІР»СЏРµС‚СЃСЏ", value: "contrasts_with" },
-  { label: "РСЃРїРѕР»СЊР·СѓРµС‚СЃСЏ РІРјРµСЃС‚Рµ", value: "used_with" },
+  { label: "Требует", value: "requires" },
+  { label: "Строится на", value: "builds_on" },
+  { label: "Содержит", value: "contains" },
+  { label: "Является частью", value: "part_of" },
+  { label: "Уточняет", value: "refines" },
+  { label: "Обобщает", value: "generalizes" },
+  { label: "Родственно", value: "similar" },
+  { label: "Противопоставляется", value: "contrasts_with" },
+  { label: "Используется вместе", value: "used_with" },
 ];
 
 const MASTER_TO_MASTER_RELATION_OPTIONS: Array<{
   label: string;
   value: KnowledgeElementRelationType;
 }> = [
-  { label: "РўСЂРµР±СѓРµС‚", value: "requires" },
-  { label: "РЎРѕРґРµСЂР¶РёС‚", value: "contains" },
-  { label: "РЇРІР»СЏРµС‚СЃСЏ С‡Р°СЃС‚СЊСЋ", value: "part_of" },
-  { label: "РЈС‚РѕС‡РЅСЏРµС‚", value: "refines" },
-  { label: "РћР±РѕР±С‰Р°РµС‚", value: "generalizes" },
-  { label: "Р РѕРґСЃС‚РІРµРЅРЅРѕ", value: "similar" },
-  { label: "РџСЂРѕС‚РёРІРѕРїРѕСЃС‚Р°РІР»СЏРµС‚СЃСЏ", value: "contrasts_with" },
-  { label: "РСЃРїРѕР»СЊР·СѓРµС‚СЃСЏ РІРјРµСЃС‚Рµ", value: "used_with" },
+  { label: "Требует", value: "requires" },
+  { label: "Содержит", value: "contains" },
+  { label: "Является частью", value: "part_of" },
+  { label: "Уточняет", value: "refines" },
+  { label: "Обобщает", value: "generalizes" },
+  { label: "Родственно", value: "similar" },
+  { label: "Противопоставляется", value: "contrasts_with" },
+  { label: "Используется вместе", value: "used_with" },
 ];
 
 const CAN_TO_KNOW_RELATION_OPTIONS: Array<{

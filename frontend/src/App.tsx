@@ -73,22 +73,22 @@ const TOPIC_LEGEND_SECTIONS: OverlayLegendSection[] = [
     ],
   },
   // {
-  //   title: "Р¦РІРµС‚Р°",
+  //   title: "Цвета",
   //   items: [
   //     {
   //       markerClass: "graph-legend-overlay__marker--topic-color",
-  //       label: "РЎРёРЅРёР№",
-  //       hint: "РўРµРјС‹ Рё РѕР±СЏР·Р°С‚РµР»СЊРЅС‹Рµ СЃРІСЏР·Рё РјРµР¶РґСѓ С‚РµРјР°РјРё.",
+  //       label: "Синий",
+  //       hint: "Темы и обязательные связи между темами.",
   //     },
   //     {
   //       markerClass: "graph-legend-overlay__marker--required-color",
-  //       label: "РўРµРјРЅС‹Р№",
-  //       hint: "РўСЂРµР±СѓРµРјС‹Рµ СЌР»РµРјРµРЅС‚С‹ РґРѕ РЅР°С‡Р°Р»Р° С‚РµРјС‹.",
+  //       label: "Темный",
+  //       hint: "Требуемые элементы до начала темы.",
   //     },
   //     {
   //       markerClass: "graph-legend-overlay__marker--formed-color",
-  //       label: "Р—РµР»РµРЅС‹Р№",
-  //       hint: "РќРѕРІС‹Рµ СЌР»РµРјРµРЅС‚С‹ Рё РІРѕР·РјРѕР¶РЅС‹Р№ РїСѓС‚СЊ РјРµР¶РґСѓ С‚РµРјР°РјРё.",
+  //       label: "Зеленый",
+  //       hint: "Новые элементы и возможный путь между темами.",
   //     },
   //   ],
   // },
@@ -116,22 +116,22 @@ const ELEMENT_LEGEND_SECTIONS: OverlayLegendSection[] = [
     ],
   },
   // {
-  //   title: "Р¦РІРµС‚Р°",
+  //   title: "Цвета",
   //   items: [
   //     {
   //       markerClass: "graph-legend-overlay__marker--required-color",
-  //       label: "РўРµРјРЅС‹Р№",
+  //       label: "Темный",
   //       hint: "РўСЂРµР±СѓРµРјС‹Рµ СЌР»РµРјРµРЅС‚С‹.",
   //     },
   //     {
   //       markerClass: "graph-legend-overlay__marker--formed-color",
-  //       label: "Р—РµР»РµРЅС‹Р№",
-  //       hint: "Р­Р»РµРјРµРЅС‚С‹, РєРѕС‚РѕСЂС‹Рµ Р±СѓРґСѓС‚ СЃС„РѕСЂРјРёСЂРѕРІР°РЅС‹.",
+  //       label: "Зеленый",
+  //       hint: "Элементы, которые будут сформированы.",
   //     },
   //     {
   //       markerClass: "graph-legend-overlay__marker--relation-color",
-  //       label: "РћСЂР°РЅР¶РµРІС‹Р№",
-  //       hint: "РџРѕРґРїРёСЃРё Рё СЃРІСЏР·Рё РјРµР¶РґСѓ СЌР»РµРјРµРЅС‚Р°РјРё.",
+  //       label: "Оранжевый",
+  //       hint: "Подписи и связи между элементами.",
   //     },
   //   ],
   // },
@@ -588,8 +588,8 @@ export default function App() {
           <p className="hero__eyebrow">Competence Hub</p>
           <h1>Граф знаний дисциплины</h1>
           {/* <p className="hero__subtitle">
-            РџРµСЂРІС‹Р№ СѓСЂРѕРІРµРЅСЊ РїРѕРєР°Р·С‹РІР°РµС‚ С‚РµРјС‹ РґРёСЃС†РёРїР»РёРЅС‹, РІС‚РѕСЂРѕР№ СѓСЂРѕРІРµРЅСЊ СЂР°СЃРєСЂС‹РІР°РµС‚ Р·РЅР°РЅРёСЏ,
-            СѓРјРµРЅРёСЏ Рё РІР»Р°РґРµРЅРёСЏ РєРѕРЅРєСЂРµС‚РЅРѕР№ С‚РµРјС‹.
+            Первый уровень показывает темы дисциплины, второй уровень раскрывает знания,
+            умения и владения конкретной темы.
           </p> */}
         </div>
 
@@ -611,8 +611,8 @@ export default function App() {
 
           {/* <div className="hero__chip">
             {view.level === "topics"
-              ? "Р РµР¶РёРј С‚РµРј"
-              : `Р­Р»РµРјРµРЅС‚С‹ С‚РµРјС‹: ${detail?.title ?? ""}`}
+              ? "Режим тем"
+              : `Элементы темы: ${detail?.title ?? ""}`}
           </div> */}
         </div>
       </header>

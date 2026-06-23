@@ -36,12 +36,12 @@ def test_score_text_computes_expected_output_for_operation_tasks_when_missing() 
 def test_normalized_matching_pairs_supports_legacy_snapshot_shape() -> None:
     content = {
         "left": [
-            {"id": "graph", "text": "????"},
-            {"id": "vertex", "text": "???????"},
+            {"id": "graph", "text": "Граф"},
+            {"id": "vertex", "text": "Вершина"},
         ],
         "right": [
-            {"id": "graph", "text": "????????? ?????? ? ?????."},
-            {"id": "vertex", "text": "????????? ????? ?????."},
+            {"id": "graph", "text": "Множество вершин и ребер."},
+            {"id": "vertex", "text": "Базовая точка графа."},
         ],
         "pairs": [
             {"left_id": "graph", "right_id": "graph"},
@@ -50,20 +50,20 @@ def test_normalized_matching_pairs_supports_legacy_snapshot_shape() -> None:
     }
 
     assert _normalized_matching_pairs(content) == [
-        {"id": "graph", "left": "????", "right": "????????? ?????? ? ?????."},
-        {"id": "vertex", "left": "???????", "right": "????????? ????? ?????."},
+        {"id": "graph", "left": "Граф", "right": "Множество вершин и ребер."},
+        {"id": "vertex", "left": "Вершина", "right": "Базовая точка графа."},
     ]
 
 
 def test_score_matching_supports_legacy_snapshot_shape() -> None:
     content = {
         "left": [
-            {"id": "graph", "text": "????"},
-            {"id": "vertex", "text": "???????"},
+            {"id": "graph", "text": "Граф"},
+            {"id": "vertex", "text": "Вершина"},
         ],
         "right": [
-            {"id": "graph", "text": "????????? ?????? ? ?????."},
-            {"id": "vertex", "text": "????????? ????? ?????."},
+            {"id": "graph", "text": "Множество вершин и ребер."},
+            {"id": "vertex", "text": "Базовая точка графа."},
         ],
         "pairs": [
             {"left_id": "graph", "right_id": "graph"},
