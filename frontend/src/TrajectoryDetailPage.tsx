@@ -1705,6 +1705,16 @@ export default function TrajectoryDetailPage() {
     () => new Set(topicTrajectoryElements.map((element) => element.id)),
     [topicTrajectoryElements],
   );
+  const taskTopicGraphElementIds = useMemo(() => {
+    if (!graph || !taskTopicId) {
+      return new Set<string>();
+    }
+    return new Set(
+      graph.topic_knowledge_elements
+        .filter((link) => link.topic_id === taskTopicId)
+        .map((link) => link.element_id),
+    );
+  }, [graph, taskTopicId]);
   const mandatorySkillRelations = useMemo(() => {
     if (!graph || !taskTopicId || !taskPrimaryElementId) return [];
     return graph.knowledge_element_relations.filter((relation) => {
@@ -1714,10 +1724,10 @@ export default function TrajectoryDetailPage() {
         relation.source_element_id === taskPrimaryElementId &&
         relation.relation_type === "implements" &&
         targetElement?.competence_type === "know" &&
-        topicTrajectoryElementIds.has(relation.target_element_id)
+        taskTopicGraphElementIds.has(relation.target_element_id)
       );
     });
-  }, [elementById, graph, taskPrimaryElementId, taskTopicId, topicTrajectoryElementIds]);
+  }, [elementById, graph, taskPrimaryElementId, taskTopicId, taskTopicGraphElementIds]);
   const availableSkillKnowledgeElements = useMemo(
     () =>
       mandatorySkillRelations
@@ -1742,11 +1752,11 @@ export default function TrajectoryDetailPage() {
           ? relation.target_element_id
           : relation.source_element_id;
       return (
-        topicTrajectoryElementIds.has(otherElementId) &&
+        taskTopicGraphElementIds.has(otherElementId) &&
         elementById.get(otherElementId)?.competence_type === "can"
       );
     });
-  }, [elementById, graph, taskPrimaryElementId, taskTopicId, topicTrajectoryElementIds]);
+  }, [elementById, graph, taskPrimaryElementId, taskTopicId, taskTopicGraphElementIds]);
   const mandatoryMasterSkillRelations = useMemo(() => {
     if (!graph || !taskTopicId || !taskPrimaryElementId) return [];
     return graph.knowledge_element_relations.filter((relation) => {
@@ -1756,10 +1766,10 @@ export default function TrajectoryDetailPage() {
         relation.source_element_id === taskPrimaryElementId &&
         relation.relation_type === "automates" &&
         targetElement?.competence_type === "can" &&
-        topicTrajectoryElementIds.has(relation.target_element_id)
+        taskTopicGraphElementIds.has(relation.target_element_id)
       );
     });
-  }, [elementById, graph, taskPrimaryElementId, taskTopicId, topicTrajectoryElementIds]);
+  }, [elementById, graph, taskPrimaryElementId, taskTopicId, taskTopicGraphElementIds]);
   const mandatoryMasterKnowledgeRelations = useMemo(() => {
     if (!graph || !taskTopicId || !taskPrimaryElementId) return [];
     return graph.knowledge_element_relations.filter((relation) => {
@@ -1769,10 +1779,10 @@ export default function TrajectoryDetailPage() {
         relation.source_element_id === taskPrimaryElementId &&
         relation.relation_type === "relies_on" &&
         targetElement?.competence_type === "know" &&
-        topicTrajectoryElementIds.has(relation.target_element_id)
+        taskTopicGraphElementIds.has(relation.target_element_id)
       );
     });
-  }, [elementById, graph, taskPrimaryElementId, taskTopicId, topicTrajectoryElementIds]);
+  }, [elementById, graph, taskPrimaryElementId, taskTopicId, taskTopicGraphElementIds]);
   const mandatoryMasterRelations = useMemo(
     () => [...mandatoryMasterSkillRelations, ...mandatoryMasterKnowledgeRelations],
     [mandatoryMasterKnowledgeRelations, mandatoryMasterSkillRelations],
@@ -1808,12 +1818,12 @@ export default function TrajectoryDetailPage() {
           ? relation.target_element_id
           : relation.source_element_id;
       return (
-        topicTrajectoryElementIds.has(otherElementId) &&
+        taskTopicGraphElementIds.has(otherElementId) &&
         elementById.get(otherElementId)?.competence_type === "master" &&
         relation.relation_type !== "implements"
       );
     });
-  }, [elementById, graph, taskPrimaryElementId, taskTopicId, topicTrajectoryElementIds]);
+  }, [elementById, graph, taskPrimaryElementId, taskTopicId, taskTopicGraphElementIds]);
   const relevantTaskElements = useMemo(
     () =>
       availableTaskElements.filter((element) =>
