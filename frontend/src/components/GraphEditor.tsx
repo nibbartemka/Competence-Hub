@@ -244,9 +244,10 @@ function uniqueElements(
 ) {
   const byId = new Map<string, KnowledgeElement>();
 
-  // Elements coming from the discipline graph are already scoped by backend.
   for (const element of disciplineElements) {
-    byId.set(element.id, element);
+    if (element.discipline_id === disciplineId) {
+      byId.set(element.id, element);
+    }
   }
 
   for (const element of allElements) {
