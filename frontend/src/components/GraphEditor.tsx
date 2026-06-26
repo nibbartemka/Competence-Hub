@@ -91,6 +91,12 @@ type SearchableOption = {
   label: string;
 };
 
+type TopicDraftKnowledgeOption = {
+  description: string;
+  id: string;
+  label: string;
+};
+
 const COMPETENCE_OPTIONS: Array<{ label: string; value: CompetenceType }> = [
   { label: "Знать", value: "know" },
   { label: "Уметь", value: "can" },
@@ -161,6 +167,9 @@ const MASTER_TO_KNOW_RELATION_OPTIONS: Array<{
   label: string;
   value: KnowledgeElementRelationType;
 }> = [{ label: "Опирается на", value: "relies_on" }];
+
+const TOPIC_DRAFT_KNOWLEDGE_EXISTING_PREFIX = "existing:";
+const TOPIC_DRAFT_KNOWLEDGE_NEW_PREFIX = "draft:";
 
 function competenceLabel(value: CompetenceType) {
   return COMPETENCE_OPTIONS.find((option) => option.value === value)?.label ?? value;
@@ -281,6 +290,39 @@ function topicDraftOptionLabel(draft: TopicNewElementDraft) {
       : "Новый элемент владения";
 
   return draft.name.trim() || fallbackName;
+}
+
+function createExistingTopicDraftKnowledgeOption(element: KnowledgeElement): TopicDraftKnowledgeOption {
+  return {
+    description: element.description?.trim() ?? "",
+    id: `${TOPIC_DRAFT_KNOWLEDGE_EXISTING_PREFIX}${element.id}`,
+    label: element.name,
+  };
+}
+
+function createNewTopicDraftKnowledgeOption(draft: TopicNewElementDraft): TopicDraftKnowledgeOption {
+  return {
+    description: draft.description.trim(),
+    id: `${TOPIC_DRAFT_KNOWLEDGE_NEW_PREFIX}${draft.clientId}`,
+    label: topicDraftOptionLabel(draft),
+  };
+}
+
+function resolveTopicDraftKnowledgeElementId(
+  knowledgeReferenceId: string,
+  createdDraftElementIds: Map<string, string>,
+) {
+  if (knowledgeReferenceId.startsWith(TOPIC_DRAFT_KNOWLEDGE_EXISTING_PREFIX)) {
+    return knowledgeReferenceId.slice(TOPIC_DRAFT_KNOWLEDGE_EXISTING_PREFIX.length);
+  }
+
+  if (knowledgeReferenceId.startsWith(TOPIC_DRAFT_KNOWLEDGE_NEW_PREFIX)) {
+    return createdDraftElementIds.get(
+      knowledgeReferenceId.slice(TOPIC_DRAFT_KNOWLEDGE_NEW_PREFIX.length),
+    );
+  }
+
+  return createdDraftElementIds.get(knowledgeReferenceId) ?? knowledgeReferenceId;
 }
 
 function uniqueTopicOptions(topicsList: Topic[]) {
@@ -731,10 +773,7 @@ export function GraphEditor({
     if (!elementCreateTopicId) {
       return [];
     }
-    const links = (topicKnowledgeElementsByTopicId.get(elementCreateTopicId) ?? []).filter(
-      (link) => link.role === "formed",
-    );
-    return links
+    return (topicKnowledgeElementsByTopicId.get(elementCreateTopicId) ?? [])
       .map((link) => elementById.get(link.element_id) ?? null)
       .filter(
         (element): element is KnowledgeElement =>
@@ -747,10 +786,7 @@ export function GraphEditor({
     if (!editElementTopicId) {
       return [];
     }
-    const links = (topicKnowledgeElementsByTopicId.get(editElementTopicId) ?? []).filter(
-      (link) => link.role === "formed",
-    );
-    return links
+    return (topicKnowledgeElementsByTopicId.get(editElementTopicId) ?? [])
       .map((link) => elementById.get(link.element_id) ?? null)
       .filter(
         (element): element is KnowledgeElement =>
@@ -969,20 +1005,31 @@ export function GraphEditor({
   );
 
   const topicDraftKnowledgeOptionsById = useMemo(() => {
-    const result = new Map<string, TopicNewElementDraft[]>();
+    const requiredKnowledgeOptions = selectedRequiredElementIds
+      .map((elementId) => elementById.get(elementId) ?? null)
+      .filter(
+        (element): element is KnowledgeElement =>
+          !!element && element.competence_type === "know",
+      )
+      .map((element) => createExistingTopicDraftKnowledgeOption(element));
+
+    const result = new Map<string, TopicDraftKnowledgeOption[]>();
     for (const draft of topicNewElements) {
-      const options = topicNewElements
-        .filter(
-          (item) =>
-            item.clientId !== draft.clientId &&
-            item.competenceType === "know" &&
-            item.name.trim(),
-        )
-        .sort((left, right) => left.name.localeCompare(right.name, "ru"));
+      const options = [
+        ...requiredKnowledgeOptions,
+        ...topicNewElements
+          .filter(
+            (item) =>
+              item.clientId !== draft.clientId &&
+              item.competenceType === "know" &&
+              item.name.trim(),
+          )
+          .map((item) => createNewTopicDraftKnowledgeOption(item)),
+      ].sort((left, right) => left.label.localeCompare(right.label, "ru"));
       result.set(draft.clientId, options);
     }
     return result;
-  }, [topicNewElements]);
+  }, [elementById, selectedRequiredElementIds, topicNewElements]);
 
   const topicDraftSkillOptionsById = useMemo(() => {
     const result = new Map<string, TopicNewElementDraft[]>();
@@ -1002,7 +1049,21 @@ export function GraphEditor({
   }, [topicNewElements]);
 
   const topicDraftRequiredKnowledgeById = useMemo(() => {
-    const result = new Map<string, TopicNewElementDraft[]>();
+    const result = new Map<string, TopicDraftKnowledgeOption[]>();
+    const availableKnowledgeOptionsById = new Map<string, TopicDraftKnowledgeOption>(
+      [
+        ...selectedRequiredElementIds
+          .map((elementId) => elementById.get(elementId) ?? null)
+          .filter(
+            (element): element is KnowledgeElement =>
+              !!element && element.competence_type === "know",
+          )
+          .map((element) => createExistingTopicDraftKnowledgeOption(element)),
+        ...topicNewElements
+          .filter((item) => item.competenceType === "know" && item.name.trim())
+          .map((item) => createNewTopicDraftKnowledgeOption(item)),
+      ].map((option) => [option.id, option]),
+    );
 
     for (const draft of topicNewElements) {
       if (draft.competenceType !== "master") {
@@ -1016,20 +1077,12 @@ export function GraphEditor({
             .map((skillDraftId) => topicNewElementById.get(skillDraftId) ?? null)
             .filter((skillDraft): skillDraft is TopicNewElementDraft => Boolean(skillDraft))
             .flatMap((skillDraft) => skillDraft.realizedKnowledgeDraftIds)
-            .map((knowledgeDraftId) => topicNewElementById.get(knowledgeDraftId) ?? null)
+            .map((knowledgeReferenceId) => availableKnowledgeOptionsById.get(knowledgeReferenceId) ?? null)
             .filter(
-              (knowledgeDraft): knowledgeDraft is TopicNewElementDraft => {
-                if (!knowledgeDraft) {
-                  return false;
-                }
-                return (
-                  knowledgeDraft.competenceType === "know" &&
-                  Boolean(knowledgeDraft.name.trim())
-                );
-              },
+              (option): option is TopicDraftKnowledgeOption => Boolean(option),
             )
-            .sort((left, right) => left.name.localeCompare(right.name, "ru"))
-            .map((knowledgeDraft) => [knowledgeDraft.clientId, knowledgeDraft]),
+            .sort((left, right) => left.label.localeCompare(right.label, "ru"))
+            .map((option) => [option.id, option]),
         ).values(),
       );
 
@@ -1037,7 +1090,7 @@ export function GraphEditor({
     }
 
     return result;
-  }, [topicNewElementById, topicNewElements]);
+  }, [elementById, selectedRequiredElementIds, topicNewElementById, topicNewElements]);
 
   const topicDraftDuplicateMasterDomainMappingsById = useMemo(() => {
     const result = new Map<string, MasterDomainObjectDraft[]>();
@@ -1070,7 +1123,7 @@ export function GraphEditor({
   }, [topicNewElements]);
 
   const topicDraftUncoveredKnowledgeById = useMemo(() => {
-    const result = new Map<string, TopicNewElementDraft[]>();
+    const result = new Map<string, TopicDraftKnowledgeOption[]>();
 
     for (const draft of topicNewElements) {
       const requiredKnowledge = topicDraftRequiredKnowledgeById.get(draft.clientId) ?? [];
@@ -1081,7 +1134,7 @@ export function GraphEditor({
       );
       result.set(
         draft.clientId,
-        requiredKnowledge.filter((knowledgeDraft) => !coveredKnowledgeIds.has(knowledgeDraft.clientId)),
+        requiredKnowledge.filter((knowledgeDraft) => !coveredKnowledgeIds.has(knowledgeDraft.id)),
       );
     }
 
@@ -1643,9 +1696,9 @@ export function GraphEditor({
       let changed = false;
 
       const next = current.map((draft) => {
-        const availableKnowledgeDrafts = topicDraftKnowledgeOptionsById.get(draft.clientId) ?? [];
+        const availableKnowledgeOptions = topicDraftKnowledgeOptionsById.get(draft.clientId) ?? [];
         const availableSkillDrafts = topicDraftSkillOptionsById.get(draft.clientId) ?? [];
-        const requiredKnowledgeDrafts = topicDraftRequiredKnowledgeById.get(draft.clientId) ?? [];
+        const requiredKnowledgeOptions = topicDraftRequiredKnowledgeById.get(draft.clientId) ?? [];
 
         let nextDraft = draft;
 
@@ -1659,7 +1712,7 @@ export function GraphEditor({
             changed = true;
           }
         } else {
-          const allowedKnowledgeIds = new Set(availableKnowledgeDrafts.map((item) => item.clientId));
+          const allowedKnowledgeIds = new Set(availableKnowledgeOptions.map((item) => item.id));
           const nextRealizedKnowledgeDraftIds = draft.realizedKnowledgeDraftIds.filter((item) =>
             allowedKnowledgeIds.has(item),
           );
@@ -1711,9 +1764,9 @@ export function GraphEditor({
           changed = true;
         }
 
-        const allowedKnowledgeIds = new Set(availableKnowledgeDrafts.map((item) => item.clientId));
+        const allowedKnowledgeIds = new Set(availableKnowledgeOptions.map((item) => item.id));
         const fallbackKnowledgeId =
-          requiredKnowledgeDrafts[0]?.clientId ?? availableKnowledgeDrafts[0]?.clientId ?? "";
+          requiredKnowledgeOptions[0]?.id ?? availableKnowledgeOptions[0]?.id ?? "";
         let nextMasterDomainObjects = nextDraft.masterDomainObjects
           .filter((item) => !item.knowledgeElementId || allowedKnowledgeIds.has(item.knowledgeElementId))
           .map((item) => ({
@@ -1725,15 +1778,15 @@ export function GraphEditor({
           nextMasterDomainObjects.map((item) => item.knowledgeElementId).filter((item) => item),
         );
 
-        for (const knowledgeDraft of requiredKnowledgeDrafts) {
-          if (coveredKnowledgeIds.has(knowledgeDraft.clientId)) {
+        for (const knowledgeOption of requiredKnowledgeOptions) {
+          if (coveredKnowledgeIds.has(knowledgeOption.id)) {
             continue;
           }
           nextMasterDomainObjects = [
             ...nextMasterDomainObjects,
-            createMasterDomainObjectDraft(knowledgeDraft.clientId),
+            createMasterDomainObjectDraft(knowledgeOption.id),
           ];
-          coveredKnowledgeIds.add(knowledgeDraft.clientId);
+          coveredKnowledgeIds.add(knowledgeOption.id);
         }
 
         if (
@@ -2255,7 +2308,7 @@ export function GraphEditor({
         const requiredKnowledgeDrafts = topicDraftRequiredKnowledgeById.get(draftClientId) ?? [];
         const availableKnowledgeDrafts = topicDraftKnowledgeOptionsById.get(draftClientId) ?? [];
         const fallbackKnowledgeId =
-          requiredKnowledgeDrafts[0]?.clientId ?? availableKnowledgeDrafts[0]?.clientId ?? "";
+          requiredKnowledgeDrafts[0]?.id ?? availableKnowledgeDrafts[0]?.id ?? "";
         return {
           ...item,
           masterDomainObjects: [
@@ -2504,7 +2557,7 @@ export function GraphEditor({
           kind: "error",
           text:
             `Для элемента «${topicDraftOptionLabel(draft)}» нужно покрыть все связанные знания: ` +
-            uncoveredKnowledgeDrafts.map((item) => topicDraftOptionLabel(item)).join(", ") +
+            uncoveredKnowledgeDrafts.map((item) => item.label).join(", ") +
             ".",
         });
         return;
@@ -2581,7 +2634,10 @@ export function GraphEditor({
         });
 
         for (const knowledgeDraftId of draft.realizedKnowledgeDraftIds) {
-          const knowledgeElementId = createdDraftElementIds.get(knowledgeDraftId);
+          const knowledgeElementId = resolveTopicDraftKnowledgeElementId(
+            knowledgeDraftId,
+            createdDraftElementIds,
+          );
           if (!knowledgeElementId || !implementsRelation) {
             throw new Error(
               `Не удалось связать элемент «${topicDraftOptionLabel(draft)}» с выбранными знаниями.`,
@@ -2610,7 +2666,10 @@ export function GraphEditor({
         });
 
         const domainObjects = draft.masterDomainObjects.map((item) => {
-          const knowledgeElementId = createdDraftElementIds.get(item.knowledgeElementId);
+          const knowledgeElementId = resolveTopicDraftKnowledgeElementId(
+            item.knowledgeElementId,
+            createdDraftElementIds,
+          );
           if (!knowledgeElementId) {
             throw new Error(
               `Не удалось найти выбранное знание для элемента «${topicDraftOptionLabel(draft)}».`,
@@ -3972,22 +4031,22 @@ export function GraphEditor({
                                   {knowledgeDraftOptions.map((knowledgeDraft) => (
                                     <label
                                       className="editor-checklist__item"
-                                      key={knowledgeDraft.clientId}
+                                      key={knowledgeDraft.id}
                                     >
                                       <input
                                         type="checkbox"
                                         checked={draft.realizedKnowledgeDraftIds.includes(
-                                          knowledgeDraft.clientId,
+                                          knowledgeDraft.id,
                                         )}
                                         onChange={() =>
                                           toggleTopicDraftRealizedKnowledge(
                                             draft.clientId,
-                                            knowledgeDraft.clientId,
+                                            knowledgeDraft.id,
                                           )
                                         }
                                       />
                                       <span>
-                                        <strong>{topicDraftOptionLabel(knowledgeDraft)}</strong>
+                                        <strong>{knowledgeDraft.label}</strong>
                                         <small>
                                           {knowledgeDraft.description ||
                                             "Описание пока не заполнено"}
@@ -4090,12 +4149,12 @@ export function GraphEditor({
 
                                   <div className="editor-chips">
                                     {requiredKnowledgeDrafts.map((knowledgeDraft) => (
-                                      <span className="tag tag--muted" key={knowledgeDraft.clientId}>
+                                      <span className="tag tag--muted" key={knowledgeDraft.id}>
                                         {uncoveredKnowledgeDrafts.some(
-                                          (item) => item.clientId === knowledgeDraft.clientId,
+                                          (item) => item.id === knowledgeDraft.id,
                                         )
-                                          ? `Нужно покрыть: ${topicDraftOptionLabel(knowledgeDraft)}`
-                                          : `Покрыто: ${topicDraftOptionLabel(knowledgeDraft)}`}
+                                          ? `Нужно покрыть: ${knowledgeDraft.label}`
+                                          : `Покрыто: ${knowledgeDraft.label}`}
                                       </span>
                                     ))}
                                   </div>
@@ -4162,10 +4221,10 @@ export function GraphEditor({
                                                 <option value="">Выбери элемент «Знать»</option>
                                                 {knowledgeDraftOptions.map((knowledgeDraft) => (
                                                   <option
-                                                    key={knowledgeDraft.clientId}
-                                                    value={knowledgeDraft.clientId}
+                                                    key={knowledgeDraft.id}
+                                                    value={knowledgeDraft.id}
                                                   >
-                                                    {topicDraftOptionLabel(knowledgeDraft)}
+                                                    {knowledgeDraft.label}
                                                   </option>
                                                 ))}
                                               </select>

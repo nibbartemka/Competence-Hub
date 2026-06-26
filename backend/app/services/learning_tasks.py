@@ -683,9 +683,16 @@ def validate_task_payload(
     if primary_element.competence_type not in {CompetenceType.KNOW, CompetenceType.CAN, CompetenceType.MASTER}:
         raise bad_request("Ручные задания пока доступны только для компетенции «Знать».")
 
+    topic_elements_by_id: dict[UUID, KnowledgeElement] = {
+        trajectory_element.element_id: trajectory_element.element
+        for trajectory_element in trajectory_topic.elements
+    }
+    for link in trajectory_topic.topic.element_links:
+        if link.element is not None:
+            topic_elements_by_id.setdefault(link.element_id, link.element)
+
     allowed_related_elements: dict[UUID, KnowledgeElement] = {}
-    for trajectory_element in trajectory_topic.elements:
-        element = trajectory_element.element
+    for element in topic_elements_by_id.values():
         if (
             primary_element.competence_type == CompetenceType.CAN
             and element.competence_type in {CompetenceType.KNOW, CompetenceType.CAN}
