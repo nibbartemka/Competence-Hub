@@ -9,6 +9,7 @@ import {
   deleteKnowledgeElement,
   deleteKnowledgeElementRelation,
   deleteTopic,
+  deleteTopicWithFormedElements,
   fetchKnowledgeElements,
   fetchOperationContracts,
   fetchRelations,
@@ -55,7 +56,7 @@ type ConfirmDeleteState =
   | {
       entityId: string;
       entityName: string;
-      entityType: "topic" | "element" | "element-relation";
+      entityType: "topic" | "topic-with-elements" | "element" | "element-relation";
       relationNames?: string[];
       text?: string;
     }
@@ -681,7 +682,7 @@ export function GraphEditor({
   const [editElementMasterDomainObjects, setEditElementMasterDomainObjects] = useState<
     MasterDomainObjectDraft[]
   >([]);
-  const [deleteElementId, setDeleteElementId] = useState("");
+  const [deleteElementIds, setDeleteElementIds] = useState<string[]>([]);
 
   const [relationSourceElementId, setRelationSourceElementId] = useState("");
   const [relationTargetElementId, setRelationTargetElementId] = useState("");
@@ -755,6 +756,16 @@ export function GraphEditor({
     }
     return result;
   }, [topicKnowledgeElements]);
+
+  const availableRequiredElementsForTopicCreation = useMemo(
+    () =>
+      sortedAllElements.filter((element) =>
+        canAttachElementAsRequired(formedTopicIdsByElementId, {
+          elementId: element.id,
+        }),
+      ),
+    [formedTopicIdsByElementId, sortedAllElements],
+  );
 
   const implementsRelation = useMemo(
     () => relationCatalog.find((relation) => relation.relation_type === "implements") ?? null,
@@ -1422,22 +1433,30 @@ export function GraphEditor({
       setTopicElementElementId("");
       setSelectedRequiredElementIds([]);
       setEditElementId("");
-      setDeleteElementId("");
+      setDeleteElementIds([]);
       return;
     }
 
     setSelectedRequiredElementIds((current) =>
-      current.filter((elementId) => sortedAllElements.some((element) => element.id === elementId)),
+      current.filter((elementId) =>
+        availableRequiredElementsForTopicCreation.some((element) => element.id === elementId),
+      ),
     );
 
     if (!sortedAllElements.some((element) => element.id === editElementId)) {
       setEditElementId(sortedAllElements[0].id);
     }
 
-    if (!sortedAllElements.some((element) => element.id === deleteElementId)) {
-      setDeleteElementId(sortedAllElements[0].id);
-    }
-  }, [deleteElementId, editElementId, sortedAllElements]);
+    setDeleteElementIds((current) =>
+      current.filter((elementId) =>
+        sortedAllElements.some((element) => element.id === elementId)
+      ),
+    );
+  }, [
+    availableRequiredElementsForTopicCreation,
+    editElementId,
+    sortedAllElements,
+  ]);
 
   useEffect(() => {
     if (!attachableElementsForTopic.length) {
@@ -1951,10 +1970,10 @@ export function GraphEditor({
   }
 
   function openDeleteConfirmation(
-    entityType: "topic" | "element" | "element-relation",
+    entityType: "topic" | "topic-with-elements" | "element" | "element-relation",
     entityId: string,
   ) {
-    if (entityType === "topic") {
+    if (entityType === "topic" || entityType === "topic-with-elements") {
       const selectedTopic = sortedTopics.find((topic) => topic.id === entityId);
       if (!selectedTopic) {
         return;
@@ -1978,7 +1997,8 @@ export function GraphEditor({
         return;
       }
 
-      const linkedElements = (topicKnowledgeElementsByTopicId.get(entityId) ?? [])
+      const topicLinks = topicKnowledgeElementsByTopicId.get(entityId) ?? [];
+      const linkedElements = topicLinks
         .map((link) => {
           const element = elementById.get(link.element_id);
           if (!element) {
@@ -1987,9 +2007,21 @@ export function GraphEditor({
           const roleLabel =
             TOPIC_LINK_ROLE_OPTIONS.find((option) => option.value === link.role)?.label ??
             link.role;
-          return `${element.name} (${competenceLabel(element.competence_type)}, ${roleLabel})`;
+          return {
+            label: `${element.name} (${competenceLabel(element.competence_type)}, ${roleLabel})`,
+            role: link.role,
+          };
         })
-        .filter((item): item is string => !!item);
+        .filter(
+          (item): item is { label: string; role: TopicKnowledgeElementRole } => !!item,
+        );
+
+      const formedElements = linkedElements
+        .filter((item) => item.role === "formed")
+        .map((item) => item.label);
+      const remainingLinkedElements = linkedElements
+        .filter((item) => item.role !== "formed")
+        .map((item) => item.label);
 
       const linkedDependencies = topicDependencies
         .filter(
@@ -2006,19 +2038,34 @@ export function GraphEditor({
           )})`;
         });
 
-      const details = [
-        ...linkedElements.map((name) => `Привязка элемента: ${name}`),
-        ...linkedDependencies.map((name) => `Зависимость темы: ${name}`),
-      ];
+      const details =
+        entityType === "topic-with-elements"
+          ? [
+              ...formedElements.map((name) => `Будет удален формируемый элемент: ${name}`),
+              ...remainingLinkedElements.map((name) => `Будет снята привязка элемента: ${name}`),
+              ...linkedDependencies.map((name) => `Зависимость темы: ${name}`),
+            ]
+          : [
+              ...linkedElements.map((item) => `Привязка элемента: ${item.label}`),
+              ...linkedDependencies.map((name) => `Зависимость темы: ${name}`),
+            ];
+
+      const deleteTopicText = details.length
+        ? `Тема "${selectedTopic.name}" будет удалена вместе с ${linkedElements.length} привязками элементов и ${linkedDependencies.length} зависимостями темы.`
+        : `Тема "${selectedTopic.name}" будет удалена.`;
+      const deleteTopicWithElementsText = formedElements.length
+        ? `Тема "${selectedTopic.name}" будет удалена вместе с ${formedElements.length} формируемыми элементами и всеми их связями. Дополнительно будут сняты ${remainingLinkedElements.length} других привязок элементов и ${linkedDependencies.length} зависимостей темы.`
+        : `У темы "${selectedTopic.name}" нет формируемых элементов. Будет удалена только тема.`;
 
       setConfirmDelete({
         entityId,
         entityName: selectedTopic.name,
         entityType,
         relationNames: details,
-        text: details.length
-          ? `Тема "${selectedTopic.name}" будет удалена вместе с ${linkedElements.length} привязками элементов и ${linkedDependencies.length} зависимостями темы.`
-          : `Тема "${selectedTopic.name}" будет удалена.`,
+        text:
+          entityType === "topic-with-elements"
+            ? deleteTopicWithElementsText
+            : deleteTopicText,
       });
       return;
     }
@@ -2085,7 +2132,7 @@ export function GraphEditor({
       text: relatedRelations.length
         ? crossLevelRelations.length
           ? `Элемент "${selectedElement.name}" будет удален вместе со связями с другими элементами. Будут удалены ${crossLevelRelations.length} межуровневых и ${sameLevelRelations.length} связей в рамках одного уровня компетенции.`
-          : `Элемент "${selectedElement.name}" будет удален вместе со ${sameLevelRelations.length} связями в рамках одного уровня компетенции.`
+          : `Элемент "${selectedElement.name}" будет удален вместе с ${sameLevelRelations.length} связями в рамках одного уровня компетенции.`
         : `Элемент "${selectedElement.name}" будет удален.`,
     });
   }
@@ -2116,7 +2163,7 @@ export function GraphEditor({
 
     try {
       setBusyAction(
-        confirmDelete.entityType === "topic"
+        confirmDelete.entityType === "topic" || confirmDelete.entityType === "topic-with-elements"
           ? "topic-delete"
           : confirmDelete.entityType === "element-relation"
             ? "element-relation-delete"
@@ -2128,6 +2175,10 @@ export function GraphEditor({
         await deleteTopic(confirmDelete.entityId);
         await syncAfterChange();
         setFeedback({ kind: "success", text: "Тема удалена." });
+      } else if (confirmDelete.entityType === "topic-with-elements") {
+        await deleteTopicWithFormedElements(confirmDelete.entityId);
+        await syncAfterChange(true);
+        setFeedback({ kind: "success", text: "Тема и формируемые ею элементы удалены." });
       } else if (confirmDelete.entityType === "element-relation") {
         await deleteKnowledgeElementRelation(confirmDelete.entityId);
         await syncAfterChange();
@@ -2744,6 +2795,14 @@ export function GraphEditor({
     openDeleteConfirmation("topic", deleteTopicId);
   }
 
+  function handleDeleteTopicWithElements() {
+    if (!deleteTopicId) {
+      return;
+    }
+
+    openDeleteConfirmation("topic-with-elements", deleteTopicId);
+  }
+
   async function handleCreateElement(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     let createdElementId = "";
@@ -2831,7 +2890,7 @@ export function GraphEditor({
         await syncAfterChange(true);
         setTopicElementElementId(createdElement.id);
         setEditElementId(createdElement.id);
-        setDeleteElementId(createdElement.id);
+        setDeleteElementIds([createdElement.id]);
         setRelationSourceElementId(createdElement.id);
         setFeedback({
           kind: "success",
@@ -2920,7 +2979,7 @@ export function GraphEditor({
       await syncAfterChange(true);
       setTopicElementElementId(createdElement.id);
       setEditElementId(createdElement.id);
-      setDeleteElementId(createdElement.id);
+      setDeleteElementIds([createdElement.id]);
       setRelationSourceElementId(createdElement.id);
       setFeedback({
         kind: "success",
@@ -3175,13 +3234,133 @@ export function GraphEditor({
     await submitUpdateElement();
   }
 
+  function toggleDeleteElementSelection(elementId: string) {
+    setDeleteElementIds((current) =>
+      current.includes(elementId)
+        ? current.filter((id) => id !== elementId)
+        : [...current, elementId],
+    );
+  }
+
+  function selectAllDeleteElements() {
+    setDeleteElementIds(sortedAllElements.map((element) => element.id));
+  }
+
+  function clearDeleteElementSelection() {
+    setDeleteElementIds([]);
+  }
+
   async function handleDeleteElement(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (!deleteElementId) {
+
+    const selectedIds = deleteElementIds.filter((elementId) =>
+      sortedAllElements.some((element) => element.id === elementId),
+    );
+
+    if (!selectedIds.length) {
+      setFeedback({
+        kind: "error",
+        text: "Выбери хотя бы один элемент для удаления.",
+      });
       return;
     }
 
-    openDeleteConfirmation("element", deleteElementId);
+    const selectedElements = selectedIds
+      .map((elementId) => elementById.get(elementId))
+      .filter((element): element is KnowledgeElement => !!element);
+    const selectedNames = selectedElements.map((element) => element.name);
+    const confirmText = selectedElements.length === 1
+      ? `Удалить элемент "${selectedNames[0]}"?`
+      : `Удалить выбранные элементы (${selectedElements.length})?
+
+${selectedNames.join("\n")}`;
+
+    if (!window.confirm(confirmText)) {
+      return;
+    }
+
+    try {
+      setBusyAction("element-delete");
+      setFeedback(null);
+
+      const remainingIds = [...selectedIds];
+      const failureById = new Map<string, string>();
+      const deletedIds: string[] = [];
+
+      while (remainingIds.length) {
+        let deletedThisPass = 0;
+        const passIds = remainingIds
+          .slice()
+          .sort((leftId, rightId) => {
+            const leftCompetence = elementById.get(leftId)?.competence_type;
+            const rightCompetence = elementById.get(rightId)?.competence_type;
+            const priority = (competence?: CompetenceType) => {
+              if (competence === "master") {
+                return 0;
+              }
+              if (competence === "can") {
+                return 1;
+              }
+              return 2;
+            };
+            return priority(leftCompetence) - priority(rightCompetence);
+          });
+
+        for (const elementId of passIds) {
+          try {
+            await deleteKnowledgeElement(elementId);
+            deletedIds.push(elementId);
+            failureById.delete(elementId);
+            const removeIndex = remainingIds.indexOf(elementId);
+            if (removeIndex >= 0) {
+              remainingIds.splice(removeIndex, 1);
+            }
+            deletedThisPass += 1;
+          } catch (error) {
+            failureById.set(elementId, extractErrorMessage(error));
+          }
+        }
+
+        if (!deletedThisPass) {
+          break;
+        }
+      }
+
+      if (deletedIds.length) {
+        await syncAfterChange(true);
+      }
+
+      setDeleteElementIds(remainingIds);
+
+      if (!remainingIds.length) {
+        setFeedback({
+          kind: "success",
+          text:
+            deletedIds.length === 1
+              ? "Элемент удален."
+              : `Удалено элементов: ${deletedIds.length}.`,
+        });
+        return;
+      }
+
+      const failureSummary = remainingIds
+        .map((elementId) => {
+          const elementName = elementById.get(elementId)?.name ?? "Элемент";
+          return `${elementName}: ${failureById.get(elementId) ?? "не удалось удалить"}`;
+        })
+        .join(" ");
+
+      setFeedback({
+        kind: "error",
+        text: deletedIds.length
+          ? `Удалено ${deletedIds.length} из ${selectedIds.length}. Не удалось удалить: ${failureSummary}`
+          : `Не удалось удалить выбранные элементы. ${failureSummary}`,
+      });
+    } catch (error) {
+      setFeedback({ kind: "error", text: extractErrorMessage(error) });
+    } finally {
+      setBusyAction("");
+    }
   }
 
   async function handleCreateElementRelation(event: FormEvent<HTMLFormElement>) {
@@ -3360,9 +3539,9 @@ export function GraphEditor({
                 </div>
               </div>
 
-              {sortedAllElements.length ? (
+              {availableRequiredElementsForTopicCreation.length ? (
                 <div className="editor-checklist">
-                  {sortedAllElements.map((element) => (
+                  {availableRequiredElementsForTopicCreation.map((element) => (
                     <label className="editor-checklist__item" key={element.id}>
                       <input
                         type="checkbox"
@@ -3568,12 +3747,24 @@ export function GraphEditor({
               <p className="editor-empty">Сейчас нет тем для удаления.</p>
             ) : null}
 
-            <button
-              className="secondary-button secondary-button--danger"
-              disabled={!deleteTopicId || !!busyAction}
-            >
-              {busyAction === "topic-delete" ? "Удаляю..." : "Удалить тему"}
-            </button>
+            <div className="editor-form__grid">
+              <button
+                className="secondary-button secondary-button--danger"
+                disabled={!deleteTopicId || !!busyAction}
+              >
+                {busyAction === "topic-delete" ? "Удаляю..." : "Удалить тему"}
+              </button>
+              <button
+                className="secondary-button secondary-button--danger"
+                disabled={!deleteTopicId || !!busyAction}
+                onClick={handleDeleteTopicWithElements}
+                type="button"
+              >
+                {busyAction === "topic-delete"
+                  ? "Удаляю..."
+                  : "Удалить тему и формируемые элементы"}
+              </button>
+            </div>
           </form>
         </details>
 
@@ -3820,32 +4011,75 @@ export function GraphEditor({
         </details>
 
         <details className="editor-block">
-          <summary>Удалить элемент</summary>
+          <summary>{"Удалить элементы"}</summary>
           <form className="editor-form" onSubmit={handleDeleteElement}>
-            <label className="field">
-              <span>Элемент</span>
-              <select
-                value={deleteElementId}
-                onChange={(event) => setDeleteElementId(event.target.value)}
-                disabled={!sortedAllElements.length}
-              >
-                {sortedAllElements.map((element) => (
-                  <option key={element.id} value={element.id}>
-                    {element.name} ({competenceLabel(element.competence_type)})
-                  </option>
-                ))}
-              </select>
-            </label>
-
             {!sortedAllElements.length ? (
-              <p className="editor-empty">Сейчас нет элементов для удаления.</p>
+              <p className="editor-empty">{"Сейчас нет элементов для удаления."}</p>
+            ) : (
+              <div className="editor-subsection">
+                <div className="editor-subsection__header">
+                  <div>
+                    <strong>{"Выбери элементы для удаления"}</strong>
+                    <p>{"Отмеченные элементы будут удалены вместе со связями и привязками к темам."}</p>
+                  </div>
+
+                  <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                    <button
+                      className="secondary-button"
+                      onClick={selectAllDeleteElements}
+                      type="button"
+                      disabled={!sortedAllElements.length || !!busyAction}
+                    >
+                      {"Выбрать все"}
+                    </button>
+                    <button
+                      className="ghost-button"
+                      onClick={clearDeleteElementSelection}
+                      type="button"
+                      disabled={!deleteElementIds.length || !!busyAction}
+                    >
+                      {"Снять выбор"}
+                    </button>
+                  </div>
+                </div>
+
+                <div className="editor-checklist">
+                  {sortedAllElements.map((element) => (
+                    <label className="editor-checklist__item" key={element.id}>
+                      <input
+                        type="checkbox"
+                        checked={deleteElementIds.includes(element.id)}
+                        onChange={() => toggleDeleteElementSelection(element.id)}
+                        disabled={!!busyAction}
+                      />
+                      <span>
+                        <strong>{element.name}</strong>
+                        <small>
+                          {competenceLabel(element.competence_type)}
+                          {element.description?.trim() ? ` - ${element.description}` : ""}
+                        </small>
+                      </span>
+                    </label>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {sortedAllElements.length ? (
+              <p className="editor-helper">
+                {`Выбрано элементов: ${deleteElementIds.length}`}
+              </p>
             ) : null}
 
             <button
               className="secondary-button secondary-button--danger"
-              disabled={!deleteElementId || !!busyAction}
+              disabled={!deleteElementIds.length || !!busyAction}
             >
-              {busyAction === "element-delete" ? "Удаляю..." : "Удалить элемент"}
+              {busyAction === "element-delete"
+                ? "Удаляю..."
+                : deleteElementIds.length > 1
+                  ? `Удалить выбранные (${deleteElementIds.length})`
+                  : "Удалить выбранный элемент"}
             </button>
           </form>
         </details>
@@ -3888,9 +4122,9 @@ export function GraphEditor({
                 </div>
               </div>
 
-              {sortedAllElements.length ? (
+              {availableRequiredElementsForTopicCreation.length ? (
                 <div className="editor-checklist">
-                  {sortedAllElements.map((element) => (
+                  {availableRequiredElementsForTopicCreation.map((element) => (
                     <label className="editor-checklist__item" key={element.id}>
                       <input
                         type="checkbox"
@@ -4338,12 +4572,24 @@ export function GraphEditor({
               <p className="editor-empty">Сейчас нет тем для удаления.</p>
             ) : null}
 
-            <button
-              className="secondary-button secondary-button--danger"
-              disabled={!deleteTopicId || !!busyAction}
-            >
-              {busyAction === "topic-delete" ? "Удаляю..." : "Удалить тему"}
-            </button>
+            <div className="editor-form__grid">
+              <button
+                className="secondary-button secondary-button--danger"
+                disabled={!deleteTopicId || !!busyAction}
+              >
+                {busyAction === "topic-delete" ? "Удаляю..." : "Удалить тему"}
+              </button>
+              <button
+                className="secondary-button secondary-button--danger"
+                disabled={!deleteTopicId || !!busyAction}
+                onClick={handleDeleteTopicWithElements}
+                type="button"
+              >
+                {busyAction === "topic-delete"
+                  ? "Удаляю..."
+                  : "Удалить тему и формируемые элементы"}
+              </button>
+            </div>
           </form>
         </details>
       </div>
@@ -4384,9 +4630,9 @@ export function GraphEditor({
                 </div>
               </div>
 
-              {sortedAllElements.length ? (
+              {availableRequiredElementsForTopicCreation.length ? (
                 <div className="editor-checklist">
-                  {sortedAllElements.map((element) => (
+                  {availableRequiredElementsForTopicCreation.map((element) => (
                     <label className="editor-checklist__item" key={element.id}>
                       <input
                         type="checkbox"
@@ -4592,12 +4838,24 @@ export function GraphEditor({
               <p className="editor-empty">Сейчас нет тем для удаления.</p>
             ) : null}
 
-            <button
-              className="secondary-button secondary-button--danger"
-              disabled={!deleteTopicId || !!busyAction}
-            >
-              {busyAction === "topic-delete" ? "Удаляю..." : "Удалить тему"}
-            </button>
+            <div className="editor-form__grid">
+              <button
+                className="secondary-button secondary-button--danger"
+                disabled={!deleteTopicId || !!busyAction}
+              >
+                {busyAction === "topic-delete" ? "Удаляю..." : "Удалить тему"}
+              </button>
+              <button
+                className="secondary-button secondary-button--danger"
+                disabled={!deleteTopicId || !!busyAction}
+                onClick={handleDeleteTopicWithElements}
+                type="button"
+              >
+                {busyAction === "topic-delete"
+                  ? "Удаляю..."
+                  : "Удалить тему и формируемые элементы"}
+              </button>
+            </div>
           </form>
         </details>
       </div>
@@ -5340,32 +5598,75 @@ export function GraphEditor({
         </details>
 
         <details className="editor-block">
-          <summary>Удалить элемент</summary>
+          <summary>{"Удалить элементы"}</summary>
           <form className="editor-form" onSubmit={handleDeleteElement}>
-            <label className="field">
-              <span>Элемент</span>
-              <select
-                value={deleteElementId}
-                onChange={(event) => setDeleteElementId(event.target.value)}
-                disabled={!sortedAllElements.length}
-              >
-                {sortedAllElements.map((element) => (
-                  <option key={element.id} value={element.id}>
-                    {element.name} ({competenceLabel(element.competence_type)})
-                  </option>
-                ))}
-              </select>
-            </label>
-
             {!sortedAllElements.length ? (
-              <p className="editor-empty">Сейчас нет элементов для удаления.</p>
+              <p className="editor-empty">{"Сейчас нет элементов для удаления."}</p>
+            ) : (
+              <div className="editor-subsection">
+                <div className="editor-subsection__header">
+                  <div>
+                    <strong>{"Выбери элементы для удаления"}</strong>
+                    <p>{"Отмеченные элементы будут удалены вместе со связями и привязками к темам."}</p>
+                  </div>
+
+                  <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                    <button
+                      className="secondary-button"
+                      onClick={selectAllDeleteElements}
+                      type="button"
+                      disabled={!sortedAllElements.length || !!busyAction}
+                    >
+                      {"Выбрать все"}
+                    </button>
+                    <button
+                      className="ghost-button"
+                      onClick={clearDeleteElementSelection}
+                      type="button"
+                      disabled={!deleteElementIds.length || !!busyAction}
+                    >
+                      {"Снять выбор"}
+                    </button>
+                  </div>
+                </div>
+
+                <div className="editor-checklist">
+                  {sortedAllElements.map((element) => (
+                    <label className="editor-checklist__item" key={element.id}>
+                      <input
+                        type="checkbox"
+                        checked={deleteElementIds.includes(element.id)}
+                        onChange={() => toggleDeleteElementSelection(element.id)}
+                        disabled={!!busyAction}
+                      />
+                      <span>
+                        <strong>{element.name}</strong>
+                        <small>
+                          {competenceLabel(element.competence_type)}
+                          {element.description?.trim() ? ` - ${element.description}` : ""}
+                        </small>
+                      </span>
+                    </label>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {sortedAllElements.length ? (
+              <p className="editor-helper">
+                {`Выбрано элементов: ${deleteElementIds.length}`}
+              </p>
             ) : null}
 
             <button
               className="secondary-button secondary-button--danger"
-              disabled={!deleteElementId || !!busyAction}
+              disabled={!deleteElementIds.length || !!busyAction}
             >
-              {busyAction === "element-delete" ? "Удаляю..." : "Удалить элемент"}
+              {busyAction === "element-delete"
+                ? "Удаляю..."
+                : deleteElementIds.length > 1
+                  ? `Удалить выбранные (${deleteElementIds.length})`
+                  : "Удалить выбранный элемент"}
             </button>
           </form>
         </details>
@@ -5720,14 +6021,17 @@ export function GraphEditor({
               <h4>
                 {confirmDelete.entityType === "topic"
                   ? "Удалить тему?"
-                  : confirmDelete.entityType === "element-relation"
-                    ? "Удалить связь?"
-                    : "Удалить элемент?"}
+                  : confirmDelete.entityType === "topic-with-elements"
+                    ? "Удалить тему и элементы?"
+                    : confirmDelete.entityType === "element-relation"
+                      ? "Удалить связь?"
+                      : "Удалить элемент?"}
               </h4>
             </div>
 
             <p className="editor-confirm-dialog__text">
-              {confirmDelete.entityType === "topic"
+              {confirmDelete.entityType === "topic" ||
+              confirmDelete.entityType === "topic-with-elements"
                 ? (confirmDelete.text ??
                   `Тема "${confirmDelete.entityName}" будет удалена вместе со связанными зависимостями и привязками.`)
                 : confirmDelete.entityType === "element-relation"
@@ -5736,7 +6040,9 @@ export function GraphEditor({
                     `Элемент "${confirmDelete.entityName}" будет удален вместе со связями и привязками к темам.`)}
             </p>
 
-            {(confirmDelete.entityType === "element" || confirmDelete.entityType === "topic") &&
+            {(confirmDelete.entityType === "element" ||
+              confirmDelete.entityType === "topic" ||
+              confirmDelete.entityType === "topic-with-elements") &&
             confirmDelete.relationNames?.length ? (
               <div className="editor-subsection">
                 <div className="editor-subsection__header">
@@ -5744,7 +6050,9 @@ export function GraphEditor({
                     <strong>
                       {confirmDelete.entityType === "topic"
                         ? "Будут удалены привязки и зависимости"
-                        : "Будут удалены связи"}
+                        : confirmDelete.entityType === "topic-with-elements"
+                          ? "Будут удалены элементы, привязки и зависимости"
+                          : "Будут удалены связи"}
                     </strong>
                   </div>
                 </div>
@@ -5790,7 +6098,6 @@ export function GraphEditor({
           </div>
         </div>
       ) : null}
-
       {confirmCompetenceChange ? (
         <div
           className="editor-confirm-backdrop"

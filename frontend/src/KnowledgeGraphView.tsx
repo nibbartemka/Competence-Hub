@@ -34,6 +34,7 @@ import type {
     DisciplineKnowledgeGraph,
     GraphScene,
     KnowledgeElement,
+    KnowledgeGraphExportFile,
     SceneNodeData,
     TopicKnowledgeElement,
     ViewMode,
@@ -142,6 +143,39 @@ function waitForPaint() {
     return new Promise<void>((resolve) => {
         requestAnimationFrame(() => requestAnimationFrame(() => resolve()));
     });
+}
+
+function buildKnowledgeGraphExportPayload(
+    graphData: DisciplineKnowledgeGraph,
+): KnowledgeGraphExportFile {
+    const linkedElementIds = new Set(
+        graphData.topic_knowledge_elements.map((link) => link.element_id),
+    );
+    const topicIds = new Set(graphData.topics.map((topic) => topic.id));
+
+    return {
+        format_version: 1,
+        exported_at: new Date().toISOString(),
+        source_discipline: graphData.discipline,
+        topics: graphData.topics,
+        topic_dependencies: graphData.topic_dependencies.filter(
+            (dependency) =>
+                topicIds.has(dependency.prerequisite_topic_id) &&
+                topicIds.has(dependency.dependent_topic_id),
+        ),
+        knowledge_elements: graphData.knowledge_elements.filter((element) =>
+            linkedElementIds.has(element.id),
+        ),
+        topic_knowledge_elements: graphData.topic_knowledge_elements.filter((link) =>
+            topicIds.has(link.topic_id),
+        ),
+        knowledge_element_relations: graphData.knowledge_element_relations.filter(
+            (relation) =>
+                topicIds.has(relation.topic_id) &&
+                linkedElementIds.has(relation.source_element_id) &&
+                linkedElementIds.has(relation.target_element_id),
+        ),
+    };
 }
 
 function isCompetenceType(value: unknown): value is CompetenceType {
@@ -659,16 +693,7 @@ export function KnowledgeGraphView({ disciplineId }: KnowledgeGraphViewProps) {
     function handleDownloadGraphJson() {
         if (!graphData) return;
 
-        const payload = {
-            format_version: 1,
-            exported_at: new Date().toISOString(),
-            source_discipline: graphData.discipline,
-            topics: graphData.topics,
-            topic_dependencies: graphData.topic_dependencies,
-            knowledge_elements: graphData.knowledge_elements,
-            topic_knowledge_elements: graphData.topic_knowledge_elements,
-            knowledge_element_relations: graphData.knowledge_element_relations,
-        };
+        const payload = buildKnowledgeGraphExportPayload(graphData);
 
         const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
         const url = URL.createObjectURL(blob);

@@ -1,4 +1,4 @@
-import { type DragEvent, useEffect, useMemo, useRef, useState } from "react";
+﻿import { type DragEvent, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 import RelationGraph, {
   type JsonLine,
@@ -272,13 +272,18 @@ function defaultExpectedDurationSeconds(tab: TaskCompetenceTab) {
 }
 
 function estimateTrajectoryNodeHeight(topic: Topic) {
+  const title = topic.name.trim();
   const text = topic.description?.trim() || "Описание темы пока не добавлено.";
-  return Math.min(420, 230 + Math.ceil(text.length / 26) * 18);
+  const titleLines = Math.max(1, Math.ceil(title.length / 27));
+  const descriptionLines = Math.max(2, Math.ceil(text.length / 28));
+  return Math.min(520, 256 + titleLines * 24 + descriptionLines * 19);
 }
 
 function estimateTrajectoryElementNodeHeight(element: KnowledgeElement) {
   const text = element.description?.trim() || "Описание элемента пока не добавлено.";
-  return Math.min(260, 176 + Math.ceil(text.length / 28) * 14);
+  const titleLines = Math.max(1, Math.ceil(element.name.trim().length / 26));
+  const descriptionLines = Math.max(2, Math.ceil(text.length / 26));
+  return Math.min(340, 190 + titleLines * 22 + descriptionLines * 16);
 }
 
 function competenceLabel(type: KnowledgeElement["competence_type"]) {
@@ -1694,6 +1699,12 @@ export default function TrajectoryDetailPage() {
     () => availablePrimaryElements.find((element) => element.id === taskPrimaryElementId) ?? null,
     [availablePrimaryElements, taskPrimaryElementId],
   );
+  const selectedMasterSubjectAreaDescription = useMemo(() => {
+    if (selectedPrimaryElement?.competence_type !== "master") {
+      return "";
+    }
+    return selectedPrimaryElement.subject_area_description?.trim() ?? "";
+  }, [selectedPrimaryElement]);
   const selectedPrimaryOperation = useMemo(
     () =>
       operationContracts.find(
@@ -3294,6 +3305,15 @@ export default function TrajectoryDetailPage() {
         </div>
         <span>{taskPrompt || "Текст задания"}</span>
 
+        {taskCompetenceTab === "master" ? (
+          <div className="teacher-review-checklist">
+            <div className="teacher-review-checklist__section">
+              <span className="card__eyebrow">Предметная область</span>
+              <p>{selectedMasterSubjectAreaDescription || "Не заполнена."}</p>
+            </div>
+          </div>
+        ) : null}
+
         {(taskTemplateKind === "definition_choice" ||
           taskTemplateKind === "term_choice" ||
           (taskTemplateKind === "manual" && taskType === "single_choice")) ? (
@@ -3682,6 +3702,15 @@ export default function TrajectoryDetailPage() {
                   {taskCompetenceTab === "master" ? (
                     <div className="trajectory-task-related">
                       <strong>Настройка задания уровня «Владеть»</strong>
+                      <label className="field">
+                        <span>Предметная область</span>
+                        <textarea
+                          rows={4}
+                          value={selectedMasterSubjectAreaDescription}
+                          readOnly
+                          placeholder="Для этого элемента предметная область пока не заполнена."
+                        />
+                      </label>
                       <label className="field">
                         <span>Подсказка в поле ответа</span>
                         <input
@@ -4822,6 +4851,15 @@ export default function TrajectoryDetailPage() {
                     Дополнительно можно отметить связи с другими элементами «Владеть» этой же темы.
                   </p>
                   <label className="field">
+                    <span>Предметная область</span>
+                    <textarea
+                      rows={4}
+                      value={selectedMasterSubjectAreaDescription}
+                      readOnly
+                      placeholder="Для этого элемента предметная область пока не заполнена."
+                    />
+                  </label>
+                  <label className="field">
                     <span>Подсказка в поле ответа</span>
                     <input
                       value={taskTextPlaceholder}
@@ -5200,3 +5238,7 @@ export default function TrajectoryDetailPage() {
     </div>
   );
 }
+
+
+
+

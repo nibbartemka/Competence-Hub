@@ -232,6 +232,12 @@ export function createDiscipline(payload: {
   });
 }
 
+export function deleteDiscipline(disciplineId: string) {
+  return request<void>(`/disciplines/${disciplineId}`, {
+    method: "DELETE",
+  });
+}
+
 export function updateDisciplineAssignments(
   disciplineId: string,
   payload: {
@@ -469,6 +475,12 @@ export function updateTopic(
 
 export function deleteTopic(topicId: string) {
   return request<void>(`/topics/${topicId}`, {
+    method: "DELETE",
+  });
+}
+
+export function deleteTopicWithFormedElements(topicId: string) {
+  return request<void>(`/topics/${topicId}?delete_formed_elements=true`, {
     method: "DELETE",
   });
 }

@@ -5,6 +5,7 @@ import { Link, useNavigate, useParams } from "react-router-dom";
 import {
   createAdmin,
   createDiscipline,
+  deleteDiscipline,
   createExpert,
   createGroup,
   createStudent,
@@ -970,6 +971,25 @@ export function HomePage() {
     }
   }
 
+  async function handleDeleteDiscipline(discipline: Discipline) {
+    const confirmed = window.confirm(
+      `Удалить дисциплину "${discipline.name}"? Будут удалены сама дисциплина, все её темы и все её элементы. Это действие нельзя отменить.`,
+    );
+    if (!confirmed) {
+      return;
+    }
+
+    try {
+      setBusyAction(`delete-discipline-${discipline.id}`);
+      await deleteDiscipline(discipline.id);
+      await refreshAfterChange("Дисциплина удалена.");
+    } catch (error) {
+      pushNotification("error", extractErrorMessage(error));
+    } finally {
+      setBusyAction("");
+    }
+  }
+
   async function handleUpdateDisciplineAssignments(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!assignmentDisciplineId) {
@@ -980,8 +1000,8 @@ export function HomePage() {
       setBusyAction("discipline-assignments");
       await updateDisciplineAssignments(assignmentDisciplineId, {
         teacher_ids: assignmentTeacherIds,
-        expert_ids: selectedAssignmentDiscipline?.expert_ids ?? assignmentExpertIds,
-        group_ids: selectedAssignmentDiscipline?.group_ids ?? assignmentGroupIds,
+        expert_ids: assignmentExpertIds,
+        group_ids: assignmentGroupIds,
       });
       await refreshAfterChange("Назначения дисциплины сохранены.");
     } catch (error) {
@@ -1643,13 +1663,31 @@ export function HomePage() {
                     <small>ID: {shortId(discipline.id)}</small>
                   </div>
                   <div>{renderListValue(teachers)}</div>
-                  <div className="discipline-row__actions">
+                                    <div className="discipline-row__actions">
                     <MotionLink
                       className="secondary-button discipline-row__action"
                       to={`/disciplines/${disciplinePathValue(discipline, discipline.id)}`}
+                      {...ACTION_MOTION}
                     >
                       Паспорт
                     </MotionLink>
+                    <MotionLink
+                      className="primary-button discipline-row__action"
+                      to={`/disciplines/${disciplinePathValue(discipline, discipline.id)}/knowledge`}
+                      {...ACTION_MOTION}
+                    >
+                      Открыть
+                    </MotionLink>
+                    <button
+                      className="secondary-button secondary-button--danger discipline-row__action"
+                      disabled={busyAction === `delete-discipline-${discipline.id}`}
+                      onClick={() => void handleDeleteDiscipline(discipline)}
+                      type="button"
+                    >
+                      {busyAction === `delete-discipline-${discipline.id}`
+                        ? "Удаляю..."
+                        : "Удалить"}
+                    </button>
                   </div>
                 </article>
               );
@@ -2113,13 +2151,31 @@ export function HomePage() {
                       <span className="home-hint">Не назначены</span>
                     )}
                   </div>
-                  <div className="discipline-row__actions">
+                                    <div className="discipline-row__actions">
                     <MotionLink
                       className="secondary-button discipline-row__action"
                       to={`/disciplines/${disciplinePathValue(discipline, discipline.id)}`}
+                      {...ACTION_MOTION}
                     >
                       Паспорт
                     </MotionLink>
+                    <MotionLink
+                      className="primary-button discipline-row__action"
+                      to={`/disciplines/${disciplinePathValue(discipline, discipline.id)}/knowledge`}
+                      {...ACTION_MOTION}
+                    >
+                      Открыть
+                    </MotionLink>
+                    <button
+                      className="secondary-button secondary-button--danger discipline-row__action"
+                      disabled={busyAction === `delete-discipline-${discipline.id}`}
+                      onClick={() => void handleDeleteDiscipline(discipline)}
+                      type="button"
+                    >
+                      {busyAction === `delete-discipline-${discipline.id}`
+                        ? "Удаляю..."
+                        : "Удалить"}
+                    </button>
                   </div>
                 </article>
               );
@@ -2803,24 +2859,24 @@ export function HomePage() {
                   </div>
                 </div>
 
-                <div className="admin-assignment-checks admin-assignment-checks--teachers">
+                <div className="admin-assignment-checks admin-assignment-checks--groups">
                   <div className="home-checklist admin-assignment-checklist">
-                    <span>Преподаватели</span>
-                    {data.teachers.length ? (
-                      data.teachers.map((teacher) => (
-                        <label className="home-check" key={teacher.id}>
+                    <span>Группы</span>
+                    {data.groups.length ? (
+                      data.groups.map((group) => (
+                        <label className="home-check" key={group.id}>
                           <input
-                            checked={assignmentTeacherIds.includes(teacher.id)}
+                            checked={assignmentGroupIds.includes(group.id)}
                             onChange={() =>
-                              setAssignmentTeacherIds((current) => toggleId(current, teacher.id))
+                              setAssignmentGroupIds((current) => toggleId(current, group.id))
                             }
                             type="checkbox"
                           />
-                          {teacher.name}
+                          {group.name}
                         </label>
                       ))
                     ) : (
-                      <p className="home-hint">Преподаватели пока не созданы.</p>
+                      <p className="home-hint">Группы пока не созданы.</p>
                     )}
                   </div>
                 </div>
@@ -2957,7 +3013,7 @@ export function HomePage() {
                       <span className="home-hint">Нет групп</span>
                     )}
                   </div>
-                  <div className="discipline-row__actions">
+                                    <div className="discipline-row__actions">
                     <MotionLink
                       className="secondary-button discipline-row__action"
                       to={`/disciplines/${disciplinePathValue(discipline, discipline.id)}`}
@@ -2972,6 +3028,16 @@ export function HomePage() {
                     >
                       Открыть
                     </MotionLink>
+                    <button
+                      className="secondary-button secondary-button--danger discipline-row__action"
+                      disabled={busyAction === `delete-discipline-${discipline.id}`}
+                      onClick={() => void handleDeleteDiscipline(discipline)}
+                      type="button"
+                    >
+                      {busyAction === `delete-discipline-${discipline.id}`
+                        ? "Удаляю..."
+                        : "Удалить"}
+                    </button>
                   </div>
                 </motion.article>
               );
@@ -3469,22 +3535,32 @@ export function HomePage() {
                           <span className="home-hint">Нет групп</span>
                         )}
                       </div>
-                      <div className="discipline-row__actions">
-                        <MotionLink
-                          className="secondary-button discipline-row__action"
-                          to={`/disciplines/${disciplinePathValue(discipline, discipline.id)}`}
-                          {...ACTION_MOTION}
-                        >
-                          Паспорт
-                        </MotionLink>
-                        <MotionLink
-                          className="primary-button discipline-row__action"
-                          to={`/disciplines/${disciplinePathValue(discipline, discipline.id)}/knowledge`}
-                          {...ACTION_MOTION}
-                        >
-                          Открыть
-                        </MotionLink>
-                      </div>
+                                        <div className="discipline-row__actions">
+                    <MotionLink
+                      className="secondary-button discipline-row__action"
+                      to={`/disciplines/${disciplinePathValue(discipline, discipline.id)}`}
+                      {...ACTION_MOTION}
+                    >
+                      Паспорт
+                    </MotionLink>
+                    <MotionLink
+                      className="primary-button discipline-row__action"
+                      to={`/disciplines/${disciplinePathValue(discipline, discipline.id)}/knowledge`}
+                      {...ACTION_MOTION}
+                    >
+                      Открыть
+                    </MotionLink>
+                    <button
+                      className="secondary-button secondary-button--danger discipline-row__action"
+                      disabled={busyAction === `delete-discipline-${discipline.id}`}
+                      onClick={() => void handleDeleteDiscipline(discipline)}
+                      type="button"
+                    >
+                      {busyAction === `delete-discipline-${discipline.id}`
+                        ? "Удаляю..."
+                        : "Удалить"}
+                    </button>
+                  </div>
                     </motion.article>
                   );
                 })
@@ -3824,31 +3900,32 @@ export function HomePage() {
                         </small>
                         <small>Группы: {groups.length ? groups.join(", ") : "не назначены"}</small>
                       </div>
-                      <div className="discipline-row__actions">
-                        <MotionLink
-                          className="secondary-button discipline-row__action"
-                          to={`/disciplines/${disciplinePathValue(discipline, discipline.id)}`}
-                          {...ACTION_MOTION}
-                        >
-                          Паспорт
-                        </MotionLink>
-                        <MotionLink
-                          className="primary-button discipline-row__action"
-                          to={`/disciplines/${disciplinePathValue(discipline, discipline.id)}/knowledge`}
-                          {...ACTION_MOTION}
-                        >
-                          Открыть редактор
-                        </MotionLink>
-                        {!isExpertMode ? (
-                          <MotionLink
-                            className="secondary-button discipline-row__action"
-                            to={`/disciplines/${disciplinePathValue(discipline, discipline.id)}/trajectory`}
-                            {...ACTION_MOTION}
-                          >
-                            Собрать траекторию
-                          </MotionLink>
-                        ) : null}
-                      </div>
+                                        <div className="discipline-row__actions">
+                    <MotionLink
+                      className="secondary-button discipline-row__action"
+                      to={`/disciplines/${disciplinePathValue(discipline, discipline.id)}`}
+                      {...ACTION_MOTION}
+                    >
+                      Паспорт
+                    </MotionLink>
+                    <MotionLink
+                      className="primary-button discipline-row__action"
+                      to={`/disciplines/${disciplinePathValue(discipline, discipline.id)}/knowledge`}
+                      {...ACTION_MOTION}
+                    >
+                      Открыть
+                    </MotionLink>
+                    <button
+                      className="secondary-button secondary-button--danger discipline-row__action"
+                      disabled={busyAction === `delete-discipline-${discipline.id}`}
+                      onClick={() => void handleDeleteDiscipline(discipline)}
+                      type="button"
+                    >
+                      {busyAction === `delete-discipline-${discipline.id}`
+                        ? "Удаляю..."
+                        : "Удалить"}
+                    </button>
+                  </div>
                     </motion.article>
                   );
                 })}

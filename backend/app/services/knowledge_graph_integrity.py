@@ -205,7 +205,11 @@ async def ensure_topic_element_link_can_be_removed(
     await ensure_topic_can_be_removed(session, topic_id)
 
 
-async def ensure_element_can_be_removed(session: AsyncSession, element_id: UUID) -> None:
+async def ensure_element_can_be_removed(
+    session: AsyncSession,
+    element_id: UUID,
+    removing_element_ids: set[UUID] | None = None,
+) -> None:
     selected_result = await session.execute(
         select(LearningTrajectory.name)
         .join(LearningTrajectoryTopic, LearningTrajectoryTopic.trajectory_id == LearningTrajectory.id)
@@ -286,13 +290,15 @@ async def ensure_element_can_be_removed(session: AsyncSession, element_id: UUID)
         for related_element in related_elements_result.scalars().all()
     }
 
+    removing_element_ids = removing_element_ids or set()
+
     blocking_source_names: list[str] = []
     for relation in relations:
         if relation.target_element_id != element_id:
             continue
 
         source_element = related_elements_by_id.get(relation.source_element_id)
-        if source_element is None:
+        if source_element is None or source_element.id in removing_element_ids:
             continue
 
         if (

@@ -6,11 +6,13 @@ from sqlalchemy.orm import lazyload
 
 from app.api.crud import commit_or_409, flush_or_409, not_found
 from app.api.deps import DbSession
-from app.models import Discipline, Topic
+from app.models import Discipline, KnowledgeElement, Topic, TopicKnowledgeElement
+from app.models.enums import TopicKnowledgeElementRole
 from app.schemas import TopicCreate, TopicRead, TopicUpdate
 from app.services.knowledge_graph_integrity import (
     assert_no_topic_dependency_cycle,
     bump_knowledge_graph_version,
+    ensure_element_can_be_removed,
     ensure_topic_can_be_removed,
 )
 from app.services.topic_dependencies import sync_topic_dependencies_for_discipline
@@ -86,13 +88,43 @@ async def update_topic(
 
 
 @router.delete("/{topic_id}", status_code=status.HTTP_204_NO_CONTENT)
-async def delete_topic(topic_id: UUID, session: DbSession) -> None:
+async def delete_topic(
+    topic_id: UUID,
+    session: DbSession,
+    delete_formed_elements: bool = False,
+) -> None:
     result = await session.execute(select(Topic).options(lazyload("*")).where(Topic.id == topic_id))
     topic = result.scalar_one_or_none()
     if topic is None:
         raise not_found("Topic", topic_id)
+
     await ensure_topic_can_be_removed(session, topic_id)
     discipline_id = topic.discipline_id
+
+    if delete_formed_elements:
+        formed_elements_result = await session.execute(
+            select(KnowledgeElement)
+            .options(lazyload("*"))
+            .join(TopicKnowledgeElement, TopicKnowledgeElement.element_id == KnowledgeElement.id)
+            .where(
+                TopicKnowledgeElement.topic_id == topic_id,
+                TopicKnowledgeElement.role == TopicKnowledgeElementRole.FORMED,
+            )
+            .order_by(KnowledgeElement.name)
+        )
+        formed_elements = list(formed_elements_result.scalars().all())
+        removing_element_ids = {element.id for element in formed_elements}
+
+        for element in formed_elements:
+            await ensure_element_can_be_removed(
+                session,
+                element.id,
+                removing_element_ids=removing_element_ids,
+            )
+
+        for element in formed_elements:
+            await session.delete(element)
+
     await session.delete(topic)
     await flush_or_409(session)
     await sync_topic_dependencies_for_discipline(session, discipline_id)

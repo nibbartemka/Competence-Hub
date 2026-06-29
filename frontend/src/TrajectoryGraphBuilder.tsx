@@ -211,24 +211,70 @@ function estimateTextLines(value: string | undefined, charsPerLine: number) {
   return Math.max(1, Math.ceil(value.trim().length / charsPerLine));
 }
 
-function estimateTrajectoryNodeHeight(data: SceneNodeData, width: number) {
-  const charsPerLine = Math.max(16, Math.floor(width / 8.6));
-  const titleLines = estimateTextLines(data.title, charsPerLine);
-  const subtitleLines = estimateTextLines(data.subtitle, charsPerLine);
-  const descriptionLines = estimateTextLines(data.description, charsPerLine + 2);
-  const metricRows = Math.ceil((data.metrics?.length ?? 0) / 2);
+function estimateHintRows(
+  data: Pick<SceneNodeData, "hint" | "secondaryHint">,
+  width: number,
+) {
+  const hints = [data.hint, data.secondaryHint].filter(
+    (value): value is string => Boolean(value?.trim()),
+  );
 
-  const headerHeight = 46;
-  const paddingAndGaps = 82;
+  if (!hints.length) return 0;
+
+  const maxActionWidth = Math.max(112, Math.min(176, width - 104));
+  const estimatedRows = hints.reduce((total, hint) => {
+    const charsPerLine = Math.max(10, Math.floor((maxActionWidth - 22) / 7.1));
+    return total + Math.max(1, Math.ceil(hint.trim().length / charsPerLine));
+  }, 0);
+
+  return Math.max(1, estimatedRows);
+}
+
+function estimateMetricRows(metrics: string[] | undefined, width: number) {
+  if (!metrics?.length) return 0;
+
+  const availableWidth = Math.max(156, width - 40);
+  let rows = 1;
+  let currentRowWidth = 0;
+
+  for (const metric of metrics) {
+    const chipWidth = Math.max(86, Math.min(availableWidth, 22 + metric.length * 7.4));
+    if (currentRowWidth > 0 && currentRowWidth + chipWidth + 8 > availableWidth) {
+      rows += 1;
+      currentRowWidth = chipWidth;
+      continue;
+    }
+    currentRowWidth += currentRowWidth > 0 ? chipWidth + 8 : chipWidth;
+  }
+
+  return rows;
+}
+
+function estimateTrajectoryNodeHeight(data: SceneNodeData, width: number) {
+  const contentWidth = Math.max(160, width - 40);
+  const titleLines = estimateTextLines(data.title, Math.max(14, Math.floor(contentWidth / 9.4)));
+  const subtitleLines = estimateTextLines(
+    data.subtitle,
+    Math.max(16, Math.floor(contentWidth / 8.8)),
+  );
+  const descriptionLines = estimateTextLines(
+    data.description,
+    Math.max(16, Math.floor(contentWidth / 8.2)),
+  );
+  const hintRows = estimateHintRows(data, contentWidth);
+  const metricRows = estimateMetricRows(data.metrics, contentWidth);
+
+  const headerHeight = Math.max(42, 24 + hintRows * 34);
+  const paddingAndGaps = 106;
   const contentHeight =
     headerHeight +
     titleLines * 24 +
-    subtitleLines * 19 +
-    descriptionLines * 19 +
-    metricRows * 42 +
+    subtitleLines * 20 +
+    descriptionLines * 20 +
+    metricRows * 40 +
     paddingAndGaps;
 
-  return Math.max(214, Math.min(560, contentHeight));
+  return Math.max(300, Math.min(760, contentHeight));
 }
 
 function waitForPaint() {
@@ -575,9 +621,6 @@ export default function TrajectoryGraphBuilder() {
         ? buildTopicScene(graph)
         : buildElementScene(graph, view.topicId);
 
-    return view.level === "elements"
-      ? filterElementSceneByCompetence(baseScene, competenceFilters)
-      : baseScene;
 
     const nextNodes = baseScene.nodes.map((node) => {
       const data = node.data as SceneNodeData | undefined;
@@ -602,14 +645,15 @@ export default function TrajectoryGraphBuilder() {
             : isBlocked
               ? `Сначала нужно: ${missingElements.map((item) => item.name).join(", ")}`
               : data.subtitle,
-          metrics: data.metrics,
+          metrics: [],
           hint: isSelected ? "Убрать" : "Выбрать",
           secondaryHint: "Элементы",
         };
 
         return {
           ...node,
-          height: estimateTrajectoryNodeHeight(nextData, node.width ?? 260),
+          width: 336,
+          height: estimateTrajectoryNodeHeight(nextData, 336),
           data: nextData,
         };
       }
@@ -622,12 +666,14 @@ export default function TrajectoryGraphBuilder() {
             ? selectedTopicIds.indexOf(data.topicId) + 1
             : undefined,
           lockState: "open",
+          metrics: [],
           hint: "К темам",
         };
 
         return {
           ...node,
-          height: estimateTrajectoryNodeHeight(nextData, node.width ?? 286),
+          width: 352,
+          height: estimateTrajectoryNodeHeight(nextData, 352),
           data: nextData,
         };
       }
@@ -685,6 +731,10 @@ export default function TrajectoryGraphBuilder() {
   }, [
     competenceFilters,
     graph,
+    requiredElementsByTopic,
+    selectedElementsByTopic,
+    selectedTopicIds,
+    selectedTopicSet,
     view,
   ]);
 

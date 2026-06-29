@@ -5036,7 +5036,8 @@ body:has(.session-profile-header) .home-shell {
 }
 
 .trajectory-page .graph-node__actions {
-  max-width: 176px;
+  flex-shrink: 0;
+  max-width: 208px;
 }
 
 .trajectory-page .graph-node__hint {
@@ -5060,6 +5061,7 @@ body:has(.session-profile-header) .home-shell {
 .trajectory-page .graph-node__description {
   font-size: 0.9rem;
   line-height: 1.4;
+  white-space: normal;
 }
 
 .trajectory-page .graph-node__metrics {
@@ -7329,8 +7331,8 @@ body:has(.session-profile-header) .home-shell {
   grid-template-columns: 1fr;
 }
 
-.admin-assignment-checks--teachers-upgraded + .admin-assignment-checks--teachers {
-  display: none;
+.admin-assignment-checks--groups {
+  grid-template-columns: 1fr;
 }
 
 .admin-assignment-checklist {
