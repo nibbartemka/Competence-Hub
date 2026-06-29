@@ -357,7 +357,12 @@ export function KnowledgeGraphView({ disciplineId }: KnowledgeGraphViewProps) {
     const isExpertSession = readSession()?.role === "expert";
 
     const currentDiscipline = disciplines.find((d) => matchesDisciplineIdentifier(d, disciplineId));
-    const resolvedDiscipline = graphData?.discipline ?? currentDiscipline ?? null;
+    const graphMatchesRoute = graphData
+        ? matchesDisciplineIdentifier(graphData.discipline, disciplineId)
+        : false;
+    const resolvedDiscipline = graphMatchesRoute
+        ? graphData?.discipline ?? null
+        : currentDiscipline ?? null;
     const resolvedDisciplineId = resolvedDiscipline?.id ?? "";
     const resolvedDisciplinePath = disciplinePathValue(resolvedDiscipline, disciplineId);
 
@@ -477,6 +482,7 @@ export function KnowledgeGraphView({ disciplineId }: KnowledgeGraphViewProps) {
         scopeType: "discipline-knowledge",
     });
     const graphLoading = loading || layoutLoading;
+    const canOpenEditor = !graphLoading && graphMatchesRoute;
 
     // Загрузка списка дисциплин
     useEffect(() => {
@@ -798,7 +804,7 @@ export function KnowledgeGraphView({ disciplineId }: KnowledgeGraphViewProps) {
                                 className="primary-button inspector-actions__editor"
                                 onClick={() => openEditor("topics")}
                                 type="button"
-                                disabled={!disciplineId}
+                                disabled={!canOpenEditor}
                             >
                                 Редактор
                             </button>
@@ -1110,15 +1116,16 @@ export function KnowledgeGraphView({ disciplineId }: KnowledgeGraphViewProps) {
 
                         <div className="modal-panel__body">
                             <GraphEditor
+                                key={resolvedDisciplineId || disciplineId}
                                 disciplineId={resolvedDisciplineId || disciplineId}
                                 initialTab={requestedEditorTab ?? "topics"}
-                                topics={graphData?.topics ?? []}
-                                topicDependencies={graphData?.topic_dependencies ?? []}
-                                disciplineElements={graphData?.knowledge_elements ?? []}
+                                topics={graphMatchesRoute ? graphData?.topics ?? [] : []}
+                                topicDependencies={graphMatchesRoute ? graphData?.topic_dependencies ?? [] : []}
+                                disciplineElements={graphMatchesRoute ? graphData?.knowledge_elements ?? [] : []}
                                 knowledgeElementRelations={
-                                    graphData?.knowledge_element_relations ?? []
+                                    graphMatchesRoute ? graphData?.knowledge_element_relations ?? [] : []
                                 }
-                                topicKnowledgeElements={graphData?.topic_knowledge_elements ?? []}
+                                topicKnowledgeElements={graphMatchesRoute ? graphData?.topic_knowledge_elements ?? [] : []}
                                 onDataChanged={refreshSelectedDisciplineGraph}
                             />
                         </div>
